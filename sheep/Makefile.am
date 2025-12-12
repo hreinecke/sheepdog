@@ -49,6 +49,9 @@ endif
 if BUILD_SHEPHERD
 sheep_SOURCES		+= cluster/shepherd.c
 endif
+if BUILD_ETCD
+sheep_SOURCES		+= cluster/etcd.c cluster/etcd_client.c
+endif
 
 if BUILD_TRACE
 AM_CPPFLAGS		+= -DENABLE_TRACE
