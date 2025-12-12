@@ -50,7 +50,8 @@ if BUILD_SHEPHERD
 sheep_SOURCES		+= cluster/shepherd.c
 endif
 if BUILD_ETCD
-sheep_SOURCES		+= cluster/etcd.c cluster/etcd_client.c
+sheep_SOURCES		+= cluster/etcd.c cluster/etcd_client.c cluster/etcd_socket.c cluster/base64.c cluster/http_parser.c
+etcd_LIBS		= -ljson-c
 endif
 
 if BUILD_TRACE
@@ -63,7 +64,7 @@ sheep_SOURCES		+= xio_server.c xio_client.c
 endif
 
 sheep_LDADD	  	= ../lib/libsd.a -lpthread -lm \
-			  $(libacrd_LIBS) $(corosync_LIBS) $(LIBS)
+			  $(libacrd_LIBS) $(etcd_LIBS) $(corosync_LIBS) $(LIBS)
 
 if BUILD_NFS
 sheep_LDADD		+= -lrt

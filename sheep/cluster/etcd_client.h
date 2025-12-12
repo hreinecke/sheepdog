@@ -37,8 +37,6 @@ struct etcd_parse_data {
 };
 
 struct etcd_ctx {
-	char *configfs;
-	char *prefix;
 	char *proto;
 	char *host;
 	char *node_name;
@@ -86,11 +84,7 @@ struct etcd_kv_event {
 	void *watch_arg;
 };
 
-extern bool etcd_debug;
-extern bool http_debug;
-
 struct etcd_ctx *etcd_init(const char *url, const char *node_name,
-			   const char *prefix, const char *mnt,
 			   unsigned int ttl);
 void etcd_exit(struct etcd_ctx *ctx);
 struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
@@ -100,7 +94,7 @@ void etcd_conn_delete(struct etcd_conn_ctx *ctx);
 void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
 
-int etcd_kv_exec(struct etcd_conn_ctx *conn, char *uri,
+int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		 struct json_object *post_obj,
 		 etcd_parse_cb parse_cb, void *parse_arg);
 
@@ -126,26 +120,25 @@ static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
 		.ignore_lease = false,
 		.lease = ctx->lease,
 	};
-	if (!ctx->lease) {
-		if (etcd_debug)
-			printf("%s: no lease\n", __func__);
+	if (!ctx->lease)
 		return -EINVAL;
-	}
+
 	return etcd_kv_put(ctx, &kv);
 }
 
 static inline int etcd_kv_store(struct etcd_ctx *ctx, const char *key,
-				const char *value)
+				const char *value, size_t len)
 {
 	struct etcd_kv kv = {
 		.key = (char *)key,
 		.value = (char *)value,
+		.value_len = len,
 		.ignore_lease = false,
 	};
 	return etcd_kv_put(ctx, &kv);
 }
 
-int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value);
+int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value, size_t len);
 int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 		  struct etcd_kv **ret_kvs);
 int etcd_kv_delete_range(struct etcd_ctx *ctx, const char *key,
@@ -162,5 +155,6 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv);
 int etcd_lease_grant(struct etcd_ctx *ctx);
 int etcd_lease_keepalive(struct etcd_ctx *ctx);
 int etcd_lease_revoke(struct etcd_ctx *ctx);
+int etcd_lease_timetolive(struct etcd_ctx *ctx);
 
 #endif /* _ETCD_CLIENT_H */

@@ -7,6 +7,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <getopt.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -15,14 +16,15 @@
 
 #include "base64.h"
 
-#include "common.h"
 #include "etcd_client.h"
 
-static char *default_etcd_prefix = "nofuse";
-static char *default_etcd_host = "localhost";
-static char *default_etcd_proto = "http";
+static const char *default_etcd_prefix = "nofuse";
+static const char *default_etcd_host = "localhost";
+static const char *default_etcd_proto = "http";
 static int default_etcd_port = 2379;
 static int default_etcd_ttl = 60;
+
+static bool etcd_debug;
 
 static char *__b64enc(const char *str, int str_len)
 {
@@ -241,7 +243,8 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 	}
 }
 
-int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
+int etcd_kv_get(struct etcd_ctx *ctx, const char *key,
+		char *value, size_t value_len)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
@@ -273,15 +276,18 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key, char *value)
 	if (ev.num_kvs) {
 		for (i = 0; i < ev.num_kvs; i++) {
 			struct etcd_kv *kv = &ev.kvs[i];
+			size_t len = value_len;
 
 			if (!strcmp(kv->key, key)) {
 				if (value) {
-					if (kv->value)
-						strcpy(value, kv->value);
+					if (kv->value_len < len)
+						len = kv->value_len;
+					if (len)
+						memcpy(value, kv->value, len);
 					else
 						*value = '\0';
 				}
-				ret = 0;
+				ret = len;
 				break;
 			}
 		}
@@ -375,7 +381,9 @@ etcd_parse_delete_response (struct json_object *etcd_resp, void *arg)
 		kv_obj = json_object_array_get_idx(kvs_obj, i);
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (key_obj) {
-			char *key = __b64dec(json_object_get_string(key_obj));
+			int len;
+			char *key = __b64dec(json_object_get_string(key_obj),
+				&len);
 			if (etcd_debug)
 				printf("%s: deleted %s\n", __func__, key);
 			free(key);
@@ -621,6 +629,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
 		struct json_object *type_obj, *obj;
 		struct etcd_kv kv;
+		int len;
 
 		memset(&kv, 0, sizeof(kv));
 		kvs_obj = json_object_array_get_idx(event_obj, i);
@@ -634,10 +643,13 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		kv.key = __b64dec(json_object_get_string(key_obj));
+		kv.key = __b64dec(json_object_get_string(key_obj),
+				  &len);
 		obj = json_object_object_get(kv_obj, "value");
-		if (obj)
-			kv.value = __b64dec(json_object_get_string(obj));
+		if (obj) {
+			kv.value = __b64dec(json_object_get_string(obj), &len);
+			kv.value_len = len;
+		}
 		obj = json_object_object_get(kv_obj, "create_revision");
 		if (obj)
 			kv.create_revision = json_object_get_int64(obj);
@@ -1081,7 +1093,7 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 	free(default_url);
 }
 
-static int etcd_member_id(struct etcd_ctx *ctx, bool validate_id)
+static int etcd_member_id(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 	struct json_object *post_obj;
@@ -1098,7 +1110,7 @@ static int etcd_member_id(struct etcd_ctx *ctx, bool validate_id)
 	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
 			   etcd_parse_member_response, ctx);
 
-	if (!ret && validate_id && !ctx->node_id)
+	if (!ret && !ctx->node_id)
 		ret = -ENOENT;
 
 	json_object_put(post_obj);
@@ -1107,7 +1119,6 @@ static int etcd_member_id(struct etcd_ctx *ctx, bool validate_id)
 }
 
 struct etcd_ctx *etcd_init(const char *url, const char *node_name,
-			   const char *prefix, const char *mnt,
 			   unsigned int ttl)
 {
 	struct etcd_ctx *ctx;
@@ -1123,7 +1134,8 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 	memset(ctx, 0, sizeof(struct etcd_ctx));
 	if (url) {
 		char *u, *p, *eptr;
-		char *proto = default_etcd_proto, *host = default_etcd_host;
+		char *proto = (char *)default_etcd_proto;
+		char *host = (char *)default_etcd_host;
 
 		u = strdup(url);
 		if (!strncmp(u, "http://", 7)) {
@@ -1140,8 +1152,9 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 		p = strchr(host, ':');
 		if (p) {
 			*p++ = '\0';
+			errno = 0;
 			port = strtoul(p, &eptr, 10);
-			if (p == eptr || port == ULONG_MAX) {
+			if (errno || p == eptr) {
 				if (etcd_debug)
 					fprintf(stderr, "Invalid URL '%s'\n",
 						url);
@@ -1159,22 +1172,14 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 		ctx->proto = strdup(default_etcd_proto);
 		ctx->port = default_etcd_port;
 	}
-	if (!prefix)
-		prefix = default_etcd_prefix;
-	ctx->prefix = strdup(prefix);
-	if (!mnt)
-		mnt = NVMET_CONFIGFS;
 	if (node_name)
 		ctx->node_name = strdup(node_name);
-	ctx->configfs = strdup(mnt);
 	ctx->lease = 0;
 	ctx->ttl = ttl > 0 ? ttl : default_etcd_ttl;
 	ctx->cluster_size = CLUSTER_DEFAULT_SIZE;
 	ctx->cluster_id = -1;
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
-	if (etcd_debug)
-		printf("%s: using prefix '%s'\n", __func__, ctx->prefix);
-	ret = etcd_member_id(ctx, !!mnt);
+	ret = etcd_member_id(ctx);
 	if (ret < 0) {
 		if (etcd_debug)
 			fprintf(stderr, "%s: cluster id failed, error %d\n",
@@ -1194,8 +1199,6 @@ void etcd_exit(struct etcd_ctx *ctx)
 		free(ctx->node_name);
 	if (ctx->node_id)
 		free(ctx->node_id);
-	free(ctx->configfs);
-	free(ctx->prefix);
 	free(ctx->host);
 	free(ctx->proto);
 	free(ctx);
