@@ -120,14 +120,16 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 		len = sizeof(node->node.nid.addr);
 		if (rc < len)
 			len = rc;
-		memcpy(node->node.nid.addr, val, len);
+		if (!str_to_addr(val, node->node.nid.addr))
+			return -EINVAL;
 		return 0;
 	}
 	if (!strcmp(attr, "io_addr")) {
 		len = sizeof(node->node.nid.io_addr);
 		if (rc < len)
 			len = rc;
-		memcpy(node->node.nid.io_addr, val, len);
+		if (!str_to_addr(val, node->node.nid.io_addr))
+			return -EINVAL;
 		return 0;
 	}
 	errno = 0;
@@ -165,11 +167,15 @@ static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
 	else if (!strcmp(attr, "io_port"))
 		len = snprintf(val, sizeof(val), "%u", node->node.nid.io_port);
 	else if (!strcmp(attr, "addr")) {
-		len = sizeof(node->node.nid.addr);
-		memcpy(val, node->node.nid.addr, len);
+		const char *addr = addr_to_str(node->node.nid.addr,
+					       node->node.nid.port);
+		strcpy(val, addr);
+		len = strlen(val);
 	} else if (!strcmp(attr, "io_addr")) {
-		len = sizeof(node->node.nid.io_addr);
-		memcpy(val, node->node.nid.io_addr, len);
+		const char *addr = addr_to_str(node->node.nid.io_addr,
+					       node->node.nid.io_port);
+		strcpy(val, addr);
+		len = strlen(val);
 	} else
 		return -EINVAL;
 
