@@ -75,6 +75,8 @@ static const char cluster_help[] =
 "\tcorosync: use corosync driver\n"
 "\tzookeeper: use zookeeper driver, need extra arguments\n"
 "\n\tzookeeper arguments: connection-string,timeout=value (default as 3000)\n"
+"\n\tetcd: use etcd driver, need extra arguments\n"
+"\n\tetcd arguments: connection-string,timeout=value (default as 3000)\n"
 "\nExample:\n\t"
 "$ sheep -c zookeeper:IP1:PORT1,IP2:PORT2,IP3:PORT3[/cluster_id][,timeout=1000] ...\n"
 "This tries to use 3 node zookeeper cluster, which can be reached by\n"

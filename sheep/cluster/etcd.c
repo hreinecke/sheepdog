@@ -355,7 +355,10 @@ static inline int etcd_event_create(struct etcd_node *node)
 
 	snprintf(prefix, sizeof(prefix), DEFAULT_BASE EV_ZNODE "%s/",
 		 node_to_str(&node->node));
+	memset(key, 0, sizeof(key));
 	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
+		if (!etcd_event_names[i])
+			continue;
 		strcpy(key, prefix);
 		strcat(key, etcd_event_names[i]);
 		rc = etcd_kv_store(node->ctx, key, NULL, 0);
@@ -384,6 +387,10 @@ static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
 	int rc;
 
 	event = etcd_event_names[type];
+	if (!event) {
+		sd_warn("%s: invalid type %d", __func__, type);
+		return -EINVAL;
+	}
 	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s/%s",
 		 node_to_str(&node->node), event);
 
@@ -625,14 +632,55 @@ static void etcd_unlock(uint64_t lock_id)
 {
 }
 
+static void delete_conn(void *arg)
+{
+	struct etcd_conn_ctx *conn = arg;
+
+	etcd_conn_delete(conn);
+}
+
+static void *etcd_watcher(void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn = NULL;;
+	struct etcd_kv_event ev;
+	int64_t start_revision = 0;
+	int ret;
+
+	conn = etcd_conn_create(ctx);
+	if (!conn) {
+		pthread_exit(NULL);
+	}
+	pthread_cleanup_push(delete_conn, conn);
+
+	memset(&ev, 0, sizeof(ev));
+	ev.ev_revision = start_revision;
+	ev.watch_cb = etcd_watch_cb;
+	ev.watch_arg = conn->ctx;
+
+	for (;;) {
+		ret = etcd_kv_watch(conn, DEFAULT_BASE EV_ZNODE,
+				    &ev, pthread_self());
+		if (ret && ret != -ETIME)
+			break;
+	}
+	if (ret && ret != -ETIME)
+		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
+				__func__, ret);
+	pthread_cleanup_pop(1);
+
+	ret = pthread_detach(pthread_self());
+	if (ret)
+		sd_err("%s", strerror(ret));
+	pthread_exit(NULL);
+}
+
 static int etcd_cluster_init(const char *option)
 {
 	char *hosts, *to, *p;
-	struct etcd_conn_ctx *conn;
-	struct etcd_kv_event ev;
+	sd_thread_t t;
 	int ret;
 	char addr[MAX_NODE_STR_LEN];
-	bool stopped = false;
 
 	if (!option) {
 		sd_err("You must specify zookeeper servers.");
@@ -650,28 +698,18 @@ static int etcd_cluster_init(const char *option)
 	}
 	pstrcpy(addr, MAX_NODE_STR_LEN, hosts);
 
-	this_ctx = etcd_init(addr, hosts, etcd_timeout);
+	this_ctx = etcd_init(addr, NULL, etcd_timeout);
 	if (!this_ctx) {
 		sd_err("failed to initialize etcd '%s'", addr);
 		return -1;
 	}
 	sd_info("node %s addr %s id %s", this_ctx->node_name,
 		addr, this_ctx->node_id);
-	conn = etcd_conn_create(this_ctx);
-	if (!conn)
+	ret = sd_thread_create("etcd", &t, etcd_watcher, this_ctx);
+	if (ret) {
+		sd_err("failed to start etcd, error %d", ret);
 		return -1;
-
-	memset(&ev, 0, sizeof(ev));
-	ev.ev_revision = 0;
-	ev.watch_cb = etcd_watch_cb;
-	ev.watch_arg = conn->ctx;
-
-	while (!stopped) {
-		ret = etcd_kv_watch(conn, DEFAULT_BASE EV_ZNODE, &ev, getpid());
-		if (ret && ret != -EINTR)
-			break;
 	}
-	etcd_conn_delete(conn);
 	return 0;
 }
 
