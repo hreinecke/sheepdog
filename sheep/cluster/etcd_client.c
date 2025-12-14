@@ -605,6 +605,10 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 	}
 
 	num_kvs = json_object_array_length(event_obj);
+	if (!num_kvs) {
+		sd_debug("%s: no events", __func__);
+		return;
+	}
 	for (i = 0; i < num_kvs; i++) {
 		struct json_object *kvs_obj, *kv_obj, *key_obj;
 		struct json_object *type_obj, *obj;
@@ -642,7 +646,7 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		obj = json_object_object_get(kv_obj, "lease");
 		if (obj)
 			kv.lease = json_object_get_int64(obj);
-		if (ev && ev->watch_cb)
+		if (ev->watch_cb)
 			ev->watch_cb(ev->watch_arg, &kv);
 		if (kv.value)
 			free(kv.value);

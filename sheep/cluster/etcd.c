@@ -572,23 +572,27 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 	struct etcd_ctx *ctx = arg;
 	struct etcd_node *node;
 	char *key, *event;
+	const char *base = DEFAULT_BASE EV_ZNODE;
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
 	int rc, i;
 
-	if (strcmp(kv->key, DEFAULT_BASE EV_ZNODE))
+	if (strncmp(kv->key, base, strlen(base)))
 		return;
-	key = kv->key + strlen(DEFAULT_BASE EV_ZNODE);
+	key = kv->key + strlen(base);
 	event = strchr(key, '/');
 	if (!event)
 		return;
 	*event++ = '\0';
 
 	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
+		if (!etcd_event_names[i])
+			continue;
 		if (!strcmp(event, etcd_event_names[i])) {
 			type = i;
 			break;
 		}
 	}
+	sd_debug("%s: event %s (%d) key %s", __func__, event, type, key);
 	if (kv->deleted && type != EVENT_LEAVE)
 		return;
 
