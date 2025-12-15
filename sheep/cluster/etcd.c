@@ -65,17 +65,17 @@ struct etcd_node {
 	struct list_node list;
 	struct rb_node rb;
 	struct etcd_ctx *ctx;
+	char node_id[MAX_NODE_STR_LEN];
 	struct sd_node node;
 	bool callbacked;
 	bool gone;
 };
 
-static struct rb_root etcd_node_root = RB_ROOT;
 static LIST_HEAD(etcd_block_list);
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
-	return node_id_cmp(&a->node.nid, &b->node.nid);
+	return strcmp(a->node_id, b->node_id);
 }
 
 static struct etcd_node this_node;
@@ -225,16 +225,20 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	unsigned long num;
 
 	attr = strrchr(kv->key, '/');
-	if (!attr)
+	if (!attr) {
+		sd_debug("%s: skipping key '%s'",
+			 __func__, kv->key);
 		return -EINVAL;
+	}
+	attr++;
 	len = kv->value_len;
-	if (!strcmp(attr, "/addr")) {
+	if (!strcmp(attr, "addr")) {
 		if (len > sizeof(node->node.nid.addr))
 			len = sizeof(node->node.nid.addr);
 		memcpy(node->node.nid.addr, kv->value, len);
 		return 0;
 	}
-	if (!strcmp(attr, "/io_addr")) {
+	if (!strcmp(attr, "io_addr")) {
 		if (len > sizeof(node->node.nid.io_addr))
 			len = sizeof(node->node.nid.io_addr);
 		memcpy(node->node.nid.io_addr, kv->value, len);
@@ -243,24 +247,28 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		
 	errno = 0;
 	num = strtoul(kv->value, NULL, 10);
-	if (errno)
+	if (errno) {
+		sd_debug("%s: parsing error on '%s'", __func__, kv->value);
 		return -errno;
-	if (!strcmp(attr, "/zone"))
+	}
+	if (!strcmp(attr, "zone"))
 		node->node.zone = num;
-	else if (!strcmp(attr, "/nr_vnodes"))
+	else if (!strcmp(attr, "nr_vnodes"))
 		node->node.nr_vnodes = num;
-	else if (!strcmp(attr, "/space"))
+	else if (!strcmp(attr, "space"))
 		node->node.space = num;
-	else if (!strcmp(attr, "/port"))
+	else if (!strcmp(attr, "port"))
 		node->node.nid.port = num;
-	else if (!strcmp(attr, "/io_port"))
+	else if (!strcmp(attr, "io_port"))
 		node->node.nid.io_port = num;
 #ifdef HAVE_ACCELIO
-	else if (!strcmp(attr, "/io_transport_type"))
+	else if (!strcmp(attr, "io_transport_type"))
 		node->node.nid.io_transport_type = num;
 #endif
-	else
+	else {
+		sd_debug("%s: unhandled attribute '%s'", __func__, attr);
 		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -291,39 +299,40 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 {
 	size_t num_kvs, node_nr = 0;
 	struct etcd_node *node = NULL;
-	char key[MAX_NODE_STR_LEN];
+	char base[MAX_NODE_STR_LEN];
 	char *cur_key = NULL;
 	struct etcd_kv *kvs;
 	int i, rc;
 
-	strcpy(key, DEFAULT_BASE MEMBER_ZNODE);
-	num_kvs = etcd_kv_range(ctx, key, &kvs);
+	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
+	num_kvs = etcd_kv_range(ctx, base, &kvs);
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
-		char *k, *a;
+		char key[MAX_NODE_STR_LEN], *a;
 
-		k = kv->key + strlen(DEFAULT_BASE MEMBER_ZNODE);
-		a = strchr(k, '/');
-		*a++ = '\0';
-		if (!cur_key || !strcmp(k, cur_key)) {
-			if (node)
-				rb_insert(&etcd_node_root, node, rb,
-					  etcd_node_cmp);
+		strcpy(key, kv->key + strlen(base));
+		a = strchr(key, '/');
+		*a = '\0';
+		node = rb_search(root, node, rb, etcd_node_cmp);
+		if (!node) {
 			node = xzalloc(sizeof(*node));
-			cur_key = k;
-			node_nr++;
+			strcpy(node->node_id, key);
+			rb_insert(root, node, rb, etcd_node_cmp);
 		}
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
+			sd_err("%s: failed to load node attr '%s'",
+			       __func__, kv->key + strlen(base));
 			etcd_kv_free(kvs, num_kvs);
 			return rc;
 		}
 	}
-	if (node)
-		rb_insert(&etcd_node_root, node, rb,
-			  etcd_node_cmp);
-	sd_debug("%zu", node_nr);
+	rb_for_each_entry(node, root, rb)
+		node_nr++;
+	sd_debug("%s: %zu nodes", __func__, node_nr);
 	etcd_kv_free(kvs, num_kvs);
+	if (cur_key)
+		free(cur_key);
 	return node_nr;
 }
 
@@ -491,6 +500,10 @@ static void etcd_handle_join(struct etcd_node *node,
 	}
 
 	nr_nodes = etcd_build_node_list(node->ctx, &node_root);
+	if (nr_nodes < 0) {
+		sd_err("%s: failed to build node list", __func__);
+		return;
+	}
 	sd_debug("sender: %s", node_to_str(&node->node));
 	sd_join_handler(&node->node, &node_root, nr_nodes, opaque);
 
@@ -505,6 +518,10 @@ static void etcd_handle_leave(struct etcd_node *node)
 
 	INIT_RB_ROOT(&node_root);
 	nr_nodes = etcd_build_node_list(node->ctx, &node_root);
+	if (nr_nodes < 0) {
+		sd_err("%s: failed to build node list", __func__);
+		return;
+	}
 	sd_leave_handler(&node->node, &node_root, nr_nodes);
 	memset(&this_node.node, 0, sizeof(this_node.node));
 }
@@ -519,6 +536,10 @@ static void etcd_handle_accept(struct etcd_node *node,
 
 	sd_debug("ACCEPT");
 	nr_nodes = etcd_build_node_list(node->ctx, &node_root);
+	if (nr_nodes < 0) {
+		sd_err("%s: failed to build node list", __func__);
+		return;
+	}
 	sd_accept_handler(&this_node.node, &node_root, nr_nodes, opaque);
 }
 

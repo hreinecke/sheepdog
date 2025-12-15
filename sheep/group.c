@@ -1006,13 +1006,16 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 			       size_t data_len)
 {
 	struct vdi_op_message *msg = data;
-	const struct sd_op_template *op = get_sd_op(msg->req.opcode);
-	int ret = msg->rsp.result;
+	const struct sd_op_template *op =
+		msg ? get_sd_op(msg->req.opcode) : NULL;
+	int ret = msg? msg->rsp.result : 0;
 	struct request *req = NULL;
 
 	sd_debug("op %s, size: %zu, from: %s", op_name(op), data_len,
 		 node_to_str(sender));
 
+	if (!op)
+		return;
 	if (node_is_local(sender)) {
 		if (has_process_work(op))
 			req = list_first_entry(

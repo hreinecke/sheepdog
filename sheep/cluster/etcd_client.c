@@ -231,8 +231,6 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 		if (attr_obj) {
 			kv->version = json_object_get_int64(attr_obj);
 		}
-		sd_debug("%s: key '%s', val '%s'",
-			 __func__, kv->key, kv->value ? kv->value : "");
 	}
 }
 
