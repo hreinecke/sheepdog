@@ -287,8 +287,34 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		node->node.nid.io_transport_type = num;
 #endif
 	else {
-		sd_debug("%s: unhandled attribute '%s'", __func__, attr);
-		return -EINVAL;
+		struct disk_info *disk_info = NULL;
+		unsigned long disk_id;
+		int i, disk_num = -1;
+
+		if (!strstr(kv->key, "disks")) {
+			sd_debug("%s: unhandled attribute '%s'",
+				 __func__, attr);
+			return -EINVAL;
+		}
+		disk_id = strtoul(attr, NULL, 10);
+		for (i = 0; i < DISK_MAX; i++) {
+			if (!node->node.disks[i].disk_id) {
+				if (disk_num == -1)
+					disk_num = i;
+				continue;
+			}
+			if (node->node.disks[i].disk_id == disk_id) {
+				disk_info = &node->node.disks[i];
+				break;
+			}
+		}
+		if (!disk_info) {
+			if (disk_num >= DISK_MAX)
+				return -EINVAL;
+			disk_info = &node->node.disks[disk_num];
+		}
+		disk_info->disk_id = disk_id;
+		disk_info->disk_space = num;
 	}
 	return 0;
 }
