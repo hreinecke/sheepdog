@@ -151,22 +151,24 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 	return 0;
 }
 
+static int etcd_set_int_attr(struct etcd_node *node, const char *attr,
+			     unsigned long num)
+{
+	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
+	size_t len;
+
+	len = snprintf(val, sizeof(val), "%lu", num);
+	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
+		node_to_str(&node->node), attr);
+	return etcd_kv_store(node->ctx, key, val, len);
+}
+
 static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
 {
 	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
 	size_t len;
 
-	if (!strcmp(attr, "nr_vnodes"))
-		len = snprintf(val, sizeof(val), "%u", node->node.nr_vnodes);
-	else if (!strcmp(attr, "zone"))
-		len = snprintf(val, sizeof(val), "%u", node->node.zone);
-	else if (!strcmp(attr, "space"))
-		len = snprintf(val, sizeof(val), "%lu", node->node.space);
-	else if (!strcmp(attr, "port"))
-		len = snprintf(val, sizeof(val), "%u", node->node.nid.port);
-	else if (!strcmp(attr, "io_port"))
-		len = snprintf(val, sizeof(val), "%u", node->node.nid.io_port);
-	else if (!strcmp(attr, "addr")) {
+	if (!strcmp(attr, "addr")) {
 		const char *addr = addr_to_str(node->node.nid.addr,
 					       node->node.nid.port);
 		strcpy(val, addr);
@@ -184,9 +186,21 @@ static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
 	return etcd_kv_store(node->ctx, key, val, len);
 }
 
+static int etcd_set_disk_attr(struct etcd_node *node, int disk_num)
+{
+	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
+	size_t len;
+
+	len = snprintf(val, sizeof(val), "%lu",
+		       node->node.disks[disk_num].disk_space);
+	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/disks/%lu",
+		node_to_str(&node->node), node->node.disks[disk_num].disk_id);
+	return etcd_kv_store(node->ctx, key, val, len);
+}
+
 static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 {
-	int rc;
+	int rc, i;
 
 	if (create && etcd_node_exists(node->ctx, node_to_str(&node->node)))
 		return -EEXIST;
@@ -196,21 +210,28 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 	rc = etcd_set_node_attr(node, "io_addr");
 	if (rc < 0)
 		return rc;
-	rc = etcd_set_node_attr(node, "port");
+	rc = etcd_set_int_attr(node, "port", node->node.nid.port);
 	if (rc < 0)
 		return rc;
-	rc = etcd_set_node_attr(node, "io_port");
+	rc = etcd_set_int_attr(node, "io_port", node->node.nid.io_port);
 	if (rc < 0)
 		return rc;
-	rc = etcd_set_node_attr(node, "zone");
+	rc = etcd_set_int_attr(node, "zone", node->node.zone);
 	if (rc < 0)
 		return rc;
-	rc = etcd_set_node_attr(node, "nr_vnodes");
+	rc = etcd_set_int_attr(node, "nr_vnodes", node->node.nr_vnodes);
 	if (rc < 0)
 		goto out_cleanup;
-	rc = etcd_set_node_attr(node, "space");
+	rc = etcd_set_int_attr(node, "space", node->node.space);
 	if (rc < 0)
 		goto out_cleanup;
+	for (i = 0; i < DISK_MAX; i++) {
+		if (!node->node.disks[i].disk_id)
+			continue;
+		rc = etcd_set_disk_attr(node, i);
+		if (rc < 0)
+			goto out_cleanup;
+	}
 	return 0;
 out_cleanup:
 	etcd_node_delete(node);
