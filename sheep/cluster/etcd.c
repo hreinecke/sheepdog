@@ -61,12 +61,33 @@ const char *etcd_event_names[] = {
 	[EVENT_UPDATE_NODE] = "update-node",
 };
 
+enum etcd_node_attr_type {
+	ATTR_ADDR = 1 << 0,
+	ATTR_IO_ADDR = 1 << 1,
+	ATTR_ZONE = 1 << 2,
+	ATTR_NR_VNODES = 1 << 3,
+	ATTR_SPACE = 1 << 4,
+	ATTR_PORT = 1 << 5,
+	ATTR_IO_PORT = 1 << 6,
+};
+
+const char *etcd_node_attr_names[] = {
+	[ATTR_ADDR] = "addr",
+	[ATTR_IO_ADDR] = "io_addr",
+	[ATTR_ZONE] = "zone",
+	[ATTR_NR_VNODES] = "nr_vnodes",
+	[ATTR_SPACE] = "space",
+	[ATTR_PORT] = "port",
+	[ATTR_IO_PORT] = "io_port",
+};
+
 struct etcd_node {
 	struct list_node list;
 	struct rb_node rb;
 	struct etcd_ctx *ctx;
 	char node_id[MAX_NODE_STR_LEN];
 	struct sd_node node;
+	unsigned int attr_mask;
 	bool callbacked;
 	bool gone;
 };
@@ -80,6 +101,19 @@ static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 
 static struct etcd_node this_node;
 static struct etcd_ctx *this_ctx;
+
+static enum etcd_node_attr_type etcd_attr_to_type(const char *attr)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(etcd_node_attr_names); i++) {
+		if (!etcd_node_attr_names[i])
+			continue;
+		if (!strcmp(attr, etcd_node_attr_names[i]))
+			return i;
+	}
+	return 0;
+}
 
 static inline bool etcd_node_exists(struct etcd_ctx *ctx, const char *node_id)
 {
@@ -108,6 +142,7 @@ static inline int etcd_node_delete(struct etcd_node *node)
 static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 {
 	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN], *eptr;
+	enum etcd_node_attr_type attr_type = 0;
 	unsigned long num;
 	int rc, len;
 
@@ -116,38 +151,53 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 	rc = etcd_kv_get(node->ctx, key, val, sizeof(val));
 	if (rc < 0)
 		return rc;
-	if (!strcmp(attr, "addr")) {
+	attr_type = etcd_attr_to_type(attr);
+	if (!attr_type) {
+		sd_warn("%s: invalid attribute '%s'", __func__, attr);
+		return -EINVAL;
+	}
+	if (attr_type == ATTR_ADDR) {
 		len = sizeof(node->node.nid.addr);
 		if (rc < len)
 			len = rc;
 		if (!str_to_addr(val, node->node.nid.addr))
 			return -EINVAL;
+		node->attr_mask |= attr_type;
 		return 0;
 	}
-	if (!strcmp(attr, "io_addr")) {
+	if (attr_type == ATTR_IO_ADDR) {
 		len = sizeof(node->node.nid.io_addr);
 		if (rc < len)
 			len = rc;
 		if (!str_to_addr(val, node->node.nid.io_addr))
 			return -EINVAL;
+		node->attr_mask |= attr_type;
 		return 0;
 	}
 	errno = 0;
 	num = strtoul(val, &eptr, 10);
 	if (errno || val == eptr)
 		return -ERANGE;
-	if (!strcmp(attr, "zone"))
+	switch (attr_type) {
+	case ATTR_ZONE:
 		node->node.zone = num;
-	else if (!strcmp(attr, "nr_vnodes"))
+		break;
+	case ATTR_NR_VNODES:
 		node->node.nr_vnodes = num;
-	else if (!strcmp(attr, "space"))
+		break;
+	case ATTR_SPACE:
 		node->node.space = num;
-	else if (!strcmp(attr, "port"))
+		break;
+	case ATTR_PORT:
 		node->node.nid.port = num;
-	else if (!strcmp(attr, "io_port"))
+		break;
+	case ATTR_IO_PORT:
 		node->node.nid.io_port = num;
-	else
+		break;
+	default:
 		return -EINVAL;
+	}
+	node->attr_mask |= attr_type;
 	return 0;
 }
 
@@ -204,27 +254,43 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 
 	if (create && etcd_node_exists(node->ctx, node_to_str(&node->node)))
 		return -EEXIST;
-	rc = etcd_set_node_attr(node, "addr");
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_node_attr(node, "io_addr");
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_int_attr(node, "port", node->node.nid.port);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_int_attr(node, "io_port", node->node.nid.io_port);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_int_attr(node, "zone", node->node.zone);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_int_attr(node, "nr_vnodes", node->node.nr_vnodes);
-	if (rc < 0)
-		goto out_cleanup;
-	rc = etcd_set_int_attr(node, "space", node->node.space);
-	if (rc < 0)
-		goto out_cleanup;
+	for (i = 0; i < ARRAY_SIZE(etcd_node_attr_names); i++) {
+		if (!etcd_node_attr_names[i])
+			continue;
+		switch (i) {
+		case ATTR_ADDR:
+			rc = etcd_set_node_attr(node, "addr");
+			break;
+		case ATTR_IO_ADDR:
+			rc = etcd_set_node_attr(node, "io_addr");
+			break;
+		case ATTR_ZONE:
+			rc = etcd_set_int_attr(node, "zone",
+					       node->node.zone);
+			break;
+		case ATTR_NR_VNODES:
+			rc = etcd_set_int_attr(node, "nr_vnodes",
+					       node->node.nr_vnodes);
+			break;
+		case ATTR_SPACE:
+			rc = etcd_set_int_attr(node, "space",
+					       node->node.space);
+			break;
+		case ATTR_PORT:
+			rc = etcd_set_int_attr(node, "port",
+					       node->node.nid.port);
+			break;
+		case ATTR_IO_PORT:
+			rc = etcd_set_int_attr(node, "io_port",
+					       node->node.nid.io_port);
+			break;
+		default:
+			rc = -EINVAL;
+			break;
+		}
+		if (rc < 0)
+			return rc;
+	}
 	for (i = 0; i < DISK_MAX; i++) {
 		if (!node->node.disks[i].disk_id)
 			continue;
@@ -355,12 +421,13 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	num_kvs = etcd_kv_range(ctx, base, &kvs);
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
+		struct etcd_node node_key;
 		char key[MAX_NODE_STR_LEN], *a;
 
-		strcpy(key, kv->key + strlen(base));
-		a = strchr(key, '/');
+		strcpy(node_key.node_id, kv->key + strlen(base));
+		a = strchr(node_key.node_id, '/');
 		*a = '\0';
-		node = rb_search(root, node, rb, etcd_node_cmp);
+		node = rb_search(root, &node_key, rb, etcd_node_cmp);
 		if (!node) {
 			node = xzalloc(sizeof(*node));
 			strcpy(node->node_id, key);
@@ -555,7 +622,7 @@ static void etcd_handle_join(struct etcd_node *node,
 	sd_join_handler(&node->node, &node_root, nr_nodes, opaque);
 
 	sd_debug("I'm the master now");
-	etcd_update_event(EVENT_ACCEPT, &this_node, NULL, 0);
+	etcd_update_event(EVENT_ACCEPT, &this_node, opaque, opaque_len);
 }
 
 static void etcd_handle_leave(struct etcd_node *node)
@@ -635,7 +702,7 @@ static void etcd_handle_notify(struct etcd_node *node,
 	sd_notify_handler(&node->node, opaque, opaque_len);
 }
 
-void etcd_watch_cb(void *arg, struct etcd_kv *kv)
+static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
 	struct etcd_node *node;
@@ -717,7 +784,7 @@ static void delete_conn(void *arg)
 	etcd_conn_delete(conn);
 }
 
-static void *etcd_watcher(void *arg)
+static void *etcd_event_watcher(void *arg)
 {
 	struct etcd_ctx *ctx = arg;
 	struct etcd_conn_ctx *conn = NULL;;
@@ -733,7 +800,7 @@ static void *etcd_watcher(void *arg)
 
 	memset(&ev, 0, sizeof(ev));
 	ev.ev_revision = start_revision;
-	ev.watch_cb = etcd_watch_cb;
+	ev.watch_cb = etcd_event_watch_cb;
 	ev.watch_arg = conn->ctx;
 
 	for (;;) {
@@ -783,7 +850,7 @@ static int etcd_cluster_init(const char *option)
 	}
 	sd_info("node %s addr %s id %s", this_ctx->node_name,
 		addr, this_ctx->node_id);
-	ret = sd_thread_create("etcd", &t, etcd_watcher, this_ctx);
+	ret = sd_thread_create("etcd", &t, etcd_event_watcher, this_ctx);
 	if (ret) {
 		sd_err("failed to start etcd, error %d", ret);
 		return -1;
