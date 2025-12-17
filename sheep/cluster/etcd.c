@@ -117,7 +117,7 @@ static enum etcd_node_attr_type etcd_attr_to_type(const char *attr)
 
 static inline bool etcd_node_exists(struct etcd_ctx *ctx, const char *node_id)
 {
-	char path[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
+	char path[1024], val[MAX_NODE_STR_LEN];
 	int rc;
 
 	snprintf(path, sizeof(path),
@@ -131,23 +131,23 @@ static inline bool etcd_node_exists(struct etcd_ctx *ctx, const char *node_id)
 
 static inline int etcd_node_delete(struct etcd_node *node)
 {
-	char key[MAX_NODE_STR_LEN];
+	char key[1024];
 
-	snprintf(key, sizeof(key),
-		 DEFAULT_BASE MEMBER_ZNODE "%s",
-		 node_to_str(&node->node));
+	strcpy(key, DEFAULT_BASE);
+	strcat(key, MEMBER_ZNODE);
+	strcat(key, node->node_id);
 	return etcd_kv_delete(node->ctx, key);
 }
 
 static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 {
-	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN], *eptr;
+	char key[1024], val[MAX_NODE_STR_LEN], *eptr;
 	enum etcd_node_attr_type attr_type = 0;
 	unsigned long num;
 	int rc, len;
 
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
-		 node_to_str(&node->node), attr);
+		 node->node_id, attr);
 	rc = etcd_kv_get(node->ctx, key, val, sizeof(val));
 	if (rc < 0)
 		return rc;
@@ -204,18 +204,18 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 static int etcd_set_int_attr(struct etcd_node *node, const char *attr,
 			     unsigned long num)
 {
-	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
+	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
 
 	len = snprintf(val, sizeof(val), "%lu", num);
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
-		node_to_str(&node->node), attr);
+		 node->node_id, attr);
 	return etcd_kv_store(node->ctx, key, val, len);
 }
 
 static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
 {
-	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
+	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
 
 	if (!strcmp(attr, "addr")) {
@@ -232,19 +232,19 @@ static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
 		return -EINVAL;
 
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
-		node_to_str(&node->node), attr);
+		node->node_id, attr);
 	return etcd_kv_store(node->ctx, key, val, len);
 }
 
 static int etcd_set_disk_attr(struct etcd_node *node, int disk_num)
 {
-	char key[MAX_NODE_STR_LEN], val[MAX_NODE_STR_LEN];
+	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
 
 	len = snprintf(val, sizeof(val), "%lu",
 		       node->node.disks[disk_num].disk_space);
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/disks/%lu",
-		node_to_str(&node->node), node->node.disks[disk_num].disk_id);
+		node->node_id, node->node.disks[disk_num].disk_id);
 	return etcd_kv_store(node->ctx, key, val, len);
 }
 
@@ -252,7 +252,7 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 {
 	int rc, i;
 
-	if (create && etcd_node_exists(node->ctx, node_to_str(&node->node)))
+	if (create && etcd_node_exists(node->ctx, node->node_id))
 		return -EEXIST;
 	for (i = 0; i < ARRAY_SIZE(etcd_node_attr_names); i++) {
 		if (!etcd_node_attr_names[i])
@@ -310,6 +310,10 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	char *attr;
 	size_t len;
 	unsigned long num;
+	int attr_type;
+	struct disk_info *disk_info = NULL;
+	unsigned long disk_id;
+	int i, disk_num = -1;
 
 	attr = strrchr(kv->key, '/');
 	if (!attr) {
@@ -319,13 +323,14 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	}
 	attr++;
 	len = kv->value_len;
-	if (!strcmp(attr, "addr")) {
+	attr_type = etcd_attr_to_type(attr);
+	if (attr_type == ATTR_ADDR) {
 		if (len > sizeof(node->node.nid.addr))
 			len = sizeof(node->node.nid.addr);
 		memcpy(node->node.nid.addr, kv->value, len);
 		return 0;
 	}
-	if (!strcmp(attr, "io_addr")) {
+	if (attr_type == ATTR_IO_ADDR) {
 		if (len > sizeof(node->node.nid.io_addr))
 			len = sizeof(node->node.nid.io_addr);
 		memcpy(node->node.nid.io_addr, kv->value, len);
@@ -338,62 +343,67 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		sd_debug("%s: parsing error on '%s'", __func__, kv->value);
 		return -errno;
 	}
-	if (!strcmp(attr, "zone"))
+	switch (attr_type) {
+	case ATTR_ZONE:
 		node->node.zone = num;
-	else if (!strcmp(attr, "nr_vnodes"))
+		return 0;
+	case ATTR_NR_VNODES:
 		node->node.nr_vnodes = num;
-	else if (!strcmp(attr, "space"))
+		return 9;
+	case ATTR_SPACE:
 		node->node.space = num;
-	else if (!strcmp(attr, "port"))
+		return 0;
+	case ATTR_PORT:
 		node->node.nid.port = num;
-	else if (!strcmp(attr, "io_port"))
+		return 9;
+	case ATTR_IO_PORT:
 		node->node.nid.io_port = num;
+		return 0;
 #ifdef HAVE_ACCELIO
-	else if (!strcmp(attr, "io_transport_type"))
+	case ATTR_TRANSPORT:
 		node->node.nid.io_transport_type = num;
+		return 0;
 #endif
-	else {
-		struct disk_info *disk_info = NULL;
-		unsigned long disk_id;
-		int i, disk_num = -1;
-
-		if (!strstr(kv->key, "disks")) {
-			sd_debug("%s: unhandled attribute '%s'",
-				 __func__, attr);
-			return -EINVAL;
-		}
-		disk_id = strtoul(attr, NULL, 10);
-		for (i = 0; i < DISK_MAX; i++) {
-			if (!node->node.disks[i].disk_id) {
-				if (disk_num == -1)
-					disk_num = i;
-				continue;
-			}
-			if (node->node.disks[i].disk_id == disk_id) {
-				disk_info = &node->node.disks[i];
-				break;
-			}
-		}
-		if (!disk_info) {
-			if (disk_num >= DISK_MAX)
-				return -EINVAL;
-			disk_info = &node->node.disks[disk_num];
-		}
-		disk_info->disk_id = disk_id;
-		disk_info->disk_space = num;
+	default:
+		break;
 	}
+
+	if (!strstr(kv->key, "disks")) {
+		sd_debug("%s: unhandled attribute '%s'",
+			 __func__, attr);
+		return -EINVAL;
+	}
+	disk_id = strtoul(attr, NULL, 10);
+	for (i = 0; i < DISK_MAX; i++) {
+		if (!node->node.disks[i].disk_id) {
+			if (disk_num == -1)
+				disk_num = i;
+			continue;
+		}
+		if (node->node.disks[i].disk_id == disk_id) {
+			disk_info = &node->node.disks[i];
+			break;
+		}
+	}
+	if (!disk_info) {
+		if (disk_num >= DISK_MAX)
+			return -EINVAL;
+		disk_info = &node->node.disks[disk_num];
+	}
+	disk_info->disk_id = disk_id;
+	disk_info->disk_space = num;
+
 	return 0;
 }
 
-static inline int etcd_node_download(struct etcd_node *node,
-				     const char *node_id_str)
+static inline int etcd_node_download(struct etcd_node *node)
 {
-	char key[MAX_NODE_STR_LEN];
+	char key[1024];
 	struct etcd_kv *kvs;
 	int i, rc, num_kvs;
 
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/",
-		node_id_str);
+		 node->node_id);
 	num_kvs = etcd_kv_range(node->ctx, key, &kvs);
 	if (num_kvs < 0)
 		return num_kvs;
@@ -452,8 +462,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 
 static inline int etcd_node_is_master(struct etcd_node *node)
 {
-	char key[MAX_NODE_STR_LEN], *master = NULL;;
-	const char *id_str = node_to_str(&node->node);;
+	char key[1024], *master = NULL;;
 	struct etcd_kv *kvs;
 	int i, num_kvs;
 
@@ -466,7 +475,7 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 		char *id = kv->key + strlen(key);
 
 		if (i == 0 &&
-		    !strncmp(id, id_str, strlen(id_str)))
+		    !strncmp(id, node->node_id, strlen(node->node_id)))
 			continue;
 		master = id;
 		break;
@@ -474,16 +483,16 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	etcd_kv_free(kvs, num_kvs);
 	if (!master)
 		return false;
-	return strncmp(master, id_str, strlen(id_str));
+	return strncmp(master, node->node_id, strlen(node->node_id));
 }
 
 static inline int etcd_event_create(struct etcd_node *node)
 {
-	char prefix[MAX_NODE_STR_LEN], key[MAX_NODE_STR_LEN];
+	char prefix[1024], key[MAX_NODE_STR_LEN];
 	int rc = 0, i;
 
 	snprintf(prefix, sizeof(prefix), DEFAULT_BASE EV_ZNODE "%s/",
-		 node_to_str(&node->node));
+		 node->node_id);
 	memset(key, 0, sizeof(key));
 	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
 		if (!etcd_event_names[i])
@@ -501,17 +510,17 @@ static inline int etcd_event_create(struct etcd_node *node)
 
 static inline bool etcd_event_delete(struct etcd_node *node)
 {
-	char key[MAX_NODE_STR_LEN];
+	char key[1024];
 
 	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s/",
-		 node_to_str(&node->node));
+		 node->node_id);
 	return etcd_kv_delete(node->ctx, key);
 }
 
 static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
 			     void *buf, size_t buf_len)
 {
-	char key[MAX_NODE_STR_LEN];
+	char key[1024];
 	const char *event;
 	int rc;
 
@@ -521,7 +530,7 @@ static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
 		return -EINVAL;
 	}
 	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s/%s",
-		 node_to_str(&node->node), event);
+		 node->node_id, event);
 
 	rc = etcd_kv_store(node->ctx, key, buf, buf_len);
 	if (rc < 0) {
@@ -705,16 +714,17 @@ static void etcd_handle_notify(struct etcd_node *node,
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
-	struct etcd_node *node;
-	char *key, *event;
+	struct etcd_node node;
+	char *event;
 	const char *base = DEFAULT_BASE EV_ZNODE;
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
 	int rc, i;
 
 	if (strncmp(kv->key, base, strlen(base)))
 		return;
-	key = kv->key + strlen(base);
-	event = strchr(key, '/');
+	node.ctx = ctx;
+	strcpy(node.node_id, kv->key + strlen(base));
+	event = strchr(node.node_id, '/');
 	if (!event)
 		return;
 	*event++ = '\0';
@@ -727,37 +737,35 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	sd_debug("%s: event %s (%d) key %s", __func__, event, type, key);
+	sd_debug("%s: event %s (%d) key %s",
+		 __func__, event, type, node.node_id);
 	if (kv->deleted && type != EVENT_LEAVE)
 		return;
 
-	if (!etcd_node_exists(ctx, key))
+	if (!etcd_node_exists(ctx, node.node_id))
 		return;
 
-	node = xzalloc(sizeof(*node));
-	node->ctx = ctx;
-
-	rc = etcd_node_download(node, key);
+	rc = etcd_node_download(&node);
 	if (rc < 0)
 		return;
 	switch (type) {
 	case EVENT_JOIN:
-		etcd_handle_join(node, kv->value, kv->value_len);
+		etcd_handle_join(&node, kv->value, kv->value_len);
 		break;
 	case EVENT_ACCEPT:
-		etcd_handle_accept(node, kv->value, kv->value_len);
+		etcd_handle_accept(&node, kv->value, kv->value_len);
 		break;
 	case EVENT_LEAVE:
-		etcd_handle_leave(node);
+		etcd_handle_leave(&node);
 		break;
 	case EVENT_BLOCK:
-		etcd_handle_block(node);
+		etcd_handle_block(&node);
 		break;
 	case EVENT_UNBLOCK:
-		etcd_handle_unblock(node, kv->value, kv->value_len);
+		etcd_handle_unblock(&node, kv->value, kv->value_len);
 		break;
 	case EVENT_NOTIFY:
-		etcd_handle_notify(node, kv->value, kv->value_len);
+		etcd_handle_notify(&node, kv->value, kv->value_len);
 		break;
 	case EVENT_UPDATE_NODE:
 		break;
