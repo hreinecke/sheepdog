@@ -28,9 +28,8 @@
 #define SESSION_TIMEOUT 30000		/* millisecond */
 
 #define DEFAULT_BASE "sheepdog/"
-#define QUEUE_ZNODE "queue/"
 #define MEMBER_ZNODE "member/"
-#define MASTER_ZNODE "master/"
+#define CLUSTER_ZNODE "cluster/"
 #define LOCK_ZNODE "lock/"
 #define SEQ_ZNODE "seq/"
 #define EV_ZNODE "events/"
@@ -418,6 +417,94 @@ static inline int etcd_node_download(struct etcd_node *node)
 	return 0;
 }
 
+static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
+			       unsigned long num)
+{
+	char key[1024], val[MAX_NODE_STR_LEN];
+	size_t len;
+
+	len = snprintf(val, sizeof(val), "%lu", num);
+	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
+	return etcd_kv_store(ctx, key, val, len);
+}
+
+static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo)
+{
+	int rc;
+
+	rc = etcd_set_cinfo_attr(ctx, "proto_ver", cinfo->proto_ver);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "disable_recovery",
+				 cinfo->disable_recovery);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "nr_nodes", cinfo->nr_nodes);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "epoch", cinfo->epoch);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "ctime", cinfo->ctime);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "flags", cinfo->flags);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "nr_copies", cinfo->nr_copies);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "copy_policy", cinfo->copy_policy);
+	if (rc < 0)
+		return rc;
+	rc = etcd_set_cinfo_attr(ctx, "block_size_shift",
+				 cinfo->block_size_shift);
+	return rc;
+}
+
+static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
+{
+	char key[1024];
+	struct etcd_kv *kvs;
+	int num_kvs, i;
+
+	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
+	num_kvs = etcd_kv_range(ctx, key, &kvs);
+	if (num_kvs < 0)
+		return num_kvs;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		unsigned long val;
+		char *name;
+
+		val = strtoul(kv->value, NULL, 10);
+		name = strrchr(kv->key, '/');
+		if (!strcmp(name, "/proto_ver"))
+			cinfo->proto_ver = val;
+		else if (!strcmp(name, "/disable_recovery"))
+			cinfo->disable_recovery = val;
+		else if (!strcmp(name, "/nr_nodes"))
+			cinfo->nr_nodes = val;
+		else if (!strcmp(name, "epoch"))
+			cinfo->epoch = val;
+		else if (!strcmp(name, "ctime"))
+			cinfo->ctime = val;
+		else if (!strcmp(name, "flags"))
+			cinfo->flags = val;
+		else if (!strcmp(name, "nr_copies"))
+			cinfo->flags = val;
+		else if (!strcmp(name, "copy_policy"))
+			cinfo->copy_policy = val;
+		else if (!strcmp(name, "block_size_shift"))
+			cinfo->block_size_shift = val;
+		else
+			sd_warn("%s: invalid attribute '%s'",
+				__func__, kv->value);
+	}
+	etcd_kv_free(kvs, num_kvs);
+	return 0;
+}
+
 static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 {
 	size_t num_kvs, nr_nodes = 0;
@@ -633,10 +720,11 @@ static void etcd_handle_join(struct etcd_node *node,
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 	}
 	sd_debug("sender: %s", node_to_str(&node->node));
-	sd_join_handler(&node->node, &sd_root, nr_nodes, opaque);
+	if (sd_join_handler(&node->node, &sd_root, nr_nodes, opaque)) {
+		sd_debug("I'm the master now");
+		etcd_update_event(EVENT_ACCEPT, &this_node, opaque, opaque_len);
+	}
 	rb_destroy(&node_root, struct etcd_node, rb);
-	sd_debug("I'm the master now");
-	etcd_update_event(EVENT_ACCEPT, &this_node, opaque, opaque_len);
 }
 
 static void etcd_handle_leave(struct etcd_node *node)
@@ -664,6 +752,7 @@ static void etcd_handle_accept(struct etcd_node *node,
 {
 	struct rb_root node_root, sd_root;
 	struct etcd_node *enode;
+	struct cluster_info cinfo;
 	int nr_nodes;
 
 	INIT_RB_ROOT(&node_root);
@@ -677,7 +766,9 @@ static void etcd_handle_accept(struct etcd_node *node,
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(enode, &node_root, rb)
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
-	sd_accept_handler(&this_node.node, &sd_root, nr_nodes, opaque);
+	memset(&cinfo, 0, sizeof(cinfo));
+	etcd_cinfo_download(node->ctx, &cinfo);
+	sd_accept_handler(&this_node.node, &sd_root, nr_nodes, &cinfo);
 	rb_destroy(&node_root, struct etcd_node, rb);
 }
 
