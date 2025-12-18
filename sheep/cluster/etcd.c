@@ -85,6 +85,7 @@ struct etcd_node {
 	struct rb_node rb;
 	struct etcd_ctx *ctx;
 	char node_id[MAX_NODE_STR_LEN];
+	struct cluster_info *cinfo;
 	struct sd_node node;
 	unsigned int attr_mask;
 	bool callbacked;
@@ -428,10 +429,23 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 	return etcd_kv_store(ctx, key, val, len);
 }
 
-static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo)
+static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo,
+			     bool create)
 {
 	int rc;
 
+	if (create) {
+		char key[1024];
+		struct etcd_kv *kvs;
+
+		strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
+		rc = etcd_kv_range(ctx, key, &kvs);
+		if (rc < 0)
+			return rc;
+		etcd_kv_free(kvs, rc);
+		if (rc > 0)
+			return 0;
+	}
 	rc = etcd_set_cinfo_attr(ctx, "proto_ver", cinfo->proto_ver);
 	if (rc < 0)
 		return rc;
@@ -479,11 +493,12 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 
 		val = strtoul(kv->value, NULL, 10);
 		name = strrchr(kv->key, '/');
-		if (!strcmp(name, "/proto_ver"))
+		name++;
+		if (!strcmp(name, "proto_ver"))
 			cinfo->proto_ver = val;
-		else if (!strcmp(name, "/disable_recovery"))
+		else if (!strcmp(name, "disable_recovery"))
 			cinfo->disable_recovery = val;
-		else if (!strcmp(name, "/nr_nodes"))
+		else if (!strcmp(name, "nr_nodes"))
 			cinfo->nr_nodes = val;
 		else if (!strcmp(name, "epoch"))
 			cinfo->epoch = val;
@@ -499,7 +514,7 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 			cinfo->block_size_shift = val;
 		else
 			sd_warn("%s: invalid attribute '%s'",
-				__func__, kv->value);
+				__func__, kv->key);
 	}
 	etcd_kv_free(kvs, num_kvs);
 	return 0;
@@ -528,7 +543,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		node = rb_search(root, &node_key, rb, etcd_node_cmp);
 		if (!node) {
 			node = xzalloc(node_size);
-			strcpy(node->node_id, key);
+			strcpy(node->node_id, node_key.node_id);
 			rb_insert(root, node, rb, etcd_node_cmp);
 			nr_nodes++;
 		}
@@ -637,18 +652,27 @@ static void block_event_list_del(struct etcd_node *n)
 }
 
 static int etcd_join(const struct sd_node *myself,
-		   void *opaque, size_t opaque_len)
+		     void *opaque, size_t opaque_len)
 {
 	int rc;
+	struct cluster_info *cinfo = opaque;
 
+	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 	this_node.ctx = this_ctx;
 	this_node.node = *myself;
 	strcpy(this_node.node_id, node_to_str(myself));
+	this_node.cinfo = cinfo;
 
+	rc = etcd_cinfo_upload(this_ctx, cinfo, true);
+	if (rc < 0) {
+		sd_err("cluster init failed");
+		return rc;
+	}
 	rc = etcd_event_create(&this_node);
 	if (rc < 0) {
 		sd_err("event creation failed");
 		memset(&this_node.node, 0, sizeof(this_node.node));
+		return rc;
 	}
 	rc = etcd_node_upload(&this_node, true);
 	if (rc < 0) {
@@ -720,9 +744,11 @@ static void etcd_handle_join(struct etcd_node *node,
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 	}
 	sd_debug("sender: %s", node_to_str(&node->node));
-	if (sd_join_handler(&node->node, &sd_root, nr_nodes, opaque)) {
+	if (sd_join_handler(&node->node, &sd_root, nr_nodes,
+			    this_node.cinfo)) {
 		sd_debug("I'm the master now");
-		etcd_update_event(EVENT_ACCEPT, &this_node, opaque, opaque_len);
+		etcd_update_event(EVENT_ACCEPT, &this_node,
+				  this_node.cinfo, sizeof(struct cluster_info));
 	}
 	rb_destroy(&node_root, struct etcd_node, rb);
 }
