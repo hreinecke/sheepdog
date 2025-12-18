@@ -420,11 +420,11 @@ static inline int etcd_node_download(struct etcd_node *node)
 
 static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 {
-	size_t num_kvs, node_nr = 0;
+	size_t num_kvs, nr_nodes = 0;
 	struct etcd_node *node = NULL;
 	char base[MAX_NODE_STR_LEN];
-	char *cur_key = NULL;
 	struct etcd_kv *kvs;
+	int node_size = sizeof(*node) + sizeof(struct disk_info) * DISK_MAX;
 	int i, rc;
 
 	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
@@ -432,32 +432,30 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
 		struct etcd_node node_key;
-		char key[MAX_NODE_STR_LEN], *a;
+		char *key, *a;
 
-		strcpy(node_key.node_id, kv->key + strlen(base));
+		key = kv->key + strlen(base);
+		strcpy(node_key.node_id, key);
 		a = strchr(node_key.node_id, '/');
 		*a = '\0';
 		node = rb_search(root, &node_key, rb, etcd_node_cmp);
 		if (!node) {
-			node = xzalloc(sizeof(*node));
+			node = xzalloc(node_size);
 			strcpy(node->node_id, key);
 			rb_insert(root, node, rb, etcd_node_cmp);
+			nr_nodes++;
 		}
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
 			sd_err("%s: failed to load node attr '%s'",
-			       __func__, kv->key + strlen(base));
+			       __func__, key);
 			etcd_kv_free(kvs, num_kvs);
 			return rc;
 		}
 	}
-	rb_for_each_entry(node, root, rb)
-		node_nr++;
-	sd_debug("%s: %zu nodes", __func__, node_nr);
+	sd_debug("%s: %zu nodes", __func__, nr_nodes);
 	etcd_kv_free(kvs, num_kvs);
-	if (cur_key)
-		free(cur_key);
-	return node_nr;
+	return nr_nodes;
 }
 
 static inline int etcd_node_is_master(struct etcd_node *node)
@@ -465,6 +463,7 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	char key[1024], *master = NULL;;
 	struct etcd_kv *kvs;
 	int i, num_kvs;
+	bool is_master = false;
 
 	strcpy(key, DEFAULT_BASE MEMBER_ZNODE);
 	num_kvs = etcd_kv_range(node->ctx, key, &kvs);
@@ -474,16 +473,14 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 		struct etcd_kv *kv = &kvs[i];
 		char *id = kv->key + strlen(key);
 
-		if (i == 0 &&
-		    !strncmp(id, node->node_id, strlen(node->node_id)))
-			continue;
 		master = id;
 		break;
 	}
+	if (master &&
+	    !strncmp(master, node->node_id, strlen(node->node_id)))
+		is_master = true;
 	etcd_kv_free(kvs, num_kvs);
-	if (!master)
-		return false;
-	return strncmp(master, node->node_id, strlen(node->node_id));
+	return is_master;
 }
 
 static inline int etcd_event_create(struct etcd_node *node)
@@ -559,6 +556,7 @@ static int etcd_join(const struct sd_node *myself,
 
 	this_node.ctx = this_ctx;
 	this_node.node = *myself;
+	strcpy(this_node.node_id, node_to_str(myself));
 
 	rc = etcd_event_create(&this_node);
 	if (rc < 0) {
@@ -613,12 +611,15 @@ static int etcd_unblock(void *msg, size_t msg_len)
 static void etcd_handle_join(struct etcd_node *node,
 			     void *opaque, size_t opaque_len)
 {
-	struct rb_root node_root;
+	struct rb_root node_root, sd_root;
+	struct etcd_node *enode;
 	int nr_nodes;
 
 	INIT_RB_ROOT(&node_root);
 	if (!etcd_node_is_master(node)) {
 		/* Let's await master acking the join-request */
+		sd_debug("%s: node '%s' is not master", __func__,
+			 node->node_id);
 		return;
 	}
 
@@ -627,16 +628,21 @@ static void etcd_handle_join(struct etcd_node *node,
 		sd_err("%s: failed to build node list", __func__);
 		return;
 	}
+	INIT_RB_ROOT(&sd_root);
+	rb_for_each_entry(enode, &node_root, rb) {
+		rb_insert(&sd_root, &enode->node, rb, node_cmp);
+	}
 	sd_debug("sender: %s", node_to_str(&node->node));
-	sd_join_handler(&node->node, &node_root, nr_nodes, opaque);
-
+	sd_join_handler(&node->node, &sd_root, nr_nodes, opaque);
+	rb_destroy(&node_root, struct etcd_node, rb);
 	sd_debug("I'm the master now");
 	etcd_update_event(EVENT_ACCEPT, &this_node, opaque, opaque_len);
 }
 
 static void etcd_handle_leave(struct etcd_node *node)
 {
-	struct rb_root node_root;
+	struct rb_root node_root, sd_root;
+	struct etcd_node *enode;
 	int nr_nodes;
 
 	INIT_RB_ROOT(&node_root);
@@ -645,14 +651,19 @@ static void etcd_handle_leave(struct etcd_node *node)
 		sd_err("%s: failed to build node list", __func__);
 		return;
 	}
-	sd_leave_handler(&node->node, &node_root, nr_nodes);
+	INIT_RB_ROOT(&sd_root);
+	rb_for_each_entry(enode, &node_root, rb)
+		rb_insert(&sd_root, &enode->node, rb, node_cmp);
+	sd_leave_handler(&node->node, &sd_root, nr_nodes);
+	rb_destroy(&node_root, struct etcd_node, rb);
 	memset(&this_node.node, 0, sizeof(this_node.node));
 }
 
 static void etcd_handle_accept(struct etcd_node *node,
 			       void *opaque, size_t opaque_len)
 {
-	struct rb_root node_root;
+	struct rb_root node_root, sd_root;
+	struct etcd_node *enode;
 	int nr_nodes;
 
 	INIT_RB_ROOT(&node_root);
@@ -663,7 +674,11 @@ static void etcd_handle_accept(struct etcd_node *node,
 		sd_err("%s: failed to build node list", __func__);
 		return;
 	}
-	sd_accept_handler(&this_node.node, &node_root, nr_nodes, opaque);
+	INIT_RB_ROOT(&sd_root);
+	rb_for_each_entry(enode, &node_root, rb)
+		rb_insert(&sd_root, &enode->node, rb, node_cmp);
+	sd_accept_handler(&this_node.node, &sd_root, nr_nodes, opaque);
+	rb_destroy(&node_root, struct etcd_node, rb);
 }
 
 static void etcd_kick_block_event(void)
@@ -714,7 +729,7 @@ static void etcd_handle_notify(struct etcd_node *node,
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
-	struct etcd_node node;
+	struct etcd_node *node;
 	char *event;
 	const char *base = DEFAULT_BASE EV_ZNODE;
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
@@ -722,11 +737,14 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 
 	if (strncmp(kv->key, base, strlen(base)))
 		return;
-	node.ctx = ctx;
-	strcpy(node.node_id, kv->key + strlen(base));
-	event = strchr(node.node_id, '/');
-	if (!event)
+	node = xzalloc(sizeof(*node) + sizeof(struct disk_info) * DISK_MAX);
+	node->ctx = ctx;
+	strcpy(node->node_id, kv->key + strlen(base));
+	event = strchr(node->node_id, '/');
+	if (!event) {
+		free(node);
 		return;
+	}
 	*event++ = '\0';
 
 	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
@@ -738,42 +756,49 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		}
 	}
 	sd_debug("%s: event %s (%d) key %s",
-		 __func__, event, type, node.node_id);
-	if (kv->deleted && type != EVENT_LEAVE)
+		 __func__, event, type, node->node_id);
+	if (kv->deleted && type != EVENT_LEAVE) {
+		free(node);
 		return;
+	}
 
-	if (!etcd_node_exists(ctx, node.node_id))
+	if (!etcd_node_exists(ctx, node->node_id)) {
+		free(node);
 		return;
+	}
 
-	rc = etcd_node_download(&node);
-	if (rc < 0)
+	rc = etcd_node_download(node);
+	if (rc < 0) {
+		free(node);
 		return;
+	}
 	switch (type) {
 	case EVENT_JOIN:
-		etcd_handle_join(&node, kv->value, kv->value_len);
+		etcd_handle_join(node, kv->value, kv->value_len);
 		break;
 	case EVENT_ACCEPT:
-		etcd_handle_accept(&node, kv->value, kv->value_len);
+		etcd_handle_accept(node, kv->value, kv->value_len);
 		break;
 	case EVENT_LEAVE:
-		etcd_handle_leave(&node);
+		etcd_handle_leave(node);
 		break;
 	case EVENT_BLOCK:
-		etcd_handle_block(&node);
+		etcd_handle_block(node);
 		break;
 	case EVENT_UNBLOCK:
-		etcd_handle_unblock(&node, kv->value, kv->value_len);
+		etcd_handle_unblock(node, kv->value, kv->value_len);
 		break;
 	case EVENT_NOTIFY:
-		etcd_handle_notify(&node, kv->value, kv->value_len);
+		etcd_handle_notify(node, kv->value, kv->value_len);
 		break;
 	case EVENT_UPDATE_NODE:
 		break;
 	default:
 		sd_err("invalid event '%s'", kv->key);
+		free(node);
 		return;
 	}
-
+	free(node);
 	etcd_kick_block_event();
 }
 
