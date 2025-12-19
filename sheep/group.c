@@ -543,8 +543,9 @@ static void do_get_vdis(struct work *work)
 				sd_alert("failed to get vdi bitmap from %s",
 					 node_to_str(&w->joined));
 			else
-				panic("failed to get vdi bitmap from %s",
-				      node_to_str(&w->joined));
+				panic("failed to get vdi bitmap from %s, status %d",
+				      node_to_str(&w->joined),
+				      sys->cinfo.status);
 		}
 		return;
 	}

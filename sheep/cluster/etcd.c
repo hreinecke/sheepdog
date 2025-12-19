@@ -473,6 +473,13 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo,
 		return rc;
 	rc = etcd_set_cinfo_attr(ctx, "block_size_shift",
 				 cinfo->block_size_shift);
+	if (rc < 0)
+		return rc;
+
+	rc = etcd_set_cinfo_attr(ctx, "status",
+				 cinfo->status);
+	if (rc < 0)
+		return rc;
 	return rc;
 }
 
@@ -512,6 +519,8 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 			cinfo->copy_policy = val;
 		else if (!strcmp(name, "block_size_shift"))
 			cinfo->block_size_shift = val;
+		else if (!strcmp(name, "status"))
+			cinfo->status = val;
 		else
 			sd_warn("%s: invalid attribute '%s'",
 				__func__, kv->key);
@@ -795,7 +804,6 @@ static void etcd_handle_accept(struct etcd_node *node,
 	memset(&cinfo, 0, sizeof(cinfo));
 	etcd_cinfo_download(node->ctx, &cinfo);
 	sd_accept_handler(&this_node.node, &sd_root, nr_nodes, &cinfo);
-	rb_destroy(&node_root, struct etcd_node, rb);
 }
 
 static void etcd_kick_block_event(void)
@@ -872,8 +880,8 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	sd_debug("%s: event %s (%d) key %s",
-		 __func__, event, type, node->node_id);
+	sd_debug("%s: event %s (%d) key %s value_len %lu",
+		 __func__, event, type, node->node_id, kv->value_len);
 	if (kv->deleted && type != EVENT_LEAVE) {
 		free(node);
 		return;
