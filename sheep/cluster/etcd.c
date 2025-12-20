@@ -201,8 +201,8 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 	return 0;
 }
 
-static int etcd_set_int_attr(struct etcd_node *node, const char *attr,
-			     unsigned long num)
+static int etcd_node_set_int_attr(struct etcd_node *node, const char *attr,
+				  unsigned long num)
 {
 	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
@@ -210,10 +210,10 @@ static int etcd_set_int_attr(struct etcd_node *node, const char *attr,
 	len = snprintf(val, sizeof(val), "%lu", num);
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
 		 node->node_id, attr);
-	return etcd_kv_store(node->ctx, key, val, len);
+	return etcd_kv_new(node->ctx, key, val, len);
 }
 
-static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
+static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
 {
 	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
@@ -233,10 +233,10 @@ static int etcd_set_node_attr(struct etcd_node *node, const char *attr)
 
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
 		node->node_id, attr);
-	return etcd_kv_store(node->ctx, key, val, len);
+	return etcd_kv_new(node->ctx, key, val, len);
 }
 
-static int etcd_set_disk_attr(struct etcd_node *node, int disk_num)
+static int etcd_node_set_disk_attr(struct etcd_node *node, int disk_num)
 {
 	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
@@ -245,7 +245,7 @@ static int etcd_set_disk_attr(struct etcd_node *node, int disk_num)
 		       node->node.disks[disk_num].disk_space);
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/disks/%lu",
 		node->node_id, node->node.disks[disk_num].disk_id);
-	return etcd_kv_store(node->ctx, key, val, len);
+	return etcd_kv_new(node->ctx, key, val, len);
 }
 
 static inline bool etcd_node_upload(struct etcd_node *node, bool create)
@@ -259,30 +259,30 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 			continue;
 		switch (i) {
 		case ATTR_ADDR:
-			rc = etcd_set_node_attr(node, "addr");
+			rc = etcd_node_set_str_attr(node, "addr");
 			break;
 		case ATTR_IO_ADDR:
-			rc = etcd_set_node_attr(node, "io_addr");
+			rc = etcd_node_set_str_attr(node, "io_addr");
 			break;
 		case ATTR_ZONE:
-			rc = etcd_set_int_attr(node, "zone",
-					       node->node.zone);
+			rc = etcd_node_set_int_attr(node, "zone",
+						    node->node.zone);
 			break;
 		case ATTR_NR_VNODES:
-			rc = etcd_set_int_attr(node, "nr_vnodes",
-					       node->node.nr_vnodes);
+			rc = etcd_node_set_int_attr(node, "nr_vnodes",
+						    node->node.nr_vnodes);
 			break;
 		case ATTR_SPACE:
-			rc = etcd_set_int_attr(node, "space",
-					       node->node.space);
+			rc = etcd_node_set_int_attr(node, "space",
+						    node->node.space);
 			break;
 		case ATTR_PORT:
-			rc = etcd_set_int_attr(node, "port",
-					       node->node.nid.port);
+			rc = etcd_node_set_int_attr(node, "port",
+						    node->node.nid.port);
 			break;
 		case ATTR_IO_PORT:
-			rc = etcd_set_int_attr(node, "io_port",
-					       node->node.nid.io_port);
+			rc = etcd_node_set_int_attr(node, "io_port",
+						    node->node.nid.io_port);
 			break;
 		default:
 			rc = -EINVAL;
@@ -294,7 +294,7 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 	for (i = 0; i < DISK_MAX; i++) {
 		if (!node->node.disks[i].disk_id)
 			continue;
-		rc = etcd_set_disk_attr(node, i);
+		rc = etcd_node_set_disk_attr(node, i);
 		if (rc < 0)
 			goto out_cleanup;
 	}
@@ -529,7 +529,8 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 	return 0;
 }
 
-static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
+static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root,
+				struct etcd_node *test_node)
 {
 	size_t num_kvs, nr_nodes = 0;
 	struct etcd_node *node = NULL;
@@ -551,6 +552,9 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		*a = '\0';
 		node = rb_search(root, &node_key, rb, etcd_node_cmp);
 		if (!node) {
+			if (test_node &&
+			    !strcmp(node_key.node_id, test_node->node_id))
+				continue;
 			node = xzalloc(node_size);
 			strcpy(node->node_id, node_key.node_id);
 			rb_insert(root, node, rb, etcd_node_cmp);
@@ -755,7 +759,7 @@ static void etcd_handle_join(struct etcd_node *node,
 		return;
 	}
 
-	nr_nodes = etcd_build_node_list(node->ctx, &node_root);
+	nr_nodes = etcd_build_node_list(node->ctx, &node_root, node);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		return;
@@ -781,7 +785,7 @@ static void etcd_handle_leave(struct etcd_node *node)
 	int nr_nodes;
 
 	INIT_RB_ROOT(&node_root);
-	nr_nodes = etcd_build_node_list(node->ctx, &node_root);
+	nr_nodes = etcd_build_node_list(node->ctx, &node_root, NULL);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		return;
@@ -805,7 +809,7 @@ static void etcd_handle_accept(struct etcd_node *node,
 	INIT_RB_ROOT(&node_root);
 
 	sd_debug("ACCEPT");
-	nr_nodes = etcd_build_node_list(node->ctx, &node_root);
+	nr_nodes = etcd_build_node_list(node->ctx, &node_root, node);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		return;

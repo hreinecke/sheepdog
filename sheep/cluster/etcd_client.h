@@ -112,11 +112,12 @@ static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
 }
 
 static inline int etcd_kv_new(struct etcd_ctx *ctx, const char *key,
-			      const char *value)
+			      const char *value, size_t len)
 {
 	struct etcd_kv kv = {
 		.key = (char *)key,
 		.value = (char *)value,
+		.value_len = len,
 		.ignore_lease = false,
 		.lease = ctx->lease,
 	};
