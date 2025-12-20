@@ -349,13 +349,13 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		return 0;
 	case ATTR_NR_VNODES:
 		node->node.nr_vnodes = num;
-		return 9;
+		return 0;
 	case ATTR_SPACE:
 		node->node.space = num;
 		return 0;
 	case ATTR_PORT:
 		node->node.nid.port = num;
-		return 9;
+		return 0;
 	case ATTR_IO_PORT:
 		node->node.nid.io_port = num;
 		return 0;
@@ -415,7 +415,7 @@ static inline int etcd_node_download(struct etcd_node *node)
 			return rc;
 	}
 	etcd_kv_free(kvs, num_kvs);
-	return 0;
+	return num_kvs;
 }
 
 static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
@@ -896,20 +896,22 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	sd_debug("%s: event %s (%d) key %s value_len %lu",
-		 __func__, event, type, node->node_id, kv->value_len);
+	sd_debug("%s: event %s (%d) key %s value_len %lu deleted %d",
+		 __func__, event, type, node->node_id, kv->value_len,
+		kv->deleted);
 	if (kv->deleted && type != EVENT_LEAVE) {
-		free(node);
-		return;
-	}
-
-	if (!etcd_node_exists(ctx, node->node_id)) {
 		free(node);
 		return;
 	}
 
 	rc = etcd_node_download(node);
 	if (rc < 0) {
+		free(node);
+		return;
+	}
+	if (rc == 0) {
+		sd_debug("%s: node '%s' does not exist", __func__,
+			 node->node_id);
 		free(node);
 		return;
 	}
