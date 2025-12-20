@@ -573,7 +573,7 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 {
 	char key[1024], *master = NULL;;
 	struct etcd_kv *kvs;
-	int i, num_kvs;
+	int i, num_kvs, num_nodes = 0;;
 	bool is_master = false;
 
 	strcpy(key, DEFAULT_BASE MEMBER_ZNODE);
@@ -582,10 +582,22 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 		return num_kvs;
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
-		char *id = kv->key + strlen(key);
+		char *id = kv->key + strlen(key), *attr;
 
-		master = id;
-		break;
+		attr = strrchr(id, '/');
+		if (attr && !strcmp(attr, "space")) {
+			/*
+			 * The master node is the node
+			 * with the earliest creation date.
+			 * If we only have one node there
+			 * is no master.
+			 */
+			if (num_nodes > 0) {
+				master = id;
+				break;
+			}
+			num_nodes++;
+		}
 	}
 	if (master &&
 	    !strncmp(master, node->node_id, strlen(node->node_id)))
