@@ -319,6 +319,10 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	encoded_range = __b64enc(range, strlen(range));
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
+	json_object_object_add(post_obj, "sort_order",
+			       json_object_new_string("ASCEND"));
+	json_object_object_add(post_obj, "sort_target",
+			       json_object_new_string("CREATE"));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
 			   etcd_parse_kvs_response, &ev);
