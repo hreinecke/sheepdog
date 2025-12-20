@@ -25,7 +25,7 @@
 #include "rbtree.h"
 #include "etcd_client.h"
 
-#define SESSION_TIMEOUT 30000		/* millisecond */
+#define SESSION_TIMEOUT 30		/* seconds */
 
 #define DEFAULT_BASE "sheepdog/"
 #define MEMBER_ZNODE "member/"
