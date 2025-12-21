@@ -623,7 +623,7 @@ static inline int etcd_event_create(struct etcd_node *node)
 			continue;
 		strcpy(key, prefix);
 		strcat(key, etcd_event_names[i]);
-		rc = etcd_kv_store(node->ctx, key, NULL, 0);
+		rc = etcd_kv_new(node->ctx, key, NULL, 0);
 		if (rc < 0) {
 			etcd_kv_delete(node->ctx, prefix);
 			break;
@@ -996,6 +996,35 @@ static void *etcd_event_watcher(void *arg)
 	pthread_exit(NULL);
 }
 
+static void *etcd_lease_refresh(void *arg)
+{
+	struct etcd_ctx *ctx = arg;
+	struct etcd_conn_ctx *conn = NULL;;
+	int ret;
+
+	conn = etcd_conn_create(ctx);
+	if (!conn) {
+		pthread_exit(NULL);
+	}
+	pthread_cleanup_push(delete_conn, conn);
+
+	for (;;) {
+		ret = etcd_lease_keepalive(ctx);
+		if (ret < 0) {
+			sd_err("%s: failed to refresh lease, error %d",
+			       __func__, ret);
+			break;
+		}
+		sleep(ctx->ttl / 2);
+	}
+	pthread_cleanup_pop(1);
+
+	ret = pthread_detach(pthread_self());
+	if (ret)
+		sd_err("%s", strerror(ret));
+	pthread_exit(NULL);
+}
+
 static int etcd_cluster_init(const char *option)
 {
 	char *hosts, *to, *p;
@@ -1004,7 +1033,7 @@ static int etcd_cluster_init(const char *option)
 	char addr[MAX_NODE_STR_LEN];
 
 	if (!option) {
-		sd_err("You must specify zookeeper servers.");
+		sd_err("You must specify etcd client address.");
 		return -1;
 	}
 
@@ -1024,9 +1053,19 @@ static int etcd_cluster_init(const char *option)
 		sd_err("failed to initialize etcd '%s'", addr);
 		return -1;
 	}
+	ret = etcd_lease_grant(this_ctx);
+	if (ret < 0) {
+		sd_err("no lease granted, error %d", ret);
+		return -1;
+	}
+	ret = sd_thread_create("etcd-lease", &t, etcd_lease_refresh, this_ctx);
+	if (ret) {
+		sd_err("failed to start lease, error %d", ret);
+		return -1;
+	}
 	sd_info("node %s addr %s id %s", this_ctx->node_name,
 		addr, this_ctx->node_id);
-	ret = sd_thread_create("etcd", &t, etcd_event_watcher, this_ctx);
+	ret = sd_thread_create("etcd-watch", &t, etcd_event_watcher, this_ctx);
 	if (ret) {
 		sd_err("failed to start etcd, error %d", ret);
 		return -1;
