@@ -101,11 +101,12 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 
 static inline int etcd_kv_update(struct etcd_ctx *ctx, const char *key,
-				 const char *value)
+				 const char *value, size_t len)
 {
 	struct etcd_kv kv = {
 		.key = (char *)key,
 		.value = (char *)value,
+		.value_len = len,
 		.ignore_lease = true,
 	};
 	return etcd_kv_put(ctx, &kv);

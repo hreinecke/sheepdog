@@ -656,7 +656,7 @@ static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
 	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s/%s",
 		 node->node_id, event);
 
-	rc = etcd_kv_store(node->ctx, key, buf, buf_len);
+	rc = etcd_kv_update(node->ctx, key, buf, buf_len);
 	if (rc < 0) {
 		sd_err("failed, type: %d, %d", type, rc);
 		return SD_RES_CLUSTER_ERROR;
