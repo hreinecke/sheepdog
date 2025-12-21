@@ -89,7 +89,7 @@ struct etcd_node {
 	struct sd_node node;
 	unsigned int attr_mask;
 	bool callbacked;
-	bool gone;
+	bool init;
 };
 
 static LIST_HEAD(etcd_block_list);
@@ -688,6 +688,7 @@ static int etcd_join(const struct sd_node *myself,
 	strcpy(this_node.node_id, node_to_str(myself));
 	this_node.cinfo = cinfo;
 
+	this_node.init = true;
 	rc = etcd_cinfo_upload(this_ctx, cinfo, true);
 	if (rc < 0) {
 		sd_err("cluster init failed");
@@ -708,6 +709,8 @@ static int etcd_join(const struct sd_node *myself,
 			       DIV_ROUND_UP(etcd_timeout, 1000));
 		exit(1);
 	}
+	this_node.init = false;
+
 	rc = etcd_update_event(EVENT_JOIN, &this_node, opaque, opaque_len);
 	if (rc < 0) {
 		etcd_node_delete(&this_node);
@@ -895,6 +898,13 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			type = i;
 			break;
 		}
+	}
+	if (!strcmp(node->node_id, this_node.node_id) &&
+	    this_node.init) {
+		sd_debug("%s: event %s (%d) key %s ignored during init",
+			 __func__, event, type, node->node_id);
+		free(node);
+		return;
 	}
 	sd_debug("%s: event %s (%d) key %s value_len %lu deleted %d",
 		 __func__, event, type, node->node_id, kv->value_len,
