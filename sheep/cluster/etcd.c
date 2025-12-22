@@ -529,6 +529,112 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 	return 0;
 }
 
+static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
+{
+	const char *status_str;
+
+	switch (status) {
+	case SD_STATUS_OK:
+		status_str = "ok";
+		break;
+	case SD_STATUS_WAIT:
+		status_str = "wait";
+		break;
+	case SD_STATUS_SHUTDOWN:
+		status_str = "shutdown";
+		break;
+	case SD_STATUS_KILLED:
+		status_str = "killed";
+		break;
+	default:
+		return;
+	}
+	json_object_object_add(obj, "status",
+			       json_object_new_string(status_str));
+}
+
+#define _SET_CINFO_VAL(o, c, n) \
+	if ((c)->n) \
+		json_object_object_add(o, #n,		\
+			       json_object_new_int((c)->n))
+
+static void etcd_cinfo_to_json(struct cluster_info *cinfo,
+			      struct json_object *obj)
+{
+	const char *default_store = (const char *)cinfo->default_store;
+
+	_SET_CINFO_VAL(obj, cinfo, proto_ver);
+	if (cinfo->disable_recovery)
+		json_object_object_add(obj, "disable_recovery",
+				       json_object_new_boolean(cinfo->disable_recovery));
+	_SET_CINFO_VAL(obj, cinfo, epoch);
+	if (cinfo->ctime)
+		json_object_object_add(obj, "ctime",
+				       json_object_new_int64(cinfo->ctime));
+	_SET_CINFO_VAL(obj, cinfo, flags);
+	_SET_CINFO_VAL(obj, cinfo, nr_copies);
+	_SET_CINFO_VAL(obj, cinfo, copy_policy);
+	_SET_CINFO_VAL(obj, cinfo, block_size_shift);
+	etcd_status_to_json(obj, cinfo->status);
+	if (strlen(default_store))
+		json_object_object_add(obj, "default_store",
+				       json_object_new_string(default_store));
+}
+
+static int etcd_json_to_cinfo(struct json_object *obj,
+			       struct cluster_info *cinfo)
+{
+	struct json_object_iterator itb, ite;
+	int num_val = 0;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "proto_ver"))
+			cinfo->proto_ver = json_object_get_int(val_obj);
+		else if (!strcmp(key, "disable_recovery"))
+			cinfo->disable_recovery =
+				json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "epoch"))
+			cinfo->epoch = json_object_get_int(val_obj);
+		else if (!strcmp(key, "ctime"))
+			cinfo->ctime = json_object_get_int64(val_obj);
+		else if (!strcmp(key, "flags"))
+			cinfo->flags = json_object_get_int(val_obj);
+		else if (!strcmp(key, "nr_copies"))
+			cinfo->nr_copies = json_object_get_int(val_obj);
+		else if (!strcmp(key, "copy_policy"))
+			cinfo->copy_policy = json_object_get_int(val_obj);
+		else if (!strcmp(key, "block_size_shift"))
+			cinfo->block_size_shift = json_object_get_int(val_obj);
+		else if (!strcmp(key, "status")) {
+			const char *status = json_object_get_string(val_obj);
+
+			if (!strcmp(status, "ok"))
+				cinfo->status = SD_STATUS_OK;
+			else if (!strcmp(status, "wait"))
+				cinfo->status = SD_STATUS_WAIT;
+			else if (!strcmp(status, "shutdown"))
+				cinfo->status = SD_STATUS_SHUTDOWN;
+			else if (!strcmp(status, "killed"))
+				cinfo->status = SD_STATUS_KILLED;
+		} else if (!strcmp(key, "default_store"))
+			strcpy((char *)cinfo->default_store,
+			       json_object_get_string(val_obj));
+		else {
+			sd_warn("%s: unhandled key '%s'", __func__, key);
+			num_val--;
+		}
+		num_val++;
+		json_object_iter_next(&itb);
+	}
+	return num_val;
+}
+
 static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root,
 				struct etcd_node *test_node)
 {
@@ -642,7 +748,7 @@ static inline bool etcd_event_delete(struct etcd_node *node)
 }
 
 static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
-			     void *buf, size_t buf_len)
+			     const void *buf, size_t buf_len)
 {
 	char key[1024];
 	const char *event;
@@ -681,6 +787,8 @@ static int etcd_join(const struct sd_node *myself,
 {
 	int rc;
 	struct cluster_info *cinfo = opaque;
+	struct json_object *cinfo_obj;
+	const char *json_str;
 
 	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 	this_node.ctx = this_ctx;
@@ -710,13 +818,16 @@ static int etcd_join(const struct sd_node *myself,
 		exit(1);
 	}
 	this_node.init = false;
-
-	rc = etcd_update_event(EVENT_JOIN, &this_node, opaque, opaque_len);
+	cinfo_obj = json_object_new_object();
+	etcd_cinfo_to_json(cinfo, cinfo_obj);
+	json_str = json_object_to_json_string_ext(cinfo_obj,
+						  JSON_C_TO_STRING_PLAIN);
+	rc = etcd_update_event(EVENT_JOIN, &this_node, json_str, strlen(json_str));
 	if (rc < 0) {
 		etcd_node_delete(&this_node);
 		memset(&this_node.node, 0, sizeof(this_node.node));
 	}
-
+	json_object_put(cinfo_obj);
 	return rc;
 }
 
@@ -750,10 +861,19 @@ static int etcd_unblock(void *msg, size_t msg_len)
 static void etcd_handle_join(struct etcd_node *node,
 			     void *opaque, size_t opaque_len)
 {
+	struct json_object *obj;
+	struct cluster_info cinfo;
 	struct rb_root node_root, sd_root;
 	struct etcd_node *enode;
-	int nr_nodes;
+	int nr_nodes, ret;
 
+	memset(&cinfo, 0, sizeof(cinfo));
+	obj = json_tokener_parse(opaque);
+	ret = etcd_json_to_cinfo(obj, &cinfo);
+	if (!ret) {
+		sd_warn("%s: no elements parsed from opaque",
+			__func__);
+	}
 	INIT_RB_ROOT(&node_root);
 	if (!etcd_node_is_master(node)) {
 		/* Let's await master acking the join-request */
@@ -772,11 +892,18 @@ static void etcd_handle_join(struct etcd_node *node,
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 	}
 	sd_debug("sender: %s", node_to_str(&node->node));
-	if (sd_join_handler(&node->node, &sd_root, nr_nodes,
-			    this_node.cinfo)) {
+	if (sd_join_handler(&node->node, &sd_root, nr_nodes, &cinfo)) {
+		struct json_object *status_obj;
+		const char *json_str;
+
 		sd_debug("I'm the master now");
+		status_obj = json_object_new_object();
+		etcd_status_to_json(status_obj, cinfo.status);
+		json_str = json_object_to_json_string_ext(status_obj,
+							  JSON_C_TO_STRING_PLAIN);
 		etcd_update_event(EVENT_ACCEPT, &this_node,
-				  this_node.cinfo, sizeof(struct cluster_info));
+				  json_str, strlen(json_str));
+		json_object_put(status_obj);
 	}
 	rb_destroy(&node_root, struct etcd_node, rb);
 }
