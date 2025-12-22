@@ -599,6 +599,7 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 	if (cinfo->disable_recovery)
 		json_object_object_add(obj, "disable_recovery",
 				       json_object_new_boolean(cinfo->disable_recovery));
+	_SET_CINFO_VAL(obj, cinfo, nr_nodes);
 	_SET_CINFO_VAL(obj, cinfo, epoch);
 	if (cinfo->ctime)
 		json_object_object_add(obj, "ctime",
@@ -631,6 +632,8 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		else if (!strcmp(key, "disable_recovery"))
 			cinfo->disable_recovery =
 				json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "nr_nodes"))
+			cinfo->nr_nodes = json_object_get_int(val_obj);
 		else if (!strcmp(key, "epoch"))
 			cinfo->epoch = json_object_get_int(val_obj);
 		else if (!strcmp(key, "ctime"))
