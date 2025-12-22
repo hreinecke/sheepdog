@@ -80,6 +80,13 @@ const char *etcd_node_attr_names[] = {
 	[ATTR_IO_PORT] = "io_port",
 };
 
+const char *etcd_cinfo_status_names[] = {
+	[SD_STATUS_OK] = "ok",
+	[SD_STATUS_WAIT] = "wait",
+	[SD_STATUS_SHUTDOWN] = "shutdown",
+	[SD_STATUS_KILLED] = "killed",
+};
+
 struct etcd_node {
 	struct list_node list;
 	struct rb_node rb;
@@ -418,6 +425,28 @@ static inline int etcd_node_download(struct etcd_node *node)
 	return num_kvs;
 }
 
+static enum sd_status etcd_cinfo_status_to_type(const char *status_str)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(etcd_cinfo_status_names); i++) {
+		if (!etcd_cinfo_status_names[i])
+			continue;
+		if (!strcmp(status_str, etcd_cinfo_status_names[i]))
+			return i;
+	}
+	return 0;
+}
+
+static const char *etcd_cinfo_status_to_string(enum sd_status status)
+{
+	const char *status_str = NULL;
+
+	if (status < ARRAY_SIZE(etcd_cinfo_status_names))
+		status_str = etcd_cinfo_status_names[status];
+	return status_str;
+}
+
 static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 			       unsigned long num)
 {
@@ -427,6 +456,21 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 	len = snprintf(val, sizeof(val), "%lu", num);
 	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
 	return etcd_kv_store(ctx, key, val, len);
+}
+
+static int etcd_set_cinfo_status(struct etcd_ctx *ctx, const char *attr,
+				 enum sd_status status)
+{
+	const char *status_str;
+	char key[1024];
+	size_t len;
+
+	status_str = etcd_cinfo_status_to_string(status);
+	if (!status_str)
+		status_str = "unknown";
+	len = strlen(status_str);
+	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
+	return etcd_kv_store(ctx, key, status_str, len);
 }
 
 static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo,
@@ -476,8 +520,7 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo,
 	if (rc < 0)
 		return rc;
 
-	rc = etcd_set_cinfo_attr(ctx, "status",
-				 cinfo->status);
+	rc = etcd_set_cinfo_status(ctx, "status", cinfo->status);
 	if (rc < 0)
 		return rc;
 	return rc;
@@ -498,9 +541,13 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 		unsigned long val;
 		char *name;
 
-		val = strtoul(kv->value, NULL, 10);
 		name = strrchr(kv->key, '/');
 		name++;
+		if (!strcmp(name, "status")) {
+			cinfo->status = etcd_cinfo_status_to_type(kv->value);
+			continue;
+		}
+		val = strtoul(kv->value, NULL, 10);
 		if (!strcmp(name, "proto_ver"))
 			cinfo->proto_ver = val;
 		else if (!strcmp(name, "disable_recovery"))
@@ -519,8 +566,6 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 			cinfo->copy_policy = val;
 		else if (!strcmp(name, "block_size_shift"))
 			cinfo->block_size_shift = val;
-		else if (!strcmp(name, "status"))
-			cinfo->status = val;
 		else
 			sd_warn("%s: invalid attribute '%s'",
 				__func__, kv->key);
@@ -531,24 +576,11 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 
 static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 {
-	const char *status_str;
+	const char *status_str = etcd_cinfo_status_to_string(status);
 
-	switch (status) {
-	case SD_STATUS_OK:
-		status_str = "ok";
-		break;
-	case SD_STATUS_WAIT:
-		status_str = "wait";
-		break;
-	case SD_STATUS_SHUTDOWN:
-		status_str = "shutdown";
-		break;
-	case SD_STATUS_KILLED:
-		status_str = "killed";
-		break;
-	default:
+	if (!status_str)
 		return;
-	}
+
 	json_object_object_add(obj, "status",
 			       json_object_new_string(status_str));
 }
@@ -614,14 +646,7 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		else if (!strcmp(key, "status")) {
 			const char *status = json_object_get_string(val_obj);
 
-			if (!strcmp(status, "ok"))
-				cinfo->status = SD_STATUS_OK;
-			else if (!strcmp(status, "wait"))
-				cinfo->status = SD_STATUS_WAIT;
-			else if (!strcmp(status, "shutdown"))
-				cinfo->status = SD_STATUS_SHUTDOWN;
-			else if (!strcmp(status, "killed"))
-				cinfo->status = SD_STATUS_KILLED;
+			cinfo->status = etcd_cinfo_status_to_type(status);
 		} else if (!strcmp(key, "default_store"))
 			strcpy((char *)cinfo->default_store,
 			       json_object_get_string(val_obj));
@@ -879,12 +904,14 @@ static void etcd_handle_join(struct etcd_node *node,
 		/* Let's await master acking the join-request */
 		sd_debug("%s: node '%s' is not master", __func__,
 			 node->node_id);
+		json_object_put(obj);
 		return;
 	}
 
 	nr_nodes = etcd_build_node_list(node->ctx, &node_root, node);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
+		json_object_put(obj);
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
@@ -906,6 +933,7 @@ static void etcd_handle_join(struct etcd_node *node,
 		json_object_put(status_obj);
 	}
 	rb_destroy(&node_root, struct etcd_node, rb);
+	json_object_put(obj);
 }
 
 static void etcd_handle_leave(struct etcd_node *node)
@@ -932,24 +960,42 @@ static void etcd_handle_accept(struct etcd_node *node,
 			       void *opaque, size_t opaque_len)
 {
 	struct rb_root node_root, sd_root;
+	struct json_object *obj;
 	struct etcd_node *enode;
 	struct cluster_info cinfo;
-	int nr_nodes;
+	int nr_nodes, ret;
 
+	memset(&cinfo, 0, sizeof(cinfo));
+	obj = json_tokener_parse(opaque);
+	ret = etcd_json_to_cinfo(obj, &cinfo);
+	if (!ret) {
+		sd_warn("%s: no elements parsed from opaque",
+			__func__);
+	}
+	if (cinfo.status != SD_STATUS_OK) {
+		const char *status_str =
+			etcd_cinfo_status_to_string(cinfo.status);
+		sd_warn("%s: ACCEPT failed, status %s (%d)",
+			__func__, status_str, cinfo.status);
+		json_object_put(obj);
+		return;
+	}
 	INIT_RB_ROOT(&node_root);
 
 	sd_debug("ACCEPT");
 	nr_nodes = etcd_build_node_list(node->ctx, &node_root, node);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
+		json_object_put(obj);
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(enode, &node_root, rb)
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
-	memset(&cinfo, 0, sizeof(cinfo));
+
 	etcd_cinfo_download(node->ctx, &cinfo);
 	sd_accept_handler(&this_node.node, &sd_root, nr_nodes, &cinfo);
+	json_object_put(obj);
 }
 
 static void etcd_kick_block_event(void)
