@@ -591,7 +591,8 @@ static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 			       json_object_new_int((c)->n))
 
 static void etcd_cinfo_to_json(struct cluster_info *cinfo,
-			      struct json_object *obj)
+			       struct json_object *obj,
+			       struct etcd_node *node)
 {
 	const char *default_store = (const char *)cinfo->default_store;
 
@@ -612,10 +613,14 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 	if (strlen(default_store))
 		json_object_object_add(obj, "default_store",
 				       json_object_new_string(default_store));
+	if (node)
+		json_object_object_add(obj, "node",
+				       json_object_new_string(node->node_id));
 }
 
 static int etcd_json_to_cinfo(struct json_object *obj,
-			       struct cluster_info *cinfo)
+			      struct cluster_info *cinfo,
+			      struct etcd_node *node)
 {
 	struct json_object_iterator itb, ite;
 	int num_val = 0;
@@ -653,7 +658,16 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		} else if (!strcmp(key, "default_store"))
 			strcpy((char *)cinfo->default_store,
 			       json_object_get_string(val_obj));
-		else {
+		else if (node && !strcmp(key, "node")) {
+			int ret;
+
+			strcpy(node->node_id, json_object_get_string(val_obj));
+			ret = etcd_node_download(node);
+			if (ret < 0) {
+				sd_warn("%s: failed to download '%s'",
+					__func__, node->node_id);
+			}
+		} else {
 			sd_warn("%s: unhandled key '%s'", __func__, key);
 			num_val--;
 		}
@@ -744,28 +758,6 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	return is_master;
 }
 
-static inline int etcd_event_create(struct etcd_node *node)
-{
-	char prefix[1024], key[MAX_NODE_STR_LEN];
-	int rc = 0, i;
-
-	snprintf(prefix, sizeof(prefix), DEFAULT_BASE EV_ZNODE "%s/",
-		 node->node_id);
-	memset(key, 0, sizeof(key));
-	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
-		if (!etcd_event_names[i])
-			continue;
-		strcpy(key, prefix);
-		strcat(key, etcd_event_names[i]);
-		rc = etcd_kv_new(node->ctx, key, NULL, 0);
-		if (rc < 0) {
-			etcd_kv_delete(node->ctx, prefix);
-			break;
-		}
-	}
-	return rc;
-}
-
 static inline bool etcd_event_delete(struct etcd_node *node)
 {
 	char key[1024];
@@ -775,7 +767,7 @@ static inline bool etcd_event_delete(struct etcd_node *node)
 	return etcd_kv_delete(node->ctx, key);
 }
 
-static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
+static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 			     const void *buf, size_t buf_len)
 {
 	char key[1024];
@@ -787,10 +779,9 @@ static int etcd_update_event(enum etcd_event_type type, struct etcd_node *node,
 		sd_warn("%s: invalid type %d", __func__, type);
 		return -EINVAL;
 	}
-	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s/%s",
-		 node->node_id, event);
+	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s", event);
 
-	rc = etcd_kv_update(node->ctx, key, buf, buf_len);
+	rc = etcd_kv_store(ctx, key, buf, buf_len);
 	if (rc < 0) {
 		sd_err("failed, type: %d, %d", type, rc);
 		return SD_RES_CLUSTER_ERROR;
@@ -830,12 +821,6 @@ static int etcd_join(const struct sd_node *myself,
 		sd_err("cluster init failed");
 		return rc;
 	}
-	rc = etcd_event_create(&this_node);
-	if (rc < 0) {
-		sd_err("event creation failed");
-		memset(&this_node.node, 0, sizeof(this_node.node));
-		return rc;
-	}
 	rc = etcd_node_upload(&this_node, true);
 	if (rc < 0) {
 		etcd_event_delete(&this_node);
@@ -847,10 +832,11 @@ static int etcd_join(const struct sd_node *myself,
 	}
 	this_node.init = false;
 	cinfo_obj = json_object_new_object();
-	etcd_cinfo_to_json(cinfo, cinfo_obj);
+	etcd_cinfo_to_json(cinfo, cinfo_obj, &this_node);
 	json_str = json_object_to_json_string_ext(cinfo_obj,
 						  JSON_C_TO_STRING_PLAIN);
-	rc = etcd_update_event(EVENT_JOIN, &this_node, json_str, strlen(json_str));
+	rc = etcd_update_event(this_ctx, EVENT_JOIN,
+			       json_str, strlen(json_str));
 	if (rc < 0) {
 		etcd_node_delete(&this_node);
 		memset(&this_node.node, 0, sizeof(this_node.node));
@@ -862,56 +848,64 @@ static int etcd_join(const struct sd_node *myself,
 static int etcd_leave(void)
 {
 	int rc;
+	struct cluster_info cinfo;
+	struct json_object *cinfo_obj;
+	const char *json_str;
 
 	sd_info("leaving from cluster");
 	block_event_list_del(&this_node);
-	rc = etcd_event_delete(&this_node);
-	if (rc < 0)
-		return rc;
-	return etcd_node_delete(&this_node);
+	etcd_cinfo_download(this_ctx, &cinfo);
+	cinfo_obj = json_object_new_object();
+	etcd_cinfo_to_json(&cinfo, cinfo_obj, &this_node);
+	json_str = json_object_to_json_string_ext(cinfo_obj,
+						  JSON_C_TO_STRING_PLAIN);
+	rc = etcd_update_event(this_ctx, EVENT_LEAVE,
+			       json_str, strlen(json_str));
+	json_object_put(cinfo_obj);
+	return rc;
 }
 
 static int etcd_notify(void *msg, size_t msg_len)
 {
-	return etcd_update_event(EVENT_NOTIFY, &this_node, msg, msg_len);
+	return etcd_update_event(this_ctx, EVENT_NOTIFY, msg, msg_len);
 }
 
 static int etcd_block(void)
 {
-	return etcd_update_event(EVENT_BLOCK, &this_node, NULL, 0);
+	return etcd_update_event(this_ctx, EVENT_BLOCK, NULL, 0);
 }
 
 static int etcd_unblock(void *msg, size_t msg_len)
 {
-	return etcd_update_event(EVENT_UNBLOCK, &this_node, msg, msg_len);
+	return etcd_update_event(this_ctx, EVENT_UNBLOCK, msg, msg_len);
 }
 
-static void etcd_handle_join(struct etcd_node *node,
+static void etcd_handle_join(struct etcd_ctx *ctx,
 			     void *opaque, size_t opaque_len)
 {
 	struct json_object *obj;
 	struct cluster_info cinfo;
 	struct rb_root node_root, sd_root;
-	struct etcd_node *enode;
+	struct etcd_node joining, *enode;
 	int nr_nodes, ret;
 
 	memset(&cinfo, 0, sizeof(cinfo));
 	obj = json_tokener_parse(opaque);
-	ret = etcd_json_to_cinfo(obj, &cinfo);
+	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
 	INIT_RB_ROOT(&node_root);
-	if (!etcd_node_is_master(node)) {
+	if (!etcd_node_is_master(&this_node)) {
 		/* Let's await master acking the join-request */
 		sd_debug("%s: node '%s' is not master", __func__,
-			 node->node_id);
+			 this_node.node_id);
 		json_object_put(obj);
 		return;
 	}
 
-	nr_nodes = etcd_build_node_list(node->ctx, &node_root, node);
+	nr_nodes = etcd_build_node_list(ctx, &node_root, &joining);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		json_object_put(obj);
@@ -921,8 +915,8 @@ static void etcd_handle_join(struct etcd_node *node,
 	rb_for_each_entry(enode, &node_root, rb) {
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 	}
-	sd_debug("sender: %s", node_to_str(&node->node));
-	if (sd_join_handler(&node->node, &sd_root, nr_nodes, &cinfo)) {
+	sd_debug("sender: %s", joining.node_id);
+	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
 		struct json_object *status_obj;
 		const char *json_str;
 
@@ -931,7 +925,7 @@ static void etcd_handle_join(struct etcd_node *node,
 		etcd_status_to_json(status_obj, cinfo.status);
 		json_str = json_object_to_json_string_ext(status_obj,
 							  JSON_C_TO_STRING_PLAIN);
-		etcd_update_event(EVENT_ACCEPT, &this_node,
+		etcd_update_event(ctx, EVENT_ACCEPT,
 				  json_str, strlen(json_str));
 		json_object_put(status_obj);
 	}
@@ -939,14 +933,22 @@ static void etcd_handle_join(struct etcd_node *node,
 	json_object_put(obj);
 }
 
-static void etcd_handle_leave(struct etcd_node *node)
+static void etcd_handle_leave(void *opaque, int opaque_len)
 {
+	struct json_object *obj;
+	struct cluster_info cinfo;
 	struct rb_root node_root, sd_root;
-	struct etcd_node *enode;
-	int nr_nodes;
+	struct etcd_node *enode, leaving;
+	int nr_nodes, ret;
 
+	obj = json_tokener_parse(opaque);
+	ret = etcd_json_to_cinfo(obj, &cinfo, &leaving);
+	if (!ret) {
+		sd_warn("%s: no elements parsed from opaque",
+			__func__);
+	}
 	INIT_RB_ROOT(&node_root);
-	nr_nodes = etcd_build_node_list(node->ctx, &node_root, NULL);
+	nr_nodes = etcd_build_node_list(this_ctx, &node_root, NULL);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		return;
@@ -954,23 +956,22 @@ static void etcd_handle_leave(struct etcd_node *node)
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(enode, &node_root, rb)
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
-	sd_leave_handler(&node->node, &sd_root, nr_nodes);
+	sd_leave_handler(&leaving.node, &sd_root, nr_nodes);
 	rb_destroy(&node_root, struct etcd_node, rb);
 	memset(&this_node.node, 0, sizeof(this_node.node));
 }
 
-static void etcd_handle_accept(struct etcd_node *node,
-			       void *opaque, size_t opaque_len)
+static void etcd_handle_accept(void *opaque, size_t opaque_len)
 {
 	struct rb_root node_root, sd_root;
 	struct json_object *obj;
-	struct etcd_node *enode;
+	struct etcd_node *enode, joining;
 	struct cluster_info cinfo;
 	int nr_nodes, ret;
 
 	memset(&cinfo, 0, sizeof(cinfo));
 	obj = json_tokener_parse(opaque);
-	ret = etcd_json_to_cinfo(obj, &cinfo);
+	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
@@ -986,7 +987,7 @@ static void etcd_handle_accept(struct etcd_node *node,
 	INIT_RB_ROOT(&node_root);
 
 	sd_debug("ACCEPT");
-	nr_nodes = etcd_build_node_list(node->ctx, &node_root, node);
+	nr_nodes = etcd_build_node_list(this_ctx, &node_root, &joining);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		json_object_put(obj);
@@ -996,8 +997,8 @@ static void etcd_handle_accept(struct etcd_node *node,
 	rb_for_each_entry(enode, &node_root, rb)
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 
-	etcd_cinfo_download(node->ctx, &cinfo);
-	sd_accept_handler(&this_node.node, &sd_root, nr_nodes, &cinfo);
+	etcd_cinfo_download(this_ctx, &cinfo);
+	sd_accept_handler(&joining.node, &sd_root, nr_nodes, &cinfo);
 	json_object_put(obj);
 }
 
@@ -1012,20 +1013,19 @@ static void etcd_kick_block_event(void)
 		block->callbacked = sd_block_handler(&block->node);
 }
 
-static void etcd_handle_block(struct etcd_node *node)
+static void etcd_handle_block(void)
 {
 	struct etcd_node *block = xzalloc(sizeof(*block));
 
 	sd_debug("BLOCK");
-	block->node = node->node;
+	block->node = this_node.node;
 	list_add_tail(&block->list, &etcd_block_list);
 	block = list_first_entry(&etcd_block_list, typeof(*block), list);
 	if (!block->callbacked)
 		block->callbacked = sd_block_handler(&block->node);
 }
 
-static void etcd_handle_unblock(struct etcd_node *node,
-				void *opaque, size_t opaque_len)
+static void etcd_handle_unblock(void *opaque, size_t opaque_len)
 {
 	struct etcd_node *block;
 
@@ -1033,38 +1033,32 @@ static void etcd_handle_unblock(struct etcd_node *node,
 	if (list_empty(&etcd_block_list))
 		return;
 	block = list_first_entry(&etcd_block_list, typeof(*block), list);
-	sd_notify_handler(&node->node, opaque, opaque_len);
+	sd_notify_handler(&this_node.node, opaque, opaque_len);
 
 	list_del(&block->list);
 	free(block);
 }
 
-static void etcd_handle_notify(struct etcd_node *node,
-			       void *opaque, size_t opaque_len)
+static void etcd_handle_notify(void *opaque, size_t opaque_len)
 {
 	sd_debug("NOTIFY");
-	sd_notify_handler(&node->node, opaque, opaque_len);
+	sd_notify_handler(&this_node.node, opaque, opaque_len);
 }
 
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
-	struct etcd_node *node;
 	char *event;
 	const char *base = DEFAULT_BASE EV_ZNODE;
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
-	int rc, i;
+	int i;
 
 	if (strncmp(kv->key, base, strlen(base)))
 		return;
-	node = xzalloc(sizeof(*node) + sizeof(struct disk_info) * DISK_MAX);
-	node->ctx = ctx;
-	strcpy(node->node_id, kv->key + strlen(base));
-	event = strchr(node->node_id, '/');
-	if (!event) {
-		free(node);
+	event = kv->key + strlen(base);
+	if (!event)
 		return;
-	}
+
 	*event++ = '\0';
 
 	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
@@ -1075,59 +1069,35 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	if (!strcmp(node->node_id, this_node.node_id) &&
-	    this_node.init) {
-		sd_debug("%s: event %s (%d) key %s ignored during init",
-			 __func__, event, type, node->node_id);
-		free(node);
-		return;
-	}
-	sd_debug("%s: event %s (%d) key %s value_len %lu deleted %d",
-		 __func__, event, type, node->node_id, kv->value_len,
+	sd_debug("%s: event %s (%d) value_len %lu deleted %d",
+		 __func__, event, type, kv->value_len,
 		kv->deleted);
-	if (kv->deleted && type != EVENT_LEAVE) {
-		free(node);
-		return;
-	}
 
-	rc = etcd_node_download(node);
-	if (rc < 0) {
-		free(node);
-		return;
-	}
-	if (rc == 0) {
-		sd_debug("%s: node '%s' does not exist", __func__,
-			 node->node_id);
-		free(node);
-		return;
-	}
 	switch (type) {
 	case EVENT_JOIN:
-		etcd_handle_join(node, kv->value, kv->value_len);
+		etcd_handle_join(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_ACCEPT:
-		etcd_handle_accept(node, kv->value, kv->value_len);
+		etcd_handle_accept(kv->value, kv->value_len);
 		break;
 	case EVENT_LEAVE:
-		etcd_handle_leave(node);
+		etcd_handle_leave(kv->value, kv->value_len);
 		break;
 	case EVENT_BLOCK:
-		etcd_handle_block(node);
+		etcd_handle_block();
 		break;
 	case EVENT_UNBLOCK:
-		etcd_handle_unblock(node, kv->value, kv->value_len);
+		etcd_handle_unblock(kv->value, kv->value_len);
 		break;
 	case EVENT_NOTIFY:
-		etcd_handle_notify(node, kv->value, kv->value_len);
+		etcd_handle_notify(kv->value, kv->value_len);
 		break;
 	case EVENT_UPDATE_NODE:
 		break;
 	default:
 		sd_err("invalid event '%s'", kv->key);
-		free(node);
 		return;
 	}
-	free(node);
 	etcd_kick_block_event();
 }
 
