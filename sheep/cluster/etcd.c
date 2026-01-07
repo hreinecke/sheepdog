@@ -872,7 +872,19 @@ static int etcd_notify(void *msg, size_t msg_len)
 
 static int etcd_block(void)
 {
-	return etcd_update_event(this_ctx, EVENT_BLOCK, NULL, 0);
+	struct json_object *obj;
+	const char *json_str;
+	int rc;
+
+	obj = json_object_new_object();
+	json_object_object_add(obj, "node",
+			       json_object_new_string(this_node.node_id));
+	json_str = json_object_to_json_string_ext(obj,
+						  JSON_C_TO_STRING_PLAIN);
+	rc = etcd_update_event(this_ctx, EVENT_BLOCK,
+			       json_str, strlen(json_str));
+	json_object_put(obj);
+	return rc;
 }
 
 static int etcd_unblock(void *msg, size_t msg_len)
@@ -1013,16 +1025,37 @@ static void etcd_kick_block_event(void)
 		block->callbacked = sd_block_handler(&block->node);
 }
 
-static void etcd_handle_block(void)
+static void etcd_handle_block(void *opaque, int opaque_len)
 {
 	struct etcd_node *block = xzalloc(sizeof(*block));
+	struct json_object *obj, *node_obj;
+	int ret;
 
-	sd_debug("BLOCK");
-	block->node = this_node.node;
+	obj = json_tokener_parse(opaque);
+	if (!obj) {
+		sd_warn("%s: failed to parse opaque", __func__);
+		return;
+	}
+	node_obj = json_object_object_get(obj, "node");
+	if (!node_obj) {
+		sd_warn("%s: failed to retrieve 'node' object", __func__);
+		json_object_put(obj);
+		return;
+	}
+	strcpy(block->node_id, json_object_get_string(node_obj));
+	sd_debug("BLOCK %s", block->node_id);
+	ret = etcd_node_download(block);
+	if (ret < 0) {
+		sd_warn("%s: failed to download '%s'",
+			__func__, block->node_id);
+		json_object_put(obj);
+		return;
+	}
 	list_add_tail(&block->list, &etcd_block_list);
 	block = list_first_entry(&etcd_block_list, typeof(*block), list);
 	if (!block->callbacked)
 		block->callbacked = sd_block_handler(&block->node);
+	json_object_put(obj);
 }
 
 static void etcd_handle_unblock(void *opaque, size_t opaque_len)
@@ -1084,7 +1117,7 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		etcd_handle_leave(kv->value, kv->value_len);
 		break;
 	case EVENT_BLOCK:
-		etcd_handle_block();
+		etcd_handle_block(kv->value, kv->value_len);
 		break;
 	case EVENT_UNBLOCK:
 		etcd_handle_unblock(kv->value, kv->value_len);
