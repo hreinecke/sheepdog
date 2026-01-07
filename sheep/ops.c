@@ -1473,6 +1473,7 @@ static int local_set_vnodes(const struct sd_req *req,
 static struct sd_op_template sd_ops[] = {
 
 	/* cluster operations */
+	/* req.vdi, arg 'vdi->name' */
 	[SD_OP_NEW_VDI] = {
 		.name = "NEW_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1481,6 +1482,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = post_cluster_new_vdi,
 	},
 
+	/* NULL, arg 'vdi->name' */
 	[SD_OP_DEL_VDI] = {
 		.name = "DEL_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1489,6 +1491,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = post_cluster_del_vdi,
 	},
 
+	/* req.cluster, arg 'store_name' */
 	[SD_OP_MAKE_FS] = {
 		.name = "MAKE_FS",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1497,6 +1500,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_make_fs,
 	},
 
+	/* none, NULL */
 	[SD_OP_SHUTDOWN] = {
 		.name = "SHUTDOWN",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1505,12 +1509,14 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_shutdown,
 	},
 
+	/* req.vdi, rsp.vdi, arg struct sheepdog_vdi_attr */
 	[SD_OP_GET_VDI_ATTR] = {
 		.name = "GET_VDI_ATTR",
 		.type = SD_OP_TYPE_CLUSTER,
 		.process_work = cluster_get_vdi_attr,
 	},
 
+	/* none, struct sd_nodes[SD_MAX_NODES] */
 	[SD_OP_FORCE_RECOVER] = {
 		.name = "FORCE_RECOVER",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1520,6 +1526,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_force_recover_main,
 	},
 
+	/* n/i */
 	[SD_OP_CLEANUP] = {
 		.name = "CLEANUP",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1527,6 +1534,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_cleanup,
 	},
 
+	/* none, arg vdi_id */
 	[SD_OP_NOTIFY_VDI_DEL] = {
 		.name = "NOTIFY_VDI_DEL",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1534,6 +1542,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_notify_vdi_del,
 	},
 
+	/* req.vdi, NULL */
 	[SD_OP_NOTIFY_VDI_ADD] = {
 		.name = "NOTIFY_VDI_ADD",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1541,12 +1550,14 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_notify_vdi_add,
 	},
 
+	/* req.obj, NULL */
 	[SD_OP_DELETE_CACHE] = {
 		.name = "DELETE_CACHE",
 		.type = SD_OP_TYPE_CLUSTER,
 		.process_main = cluster_delete_cache,
 	},
 
+	/* req.obj, arg struct node */
 	[SD_OP_COMPLETE_RECOVERY] = {
 		.name = "COMPLETE_RECOVERY",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1554,12 +1565,14 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_recovery_completion,
 	},
 
+	/* req.vdi, arg NULL */
 	[SD_OP_GET_VDI_INFO] = {
 		.name = "GET_VDI_INFO",
 		.type = SD_OP_TYPE_CLUSTER,
 		.process_work = cluster_get_vdi_info,
 	},
 
+	/* rsp.vdi, arg 'vdi->name'  */
 	[SD_OP_LOCK_VDI] = {
 		.name = "LOCK_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1567,6 +1580,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_lock_vdi_main,
 	},
 
+	/* req.vdi, arg NULL */
 	[SD_OP_RELEASE_VDI] = {
 		.name = "RELEASE_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1574,6 +1588,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_release_vdi_main,
 	},
 
+	/* none, arg NULL */
 	[SD_OP_REWEIGHT] = {
 		.name = "REWEIGHT",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1581,6 +1596,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_reweight,
 	},
 
+	/* none, arg NULL */
 	[SD_OP_ENABLE_RECOVER] = {
 		.name = "ENABLE_RECOVER",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1588,6 +1604,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_enable_recover,
 	},
 
+	/* none, arg NULL */
 	[SD_OP_DISABLE_RECOVER] = {
 		.name = "DISABLE_RECOVER",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1595,6 +1612,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_disable_recover,
 	},
 
+	/* req.cluster, NULL */
 	[SD_OP_ALTER_CLUSTER_COPY] = {
 		.name = "ALTER_CLUSTER_COPY",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1602,6 +1620,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_alter_cluster_copy,
 	},
 
+	/* req.vdi_state, NULL */
 	[SD_OP_ALTER_VDI_COPY] = {
 		.name = "ALTER_VDI_COPY",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1609,6 +1628,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_alter_vdi_copy,
 	},
 
+	/* req.inode_coherence, NULL */
 	[SD_OP_INODE_COHERENCE] = {
 		.name = "INODE_COHERENCE",
 		.type = SD_OP_TYPE_CLUSTER,

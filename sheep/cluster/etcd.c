@@ -865,9 +865,187 @@ static int etcd_leave(void)
 	return rc;
 }
 
-static int etcd_notify(void *msg, size_t msg_len)
+static void etcd_vdi_to_json(struct sd_req *req, struct json_object *obj)
 {
-	return etcd_update_event(this_ctx, EVENT_NOTIFY, msg, msg_len);
+	json_object_object_add(obj, "vdi_size",
+			       json_object_new_int64(req->vdi.vdi_size));
+	json_object_object_add(obj, "base_vdi_id",
+			       json_object_new_int(req->vdi.base_vdi_id));
+	json_object_object_add(obj, "copies",
+			       json_object_new_int(req->vdi.copies));
+	json_object_object_add(obj, "copy_policy",
+			       json_object_new_int(req->vdi.copy_policy));
+	json_object_object_add(obj, "store_policy",
+			       json_object_new_int(req->vdi.store_policy));
+	json_object_object_add(obj, "block_size_shift",
+			       json_object_new_int(req->vdi.block_size_shift));
+	json_object_object_add(obj, "snapid",
+			       json_object_new_int(req->vdi.snapid));
+	json_object_object_add(obj, "type",
+			       json_object_new_int(req->vdi.type));
+}
+
+static void etcd_cluster_to_json(struct sd_req *req, struct json_object *obj)
+{
+	json_object_object_add(obj, "oid",
+			       json_object_new_int(req->cluster.oid));
+	json_object_object_add(obj, "ctime",
+			       json_object_new_int64(req->cluster.ctime));
+	json_object_object_add(obj, "copies",
+			      json_object_new_int(req->cluster.copies));
+	json_object_object_add(obj, "copy_policy",
+			      json_object_new_int(req->cluster.copy_policy));
+	json_object_object_add(obj, "flags",
+			       json_object_new_int(req->cluster.flags));
+	json_object_object_add(obj, "tag",
+			       json_object_new_int(req->cluster.tag));
+	json_object_object_add(obj, "nodes_nr",
+			       json_object_new_int(req->cluster.nodes_nr));
+	json_object_object_add(obj, "block_size_shift",
+			       json_object_new_int(req->cluster.block_size_shift));
+}
+
+static void etcd_obj_to_json(struct sd_req *req, struct json_object *obj)
+{
+	json_object_object_add(obj, "oid",
+			       json_object_new_int(req->obj.oid));
+	json_object_object_add(obj, "cow_oid",
+			       json_object_new_int64(req->obj.cow_oid));
+	json_object_object_add(obj, "copies",
+			      json_object_new_int(req->obj.copies));
+	json_object_object_add(obj, "copy_policy",
+			      json_object_new_int(req->obj.copy_policy));
+	json_object_object_add(obj, "ec_index",
+			       json_object_new_int(req->obj.ec_index));
+	json_object_object_add(obj, "tgt_epochj",
+			       json_object_new_int(req->obj.tgt_epoch));
+	json_object_object_add(obj, "offset",
+			       json_object_new_int(req->obj.offset));
+}
+
+static void etcd_vdi_state_to_json(struct sd_req *req, struct json_object *obj)
+{
+	json_object_object_add(obj, "copies",
+			       json_object_new_int(req->vdi_state.copies));
+	json_object_object_add(obj, "copy_policy",
+			       json_object_new_int(req->vdi_state.copy_policy));
+}
+
+static void etcd_msg_to_json(struct vdi_op_message *msg,
+			     struct json_object *obj,
+			     void *data, size_t data_len)
+{
+	struct sd_req *req = &msg->req;
+	struct json_object *req_obj, *vdi_obj;
+	struct sheepdog_vdi_attr *vdi_attr;
+	uint32_t *vdi_id = (uint32_t *)data;
+	struct sd_node *node;
+
+	req_obj = json_object_new_object();
+	json_object_object_add(req_obj, "proto_ver",
+			       json_object_new_int(req->proto_ver));
+	json_object_object_add(req_obj, "opcode",
+			       json_object_new_int(req->opcode));
+	json_object_object_add(req_obj, "flags",
+			       json_object_new_int(req->flags));
+	json_object_object_add(req_obj, "epoch",
+			       json_object_new_int(req->epoch));
+	json_object_object_add(req_obj, "id",
+			       json_object_new_int(req->id));
+	if (msg->req.data_length)
+		json_object_object_add(req_obj, "data_length",
+				       json_object_new_int(req->data_length));
+	switch (req->opcode) {
+	case SD_OP_NEW_VDI:
+	case SD_OP_NOTIFY_VDI_ADD:
+	case SD_OP_GET_VDI_INFO:
+	case SD_OP_RELEASE_VDI:
+		vdi_obj = json_object_new_object();
+		etcd_vdi_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "vdi", vdi_obj);
+		break;
+	case SD_OP_DEL_VDI:
+	case SD_OP_LOCK_VDI:
+		json_object_object_add(req_obj, "vdi_name",
+				       json_object_new_string(data));
+		break;
+	case SD_OP_MAKE_FS:
+		vdi_obj = json_object_new_object();
+		etcd_cluster_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "cluster", vdi_obj);
+		json_object_object_add(req_obj, "store_name",
+				       json_object_new_string(data));
+		break;
+	case SD_OP_GET_VDI_ATTR:
+		vdi_attr = (struct sheepdog_vdi_attr *)data;
+		vdi_obj = json_object_new_object();
+		etcd_vdi_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "vdi", vdi_obj);
+		vdi_obj = json_object_new_object();
+		json_object_object_add(vdi_obj, "name",
+				       json_object_new_string(vdi_attr->name));
+		json_object_object_add(vdi_obj, "tag",
+				       json_object_new_string(vdi_attr->tag));
+		json_object_object_add(vdi_obj, "snap_id",
+				       json_object_new_int(vdi_attr->snap_id));
+		json_object_object_add(vdi_obj, "key",
+				       json_object_new_string(vdi_attr->key));
+		json_object_object_add(req_obj, "vdi_attr", vdi_obj);
+		break;
+	case SD_OP_NOTIFY_VDI_DEL:
+		json_object_object_add(req_obj, "vdi_id",
+				       json_object_new_int(*vdi_id));
+		break;
+	case SD_OP_DELETE_CACHE:
+	case SD_OP_ALTER_CLUSTER_COPY:
+		vdi_obj = json_object_new_object();
+		etcd_cluster_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "cluster", vdi_obj);
+		break;
+	case SD_OP_COMPLETE_RECOVERY:
+		vdi_obj = json_object_new_object();
+		etcd_obj_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "obj", vdi_obj);
+		node = (struct sd_node *)data;
+		json_object_object_add(req_obj, "target_node",
+				       json_object_new_string(node_to_str(node)));
+		break;
+	case SD_OP_ALTER_VDI_COPY:
+		vdi_obj = json_object_new_object();
+		etcd_vdi_state_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "vdi_state", vdi_obj);
+		break;
+	case SD_OP_INODE_COHERENCE:
+		vdi_obj = json_object_new_object();
+		json_object_object_add(vdi_obj, "vid",
+				       json_object_new_int(req->inode_coherence.vid));
+		json_object_object_add(vdi_obj, "validate",
+				       json_object_new_int(req->inode_coherence.validate));
+		json_object_object_add(req_obj, "inode_coherence",
+				       vdi_obj);
+		break;
+	default:
+		break;
+	}
+	json_object_object_add(obj, "req", req_obj);
+}
+
+static int etcd_notify(struct vdi_op_message *msg, void *data, size_t data_len)
+{
+	struct json_object *obj;
+	const char *json_str;
+	int rc;
+
+	obj = json_object_new_object();
+	etcd_msg_to_json(msg, obj, data, data_len);
+	json_object_object_add(obj, "node",
+			       json_object_new_string(this_node.node_id));
+	json_str = json_object_to_json_string_ext(obj,
+						  JSON_C_TO_STRING_PLAIN);
+	rc = etcd_update_event(this_ctx, EVENT_NOTIFY,
+			       json_str, strlen(json_str));
+	json_object_put(obj);
+	return rc;
 }
 
 static int etcd_block(void)
@@ -889,7 +1067,19 @@ static int etcd_block(void)
 
 static int etcd_unblock(void *msg, size_t msg_len)
 {
-	return etcd_update_event(this_ctx, EVENT_UNBLOCK, msg, msg_len);
+	struct json_object *obj;
+	const char *json_str;
+	int rc;
+
+	obj = json_object_new_object();
+	json_object_object_add(obj, "node",
+			       json_object_new_string(this_node.node_id));
+	json_str = json_object_to_json_string_ext(obj,
+						  JSON_C_TO_STRING_PLAIN);
+	rc = etcd_update_event(this_ctx, EVENT_UNBLOCK,
+			       json_str, strlen(json_str));
+	json_object_put(obj);
+	return rc;
 }
 
 static void etcd_handle_join(struct etcd_ctx *ctx,
