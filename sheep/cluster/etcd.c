@@ -936,11 +936,14 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 			     void *data, size_t data_len)
 {
 	struct sd_req *req = &msg->req;
-	struct json_object *req_obj, *vdi_obj;
+	struct json_object *req_obj, *vdi_obj, *data_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
 	uint32_t *vdi_id = (uint32_t *)data;
 	struct sd_node *node;
 
+	if (msg->req.data_length)
+		json_object_object_add(obj, "data_length",
+				       json_object_new_int(req->data_length));
 	req_obj = json_object_new_object();
 	json_object_object_add(req_obj, "proto_ver",
 			       json_object_new_int(req->proto_ver));
@@ -952,9 +955,6 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 			       json_object_new_int(req->epoch));
 	json_object_object_add(req_obj, "id",
 			       json_object_new_int(req->id));
-	if (msg->req.data_length)
-		json_object_object_add(req_obj, "data_length",
-				       json_object_new_int(req->data_length));
 	switch (req->opcode) {
 	case SD_OP_NEW_VDI:
 	case SD_OP_NOTIFY_VDI_ADD:
@@ -966,15 +966,19 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	case SD_OP_DEL_VDI:
 	case SD_OP_LOCK_VDI:
-		json_object_object_add(req_obj, "vdi_name",
+		data_obj = json_object_new_object();
+		json_object_object_add(data_obj, "vdi_name",
 				       json_object_new_string(data));
+		json_object_object_add(obj, "data", data_obj);
 		break;
 	case SD_OP_MAKE_FS:
 		vdi_obj = json_object_new_object();
 		etcd_cluster_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "cluster", vdi_obj);
-		json_object_object_add(req_obj, "store_name",
+		data_obj = json_object_new_object();
+		json_object_object_add(data_obj, "store_name",
 				       json_object_new_string(data));
+		json_object_object_add(obj, "data", data_obj);
 		break;
 	case SD_OP_GET_VDI_ATTR:
 		vdi_attr = (struct sheepdog_vdi_attr *)data;
@@ -990,11 +994,15 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 				       json_object_new_int(vdi_attr->snap_id));
 		json_object_object_add(vdi_obj, "key",
 				       json_object_new_string(vdi_attr->key));
-		json_object_object_add(req_obj, "vdi_attr", vdi_obj);
+		data_obj = json_object_new_object();
+		json_object_object_add(data_obj, "vdi_attr", vdi_obj);
+		json_object_object_add(obj, "data", data_obj);
 		break;
 	case SD_OP_NOTIFY_VDI_DEL:
-		json_object_object_add(req_obj, "vdi_id",
+		data_obj = json_object_new_object();
+		json_object_object_add(data_obj, "vdi_id",
 				       json_object_new_int(*vdi_id));
+		json_object_object_add(req_obj, "data", data_obj);
 		break;
 	case SD_OP_DELETE_CACHE:
 	case SD_OP_ALTER_CLUSTER_COPY:
@@ -1007,8 +1015,10 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 		etcd_obj_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "obj", vdi_obj);
 		node = (struct sd_node *)data;
-		json_object_object_add(req_obj, "target_node",
+		data_obj = json_object_new_object();
+		json_object_object_add(data_obj, "node",
 				       json_object_new_string(node_to_str(node)));
+		json_object_object_add(obj, "data", data_obj);
 		break;
 	case SD_OP_ALTER_VDI_COPY:
 		vdi_obj = json_object_new_object();
@@ -1030,14 +1040,323 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 	json_object_object_add(obj, "req", req_obj);
 }
 
-static int etcd_notify(struct vdi_op_message *msg, void *data, size_t data_len)
+static void etcd_json_to_vdi(struct json_object *obj,
+			     struct sd_req *req)
 {
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "vdi_size")) {
+			req->vdi.vdi_size =
+				json_object_get_int64(val_obj);
+		} else if (!strcmp(key, "base_vdi_id"))
+			req->vdi.base_vdi_id =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "copies"))
+			req->vdi.copies =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "copy_policy"))
+			req->vdi.copy_policy =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "store_policy"))
+			req->vdi.store_policy =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "block_size_shift"))
+			req->vdi.block_size_shift =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "snapid"))
+			req->vdi.snapid =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "type"))
+			req->vdi.type =
+				json_object_get_int(val_obj);
+		else
+			sd_warn("%s: unhandled vdi attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_cluster(struct json_object *obj,
+				 struct sd_req *req)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "ctime")) {
+			req->cluster.ctime =
+				json_object_get_int64(val_obj);
+		} else if (!strcmp(key, "oid"))
+			req->cluster.oid =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "copies"))
+			req->cluster.copies =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "copy_policy"))
+			req->cluster.copy_policy =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "flags"))
+			req->cluster.flags =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "tag"))
+			req->cluster.tag =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "nodes_nr"))
+			req->cluster.nodes_nr =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "block_size_shift"))
+			req->cluster.block_size_shift =
+				json_object_get_int(val_obj);
+		else
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_obj(struct json_object *obj,
+			     struct sd_req *req)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "cow_oid")) {
+			req->obj.cow_oid =
+				json_object_get_int64(val_obj);
+		} else if (!strcmp(key, "oid"))
+			req->obj.oid =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "copies"))
+			req->obj.copies =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "copy_policy"))
+			req->obj.copy_policy =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "ec_index"))
+			req->obj.ec_index =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "tgt_epoch"))
+			req->obj.tgt_epoch =
+				json_object_get_int(val_obj);
+		else if (!strcmp(key, "offset"))
+			req->obj.offset =
+				json_object_get_int(val_obj);
+		else
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_req(struct json_object *obj,
+			     struct sd_req *req)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+		struct json_object *attr_obj;
+
+		if (!strcmp(key, "vdi")) {
+			etcd_json_to_vdi(val_obj, req);
+		} else if (!strcmp(key, "cluster")) {
+			etcd_json_to_cluster(val_obj, req);
+		} else if (!strcmp(key, "obj")) {
+			etcd_json_to_obj(val_obj, req);
+		} else if (!strcmp(key, "vdi_state")) {
+			attr_obj = json_object_object_get(val_obj, "copies");
+			if (attr_obj)
+				req->vdi_state.copies =
+					json_object_get_int(attr_obj);
+			attr_obj = json_object_object_get(val_obj, "copy_policy");
+			if (attr_obj)
+				req->vdi_state.copy_policy =
+					json_object_get_int(attr_obj);
+		} else if (!strcmp(key, "inode_coherence")) {
+			attr_obj = json_object_object_get(val_obj, "vid");
+			if (attr_obj)
+				req->inode_coherence.vid =
+					json_object_get_int(attr_obj);
+			attr_obj = json_object_object_get(val_obj,
+							  "validate");
+			if (attr_obj)
+				req->inode_coherence.validate =
+					json_object_get_int(attr_obj);
+		} else
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_data(struct json_object *obj, void *data,
+			      size_t data_length)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+		struct json_object *attr_obj;
+
+		if (!strcmp(key, "vdi_name") ||
+		    !strcmp(key, "store_name")) {
+			const char *val = json_object_get_string(val_obj);
+			size_t data_len = strlen(val);;
+
+			if (data_len > data_length) {
+				sd_warn("%s: truncating data to %lu",
+					__func__, data_length);
+				data_len = data_length;
+			}
+			memcpy(data, val, data_len);
+		} else if (!strcmp(key, "vdi_attr")) {
+			struct sheepdog_vdi_attr *vdi_attr =
+				(struct sheepdog_vdi_attr *)data;
+			const char *val;
+
+			if (data_length < sizeof(*vdi_attr)) {
+				sd_warn("%s: invalid vdi_attr size",
+					__func__);
+				return;
+			}
+			attr_obj = json_object_object_get(val_obj, "name");
+			if (attr_obj) {
+				val = json_object_get_string(attr_obj);
+				strcpy(vdi_attr->name, val);
+			}
+			attr_obj = json_object_object_get(val_obj, "tag");
+			if (attr_obj) {
+				val = json_object_get_string(attr_obj);
+				strcpy(vdi_attr->tag, val);
+			}
+			attr_obj = json_object_object_get(val_obj, "snap_id");
+			if (attr_obj) {
+				vdi_attr->snap_id =
+					json_object_get_int(attr_obj);
+			}
+			attr_obj = json_object_object_get(val_obj, "key");
+			if (attr_obj) {
+				val = json_object_get_string(attr_obj);
+				strcpy(vdi_attr->key, val);
+			}
+		} else if (!strcmp(key, "vdi_id")) {
+			uint32_t *id = (uint32_t *)data;
+
+			*id = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "node")) {
+			struct etcd_node tmp;
+			const char *val = json_object_get_string(val_obj);
+			struct sd_node *node;
+			int ret;
+
+			if (data_length < sizeof(*node)) {
+				sd_warn("%s: invalde node data size",
+					__func__);
+				return;
+			}
+			strcpy(tmp.node_id, val);
+			ret = etcd_node_download(&tmp);
+			if (ret < 0) {
+				sd_warn("%s: failed to download '%s'",
+					__func__, tmp.node_id);
+			} else {
+				node = (struct sd_node *)data;
+				memcpy(node, &tmp.node,
+				       sizeof(*node));
+			}
+		} else
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
+					       size_t *msg_len)
+{
+	struct vdi_op_message *msg;
+	struct json_object *req_obj;
+	struct json_object_iterator itb, ite;
+	size_t data_len = 0;
+
+	req_obj = json_object_object_get(obj, "data_length");
+	if (req_obj)
+		data_len = json_object_get_int(req_obj);
+	msg = xzalloc(sizeof(*msg) + data_len);
+	if (!msg)
+		return NULL;
+	*msg_len = sizeof(*msg) + data_len;
+	msg->req.data_length = data_len;
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "req")) {
+			etcd_json_to_req(val_obj, &msg->req);
+		} else if (!strcmp(key, "data")) {
+			etcd_json_to_data(val_obj, &msg->data,
+					  data_len);
+		} else if (!strcmp(key, "proto_ver")) {
+			msg->req.proto_ver =
+				json_object_get_int(val_obj);
+		} else if (!strcmp(key, "opcode")) {
+			msg->req.opcode =
+				json_object_get_int(val_obj);
+		} else if (!strcmp(key, "flags")) {
+			msg->req.flags =
+				json_object_get_int(val_obj);
+		} else if (!strcmp(key, "epoch")) {
+			msg->req.epoch =
+				json_object_get_int(val_obj);
+		} else if (!strcmp(key, "id")) {
+			msg->req.id =
+				json_object_get_int(val_obj);
+		} else if (!strcmp(key, "data_length"))
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+	return msg;
+}
+
+static int etcd_notify(void *msg, size_t msg_len)
+{
+	struct vdi_op_message *op = (struct vdi_op_message *)msg;
 	struct json_object *obj;
 	const char *json_str;
 	int rc;
 
 	obj = json_object_new_object();
-	etcd_msg_to_json(msg, obj, data, data_len);
+	etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_object_object_add(obj, "node",
 			       json_object_new_string(this_node.node_id));
 	json_str = json_object_to_json_string_ext(obj,
@@ -1067,13 +1386,13 @@ static int etcd_block(void)
 
 static int etcd_unblock(void *msg, size_t msg_len)
 {
+	struct vdi_op_message *op = (struct vdi_op_message *)msg;
 	struct json_object *obj;
 	const char *json_str;
 	int rc;
 
 	obj = json_object_new_object();
-	json_object_object_add(obj, "node",
-			       json_object_new_string(this_node.node_id));
+	etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_str = json_object_to_json_string_ext(obj,
 						  JSON_C_TO_STRING_PLAIN);
 	rc = etcd_update_event(this_ctx, EVENT_UNBLOCK,
@@ -1251,12 +1570,26 @@ static void etcd_handle_block(void *opaque, int opaque_len)
 static void etcd_handle_unblock(void *opaque, size_t opaque_len)
 {
 	struct etcd_node *block;
+	struct json_object *obj;
+	struct vdi_op_message *msg;
+	size_t msg_len = 0;
 
 	sd_debug("UNBLOCK");
+	obj = json_tokener_parse(opaque);
+	if (!obj) {
+		sd_warn("%s: failed to parse opaque", __func__);
+		return;
+	}
+	msg = etcd_json_to_msg(obj, &msg_len);
+	if (!msg) {
+		sd_warn("%s: failed to deserialize json", __func__);
+		json_object_put(obj);
+		return;
+	}
 	if (list_empty(&etcd_block_list))
 		return;
 	block = list_first_entry(&etcd_block_list, typeof(*block), list);
-	sd_notify_handler(&this_node.node, opaque, opaque_len);
+	sd_notify_handler(&block->node, (void *)msg, msg_len);
 
 	list_del(&block->list);
 	free(block);
