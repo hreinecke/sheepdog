@@ -1623,8 +1623,8 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	sd_debug("%s: event %s (%d) value_len %lu deleted %d",
-		 __func__, event, type, kv->value_len,
+	sd_debug("%s: event %s (%d) value '%s' deleted %d",
+		 __func__, event, type, kv->value_len ? kv->value : "{}",
 		kv->deleted);
 
 	switch (type) {
