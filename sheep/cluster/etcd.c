@@ -1615,8 +1615,6 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 	if (!event)
 		return;
 
-	*event++ = '\0';
-
 	for (i = 0; i < ARRAY_SIZE(etcd_event_names); i++) {
 		if (!etcd_event_names[i])
 			continue;
