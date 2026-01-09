@@ -57,8 +57,9 @@ static int etcd_socket_connect(struct etcd_ctx *ctx)
 		if (connect(sockfd, aip->ai_addr, aip->ai_addrlen) == 0)
 			break;
 
+		fprintf(stderr, "socket connect error %d\n", errno);
 		close(sockfd);
-		sockfd = -ENOTCONN;
+		sockfd = -errno;
 	}
 
 	freeaddrinfo(ai);
