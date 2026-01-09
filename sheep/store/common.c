@@ -315,7 +315,10 @@ static int init_obj_path(const char *base_path, char *argp)
 	snprintf(obj_path, len, "%s" OBJ_PATH, base_path);
 
 	/* Eat up the first component */
-	strtok(argp, ",");
+	if (!strtok(argp, ",")) {
+		sd_err("invalid command line");
+		return -1;
+	}
 	p = strtok(NULL, ",");
 	if (!p) {
 		/*
