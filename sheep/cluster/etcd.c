@@ -744,6 +744,8 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	num_kvs = etcd_kv_range(node->ctx, key, &kvs);
 	if (num_kvs < 0)
 		return num_kvs;
+	sd_debug("%s: found %d entries for key '%s'",
+		 __func__, num_kvs, key);
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
 		char *id = kv->key + strlen(key), *attr;
