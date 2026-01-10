@@ -1436,6 +1436,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
+	json_object_put(obj);
 	sd_debug("JOIN %s", joining.node_id);
 	INIT_RB_ROOT(&node_root);
 	if (!etcd_node_is_master(&this_node) &&
@@ -1459,20 +1460,18 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
-		struct json_object *cinfo_obj;
 		const char *json_str;
 
 		sd_debug("I'm the master now");
-		cinfo_obj = json_object_new_object();
-		etcd_cinfo_to_json(&cinfo, cinfo_obj, &joining);
-		json_str = json_object_to_json_string_ext(cinfo_obj,
+		obj = json_object_new_object();
+		etcd_cinfo_to_json(&cinfo, obj, &joining);
+		json_str = json_object_to_json_string_ext(obj,
 							  JSON_C_TO_STRING_PLAIN);
 		etcd_update_event(ctx, EVENT_ACCEPT,
 				  json_str, strlen(json_str));
-		json_object_put(cinfo_obj);
+		json_object_put(obj);
 	}
 	rb_destroy(&node_root, struct etcd_node, rb);
-	json_object_put(obj);
 }
 
 static void etcd_handle_leave(struct etcd_ctx *ctx,
