@@ -1459,17 +1459,17 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
-		struct json_object *status_obj;
+		struct json_object *cinfo_obj;
 		const char *json_str;
 
 		sd_debug("I'm the master now");
-		status_obj = json_object_new_object();
-		etcd_status_to_json(status_obj, cinfo.status);
-		json_str = json_object_to_json_string_ext(status_obj,
+		cinfo_obj = json_object_new_object();
+		etcd_cinfo_to_json(&cinfo, cinfo_obj, &joining);
+		json_str = json_object_to_json_string_ext(cinfo_obj,
 							  JSON_C_TO_STRING_PLAIN);
 		etcd_update_event(ctx, EVENT_ACCEPT,
 				  json_str, strlen(json_str));
-		json_object_put(status_obj);
+		json_object_put(cinfo_obj);
 	}
 	rb_destroy(&node_root, struct etcd_node, rb);
 	json_object_put(obj);
