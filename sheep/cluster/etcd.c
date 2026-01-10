@@ -1696,8 +1696,8 @@ static void *etcd_event_watcher(void *arg)
 			break;
 	}
 	if (ret && ret != -ETIME)
-		fprintf(stderr, "%s: etcd_kv_watch failed with %d\n",
-				__func__, ret);
+		sd_warn("%s: etcd_kv_watch failed, error %d (%s)\n",
+			__func__, ret, strerror(-ret));
 	pthread_cleanup_pop(1);
 
 	ret = pthread_detach(pthread_self());

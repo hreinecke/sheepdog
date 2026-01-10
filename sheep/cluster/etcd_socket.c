@@ -226,6 +226,12 @@ static int recv_http(struct etcd_conn_ctx *conn, http_parser *http,
 				__func__, errno);
 			break;
 		}
+		if (!ret) {
+			if (http_debug)
+				printf("%s: select timeout\n", __func__);
+			ret = -ETIME;
+			break;
+		}
 		if (!FD_ISSET(conn->sockfd, &rfd)) {
 			if (http_debug)
 				printf("%s: no events\n", __func__);
