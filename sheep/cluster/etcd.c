@@ -760,13 +760,12 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 			 */
 			sd_debug("%s: id %s num %d master %s",
 				 __func__, id, num_nodes, master);
-			if (num_nodes > 0 && !master)
+			if (!master)
 				master = id;
 			num_nodes++;
 		}
 	}
-	if (master &&
-	    !strncmp(master, node->node_id, strlen(node->node_id)))
+	if (master && num_nodes > 0)
 		is_master = true;
 	etcd_kv_free(kvs, num_kvs);
 	return is_master;
@@ -1421,20 +1420,26 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	struct json_object *obj;
 	struct cluster_info cinfo;
 	struct rb_root node_root, sd_root;
-	struct etcd_node joining, *enode;
+	struct etcd_node joining, *node;
 	int nr_nodes, ret;
 
+	obj = json_tokener_parse(opaque);
+	if (!obj) {
+		sd_warn("%s: failed to parse opaque", __func__);
+		return;
+	}
 	memset(&cinfo, 0, sizeof(cinfo));
 	memset(&joining, 0, sizeof(joining));
 	joining.ctx = ctx;
-	obj = json_tokener_parse(opaque);
 	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
+	sd_debug("JOIN %s", joining.node_id);
 	INIT_RB_ROOT(&node_root);
-	if (!etcd_node_is_master(&this_node)) {
+	if (!etcd_node_is_master(&this_node) &&
+	    !strcmp(this_node.node_id, joining.node_id)) {
 		/* Let's await master acking the join-request */
 		sd_debug("%s: node '%s' is not master", __func__,
 			 this_node.node_id);
@@ -1449,8 +1454,8 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
-	rb_for_each_entry(enode, &node_root, rb) {
-		rb_insert(&sd_root, &enode->node, rb, node_cmp);
+	rb_for_each_entry(node, &node_root, rb) {
+		rb_insert(&sd_root, &node->node, rb, node_cmp);
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
@@ -1480,6 +1485,11 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	int nr_nodes, ret;
 
 	obj = json_tokener_parse(opaque);
+	if (!obj) {
+		sd_warn("%s: failed to parse opaque", __func__);
+		return;
+	}
+	memset(&cinfo, 0, sizeof(cinfo));
 	memset(&leaving, 0, sizeof(leaving));
 	leaving.ctx = ctx;
 	ret = etcd_json_to_cinfo(obj, &cinfo, &leaving);
@@ -1487,6 +1497,7 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
+	sd_debug("LEAVE %s", leaving.node_id);
 	INIT_RB_ROOT(&node_root);
 	nr_nodes = etcd_build_node_list(this_ctx, &node_root, NULL);
 	if (nr_nodes < 0) {
@@ -1529,7 +1540,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	}
 	INIT_RB_ROOT(&node_root);
 
-	sd_debug("ACCEPT");
+	sd_debug("ACCEPT %s", joining.node_id);
 	nr_nodes = etcd_build_node_list(this_ctx, &node_root, &joining);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
