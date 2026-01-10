@@ -1423,6 +1423,8 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	int nr_nodes, ret;
 
 	memset(&cinfo, 0, sizeof(cinfo));
+	memset(&joining, 0, sizeof(joining));
+	joining.ctx = ctx;
 	obj = json_tokener_parse(opaque);
 	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
@@ -1466,7 +1468,8 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	json_object_put(obj);
 }
 
-static void etcd_handle_leave(void *opaque, int opaque_len)
+static void etcd_handle_leave(struct etcd_ctx *ctx,
+			      void *opaque, int opaque_len)
 {
 	struct json_object *obj;
 	struct cluster_info cinfo;
@@ -1475,6 +1478,8 @@ static void etcd_handle_leave(void *opaque, int opaque_len)
 	int nr_nodes, ret;
 
 	obj = json_tokener_parse(opaque);
+	memset(&leaving, 0, sizeof(leaving));
+	leaving.ctx = ctx;
 	ret = etcd_json_to_cinfo(obj, &cinfo, &leaving);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
@@ -1494,7 +1499,8 @@ static void etcd_handle_leave(void *opaque, int opaque_len)
 	memset(&this_node.node, 0, sizeof(this_node.node));
 }
 
-static void etcd_handle_accept(void *opaque, size_t opaque_len)
+static void etcd_handle_accept(struct etcd_ctx *ctx,
+			       void *opaque, size_t opaque_len)
 {
 	struct rb_root node_root, sd_root;
 	struct json_object *obj;
@@ -1503,6 +1509,8 @@ static void etcd_handle_accept(void *opaque, size_t opaque_len)
 	int nr_nodes, ret;
 
 	memset(&cinfo, 0, sizeof(cinfo));
+	memset(&joining, 0, sizeof(joining));
+	joining.ctx = ctx;
 	obj = json_tokener_parse(opaque);
 	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
@@ -1546,7 +1554,8 @@ static void etcd_kick_block_event(void)
 		block->callbacked = sd_block_handler(&block->node);
 }
 
-static void etcd_handle_block(void *opaque, int opaque_len)
+static void etcd_handle_block(struct etcd_ctx *ctx,
+			      void *opaque, int opaque_len)
 {
 	struct etcd_node *block = xzalloc(sizeof(*block));
 	struct json_object *obj, *node_obj;
@@ -1564,6 +1573,7 @@ static void etcd_handle_block(void *opaque, int opaque_len)
 		return;
 	}
 	strcpy(block->node_id, json_object_get_string(node_obj));
+	block->ctx = ctx;
 	sd_debug("BLOCK %s", block->node_id);
 	ret = etcd_node_download(block);
 	if (ret < 0) {
@@ -1579,7 +1589,8 @@ static void etcd_handle_block(void *opaque, int opaque_len)
 	json_object_put(obj);
 }
 
-static void etcd_handle_unblock(void *opaque, size_t opaque_len)
+static void etcd_handle_unblock(struct etcd_ctx *ctx,
+				void *opaque, size_t opaque_len)
 {
 	struct etcd_node *block;
 	struct json_object *obj;
@@ -1607,10 +1618,45 @@ static void etcd_handle_unblock(void *opaque, size_t opaque_len)
 	free(block);
 }
 
-static void etcd_handle_notify(void *opaque, size_t opaque_len)
+static void etcd_handle_notify(struct etcd_ctx *ctx,
+			       void *opaque, size_t opaque_len)
 {
-	sd_debug("NOTIFY");
-	sd_notify_handler(&this_node.node, opaque, opaque_len);
+	struct json_object *obj, *node_obj;
+	struct etcd_node node;
+	struct vdi_op_message *msg;
+	size_t msg_len = 0;
+	int ret;
+
+	obj = json_tokener_parse(opaque);
+	if (!obj) {
+		sd_warn("%s: failed to parse opaque", __func__);
+		return;
+	}
+	node_obj = json_object_object_get(obj, "node");
+	if (!node_obj) {
+		sd_warn("%s: failed to retrieve 'node' object", __func__);
+		json_object_put(obj);
+		return;
+	}
+	memset(&node, 0, sizeof(node));
+	node.ctx = ctx;
+	strcpy(node.node_id, json_object_get_string(node_obj));
+	sd_debug("NOTIFY %s", node.node_id);
+	ret = etcd_node_download(&node);
+	if (ret < 0) {
+		sd_warn("%s: failed to download '%s'",
+			__func__, node.node_id);
+		json_object_put(obj);
+		return;
+	}
+	msg = etcd_json_to_msg(obj, &msg_len);
+	if (!msg) {
+		sd_warn("%s: failed to deserialize json", __func__);
+		json_object_put(obj);
+		return;
+	}
+	sd_notify_handler(&node.node, (void *)msg, msg_len);
+	json_object_put(obj);
 }
 
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
@@ -1644,19 +1690,19 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		etcd_handle_join(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_ACCEPT:
-		etcd_handle_accept(kv->value, kv->value_len);
+		etcd_handle_accept(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_LEAVE:
-		etcd_handle_leave(kv->value, kv->value_len);
+		etcd_handle_leave(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_BLOCK:
-		etcd_handle_block(kv->value, kv->value_len);
+		etcd_handle_block(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_UNBLOCK:
-		etcd_handle_unblock(kv->value, kv->value_len);
+		etcd_handle_unblock(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_NOTIFY:
-		etcd_handle_notify(kv->value, kv->value_len);
+		etcd_handle_notify(ctx, kv->value, kv->value_len);
 		break;
 	case EVENT_UPDATE_NODE:
 		break;
