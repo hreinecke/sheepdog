@@ -756,10 +756,10 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 			 * If we only have one node there
 			 * is no master.
 			 */
-			if (num_nodes > 0) {
+			sd_debug("%s: id %s num %d master %s",
+				 __func__, id, num_nodes, master);
+			if (num_nodes > 0 && !master)
 				master = id;
-				break;
-			}
 			num_nodes++;
 		}
 	}
