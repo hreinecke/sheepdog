@@ -595,24 +595,27 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 			       struct etcd_node *node)
 {
 	const char *default_store = (const char *)cinfo->default_store;
+	struct json_object *cinfo_obj;
 
-	_SET_CINFO_VAL(obj, cinfo, proto_ver);
+	cinfo_obj = json_object_new_object();
+	_SET_CINFO_VAL(cinfo_obj, cinfo, proto_ver);
 	if (cinfo->disable_recovery)
-		json_object_object_add(obj, "disable_recovery",
+		json_object_object_add(cinfo_obj, "disable_recovery",
 				       json_object_new_boolean(cinfo->disable_recovery));
-	_SET_CINFO_VAL(obj, cinfo, nr_nodes);
-	_SET_CINFO_VAL(obj, cinfo, epoch);
+	_SET_CINFO_VAL(cinfo_obj, cinfo, nr_nodes);
+	_SET_CINFO_VAL(cinfo_obj, cinfo, epoch);
 	if (cinfo->ctime)
-		json_object_object_add(obj, "ctime",
+		json_object_object_add(cinfo_obj, "ctime",
 				       json_object_new_int64(cinfo->ctime));
-	_SET_CINFO_VAL(obj, cinfo, flags);
-	_SET_CINFO_VAL(obj, cinfo, nr_copies);
-	_SET_CINFO_VAL(obj, cinfo, copy_policy);
-	_SET_CINFO_VAL(obj, cinfo, block_size_shift);
-	etcd_status_to_json(obj, cinfo->status);
+	_SET_CINFO_VAL(cinfo_obj, cinfo, flags);
+	_SET_CINFO_VAL(cinfo_obj, cinfo, nr_copies);
+	_SET_CINFO_VAL(cinfo_obj, cinfo, copy_policy);
+	_SET_CINFO_VAL(cinfo_obj, cinfo, block_size_shift);
+	etcd_status_to_json(cinfo_obj, cinfo->status);
 	if (strlen(default_store))
-		json_object_object_add(obj, "default_store",
+		json_object_object_add(cinfo_obj, "default_store",
 				       json_object_new_string(default_store));
+	json_object_object_add(obj, "cluster", cinfo_obj);
 	if (node)
 		json_object_object_add(obj, "node",
 				       json_object_new_string(node->node_id));
@@ -623,10 +626,17 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			      struct etcd_node *node)
 {
 	struct json_object_iterator itb, ite;
+	struct json_object *cinfo_obj, *node_obj;
 	int num_val = 0;
 
-	itb = json_object_iter_begin(obj);
-	ite = json_object_iter_end(obj);
+	cinfo_obj = json_object_object_get(obj, "cluster");
+	if (!cinfo_obj) {
+		sd_warn("%s: invalid json payload, 'cluster' missing",
+			__func__);
+		return 0;
+	}
+	itb = json_object_iter_begin(cinfo_obj);
+	ite = json_object_iter_end(cinfo_obj);
 
 	while (!json_object_iter_equal(&itb, &ite)) {
 		const char *key = json_object_iter_peek_name(&itb);
@@ -655,24 +665,26 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			const char *status = json_object_get_string(val_obj);
 
 			cinfo->status = etcd_cinfo_status_to_type(status);
-		} else if (!strcmp(key, "default_store"))
+		} else if (!strcmp(key, "default_store")) {
 			strcpy((char *)cinfo->default_store,
 			       json_object_get_string(val_obj));
-		else if (node && !strcmp(key, "node")) {
-			int ret;
-
-			strcpy(node->node_id, json_object_get_string(val_obj));
-			ret = etcd_node_download(node);
-			if (ret < 0) {
-				sd_warn("%s: failed to download '%s'",
-					__func__, node->node_id);
-			}
 		} else {
 			sd_warn("%s: unhandled key '%s'", __func__, key);
 			num_val--;
 		}
 		num_val++;
 		json_object_iter_next(&itb);
+	}
+	node_obj = json_object_object_get(obj, "node");
+	if (node && node_obj) {
+		int ret;
+
+		strcpy(node->node_id, json_object_get_string(node_obj));
+		ret = etcd_node_download(node);
+		if (ret < 0) {
+			sd_warn("%s: failed to download '%s'",
+				__func__, node->node_id);
+		}
 	}
 	return num_val;
 }
