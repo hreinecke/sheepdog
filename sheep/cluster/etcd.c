@@ -798,7 +798,8 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 
 	rc = etcd_kv_store(ctx, key, json_str, strlen(json_str));
 	if (rc < 0) {
-		sd_err("failed, type: %d, %d", type, rc);
+		sd_err("%s: failed, event %s (%d), %d",
+		       __func__, event, type, rc);
 		return SD_RES_CLUSTER_ERROR;
 	}
 	return 0;
