@@ -781,12 +781,14 @@ static inline bool etcd_event_delete(struct etcd_node *node)
 }
 
 static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
-			     const void *buf, size_t buf_len)
+			     struct json_object *obj)
 {
 	char key[1024];
-	const char *event;
+	const char *event, *json_str;
 	int rc;
 
+	json_str = json_object_to_json_string_ext(obj,
+						  JSON_C_TO_STRING_PLAIN);
 	event = etcd_event_names[type];
 	if (!event) {
 		sd_warn("%s: invalid type %d", __func__, type);
@@ -794,7 +796,7 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 	}
 	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s", event);
 
-	rc = etcd_kv_store(ctx, key, buf, buf_len);
+	rc = etcd_kv_store(ctx, key, json_str, strlen(json_str));
 	if (rc < 0) {
 		sd_err("failed, type: %d, %d", type, rc);
 		return SD_RES_CLUSTER_ERROR;
@@ -820,7 +822,6 @@ static int etcd_join(const struct sd_node *myself,
 	int rc;
 	struct cluster_info *cinfo = opaque;
 	struct json_object *cinfo_obj;
-	const char *json_str;
 
 	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 	this_node.ctx = this_ctx;
@@ -846,10 +847,7 @@ static int etcd_join(const struct sd_node *myself,
 	this_node.init = false;
 	cinfo_obj = json_object_new_object();
 	etcd_cinfo_to_json(cinfo, cinfo_obj, &this_node);
-	json_str = json_object_to_json_string_ext(cinfo_obj,
-						  JSON_C_TO_STRING_PLAIN);
-	rc = etcd_update_event(this_ctx, EVENT_JOIN,
-			       json_str, strlen(json_str));
+	rc = etcd_update_event(this_ctx, EVENT_JOIN, cinfo_obj);
 	if (rc < 0) {
 		etcd_node_delete(&this_node);
 		memset(&this_node.node, 0, sizeof(this_node.node));
@@ -863,17 +861,13 @@ static int etcd_leave(void)
 	int rc;
 	struct cluster_info cinfo;
 	struct json_object *cinfo_obj;
-	const char *json_str;
 
 	sd_info("leaving from cluster");
 	block_event_list_del(&this_node);
 	etcd_cinfo_download(this_ctx, &cinfo);
 	cinfo_obj = json_object_new_object();
 	etcd_cinfo_to_json(&cinfo, cinfo_obj, &this_node);
-	json_str = json_object_to_json_string_ext(cinfo_obj,
-						  JSON_C_TO_STRING_PLAIN);
-	rc = etcd_update_event(this_ctx, EVENT_LEAVE,
-			       json_str, strlen(json_str));
+	rc = etcd_update_event(this_ctx, EVENT_LEAVE, cinfo_obj);
 	json_object_put(cinfo_obj);
 	return rc;
 }
@@ -1365,17 +1359,13 @@ static int etcd_notify(void *msg, size_t msg_len)
 {
 	struct vdi_op_message *op = (struct vdi_op_message *)msg;
 	struct json_object *obj;
-	const char *json_str;
 	int rc;
 
 	obj = json_object_new_object();
 	etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_object_object_add(obj, "node",
 			       json_object_new_string(this_node.node_id));
-	json_str = json_object_to_json_string_ext(obj,
-						  JSON_C_TO_STRING_PLAIN);
-	rc = etcd_update_event(this_ctx, EVENT_NOTIFY,
-			       json_str, strlen(json_str));
+	rc = etcd_update_event(this_ctx, EVENT_NOTIFY, obj);
 	json_object_put(obj);
 	return rc;
 }
@@ -1383,16 +1373,12 @@ static int etcd_notify(void *msg, size_t msg_len)
 static int etcd_block(void)
 {
 	struct json_object *obj;
-	const char *json_str;
 	int rc;
 
 	obj = json_object_new_object();
 	json_object_object_add(obj, "node",
 			       json_object_new_string(this_node.node_id));
-	json_str = json_object_to_json_string_ext(obj,
-						  JSON_C_TO_STRING_PLAIN);
-	rc = etcd_update_event(this_ctx, EVENT_BLOCK,
-			       json_str, strlen(json_str));
+	rc = etcd_update_event(this_ctx, EVENT_BLOCK, obj);
 	json_object_put(obj);
 	return rc;
 }
@@ -1401,15 +1387,11 @@ static int etcd_unblock(void *msg, size_t msg_len)
 {
 	struct vdi_op_message *op = (struct vdi_op_message *)msg;
 	struct json_object *obj;
-	const char *json_str;
 	int rc;
 
 	obj = json_object_new_object();
 	etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
-	json_str = json_object_to_json_string_ext(obj,
-						  JSON_C_TO_STRING_PLAIN);
-	rc = etcd_update_event(this_ctx, EVENT_UNBLOCK,
-			       json_str, strlen(json_str));
+	rc = etcd_update_event(this_ctx, EVENT_UNBLOCK, obj);
 	json_object_put(obj);
 	return rc;
 }
@@ -1460,15 +1442,10 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
-		const char *json_str;
-
 		sd_debug("I'm the master now");
 		obj = json_object_new_object();
 		etcd_cinfo_to_json(&cinfo, obj, &joining);
-		json_str = json_object_to_json_string_ext(obj,
-							  JSON_C_TO_STRING_PLAIN);
-		etcd_update_event(ctx, EVENT_ACCEPT,
-				  json_str, strlen(json_str));
+		etcd_update_event(ctx, EVENT_ACCEPT, obj);
 		json_object_put(obj);
 	}
 	rb_destroy(&node_root, struct etcd_node, rb);
