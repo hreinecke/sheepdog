@@ -840,7 +840,7 @@ static int etcd_join(const struct sd_node *myself,
 
 	this_node.ctx = this_ctx;
 	this_node.node = *myself;
-	strcpy(this_node.node_id, node_to_str(myself));
+	strcpy(this_node.node_id, this_ctx->node_name);
 	rc = etcd_node_upload(&this_node, true);
 	if (rc < 0) {
 		etcd_event_delete(&this_node);
@@ -1793,27 +1793,29 @@ static int etcd_cluster_init(const char *option)
 	char *hosts, *to, *p;
 	sd_thread_t t;
 	int ret;
-	char addr[MAX_NODE_STR_LEN];
+	char *addr = NULL;
 
 	if (!option) {
 		sd_err("You must specify etcd client address.");
 		return -1;
 	}
 
-	hosts = strtok((char *)option, "=");
-	if ((to = strtok(NULL, "="))) {
-		if (sscanf(to, "%u", &etcd_timeout) != 1) {
-			sd_err("Invalid parameter for timeout");
-			return -1;
+	if (option) {
+		hosts = strtok((char *)option, "=");
+		if ((to = strtok(NULL, "="))) {
+			if (sscanf(to, "%u", &etcd_timeout) != 1) {
+				sd_err("Invalid parameter for timeout");
+				return -1;
+			}
+			p = strstr(hosts, "timeout");
+			*--p = '\0';
 		}
-		p = strstr(hosts, "timeout");
-		*--p = '\0';
+		addr = strdup(hosts);
 	}
-	pstrcpy(addr, MAX_NODE_STR_LEN, hosts);
-
 	this_ctx = etcd_init(addr, NULL, etcd_timeout);
 	if (!this_ctx) {
-		sd_err("failed to initialize etcd '%s'", addr);
+		sd_err("failed to initialize etcd '%s'",
+		       addr ? addr: "localhost");
 		return -1;
 	}
 	ret = etcd_lease_grant(this_ctx);
@@ -1826,8 +1828,7 @@ static int etcd_cluster_init(const char *option)
 		sd_err("failed to start lease, error %d", ret);
 		return -1;
 	}
-	sd_info("node %s addr %s id %s", this_ctx->node_name,
-		addr, this_ctx->node_id);
+	sd_info("node %s id %s", this_ctx->node_name, this_ctx->node_id);
 	ret = sd_thread_create("etcd-watch", &t, etcd_event_watcher, this_ctx);
 	if (ret) {
 		sd_err("failed to start etcd, error %d", ret);
