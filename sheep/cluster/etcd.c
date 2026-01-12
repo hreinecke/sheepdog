@@ -1865,8 +1865,13 @@ static int etcd_get_local_addr(uint8_t *bytes)
 		return -EHOSTUNREACH;
 	}
 	for (aip = ai; aip != NULL; aip = aip->ai_next) {
+		struct sockaddr_in *sin;
+
+		if (aip->ai_family != AF_INET)
+			continue;
+		sin = (struct sockaddr_in *)aip->ai_addr;
 		memset(bytes, 0, 12);
-		memcpy(bytes + 12, aip->ai_addr, aip->ai_addrlen);
+		memcpy(bytes + 12, &sin->sin_addr, 4);
 		break;
 	}
 	freeaddrinfo(ai);
