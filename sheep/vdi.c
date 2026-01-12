@@ -531,8 +531,9 @@ static bool is_valid_shared_state(struct vdi_state_entry *entry)
 				sd_err("invalid shared state, two (or more)"
 				       " nodes are owning VDI %"PRIx32":"
 				       " %s and %s", entry->vid,
-				       node_id_to_str(current_owner),
-				       node_id_to_str(&entry->participants[i]));
+				       node_id_to_str(current_owner, false),
+				       node_id_to_str(&entry->participants[i],
+						      false));
 
 				return false;
 			}
@@ -565,8 +566,8 @@ static bool add_new_participant(struct vdi_state_entry *entry,
 	if (entry->lock_state == LOCK_STATE_UNLOCKED) {
 		sd_assert(!entry->nr_participants);
 
-		sd_debug("%s is first owner of %"PRIx32, node_id_to_str(owner),
-			entry->vid);
+		sd_debug("%s is first owner of %"PRIx32,
+			 node_id_to_str(owner, false), entry->vid);
 
 		entry->nr_participants = 1;
 		memcpy(&entry->participants[0], owner, sizeof(*owner));
@@ -589,8 +590,8 @@ static bool add_new_participant(struct vdi_state_entry *entry,
 		if (node_id_cmp(&entry->participants[i], owner))
 			continue;
 
-		sd_err("%s is already locking %"PRIx32, node_id_to_str(owner),
-			 entry->vid);
+		sd_err("%s is already locking %"PRIx32,
+		       node_id_to_str(owner, false), entry->vid);
 		return false;
 	}
 
@@ -602,8 +603,8 @@ static bool add_new_participant(struct vdi_state_entry *entry,
 	entry->nr_participants++;
 
 	sd_debug("new participant %s (%d) joined to VID: %"PRIx32", state is %d",
-		 node_id_to_str(&entry->participants[idx]), idx, entry->vid,
-		 entry->participants_state[idx]);
+		 node_id_to_str(&entry->participants[idx], false),
+		 idx, entry->vid, entry->participants_state[idx]);
 
 	return true;
 }
@@ -626,7 +627,7 @@ static void del_participant(struct vdi_state_entry *entry,
 	if (idx == -1) {
 		if (err_msg)
 			sd_err("unknown participants: %s",
-			       node_id_to_str(owner));
+			       node_id_to_str(owner, false));
 
 		return;
 	}
@@ -639,9 +640,10 @@ static void del_participant(struct vdi_state_entry *entry,
 	entry->nr_participants--;
 
 	sd_debug("participant: %s is deleted, current participants are below:",
-		 node_id_to_str(owner));
+		 node_id_to_str(owner, false));
 	for (int i = 0; i < entry->nr_participants; i++)
-		sd_debug("%d: %s", i, node_id_to_str(&entry->participants[i]));
+		sd_debug("%d: %s", i,
+			 node_id_to_str(&entry->participants[i], false));
 
 	if (!entry->nr_participants)
 		entry->lock_state = LOCK_STATE_UNLOCKED;
@@ -944,7 +946,7 @@ validate:
 	ret = sheep_exec_req(&sys->this_node.nid, &hdr, NULL);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to validate VID: %"PRIx32" by %s",
-		       vid, node_id_to_str(&sys->this_node.nid));
+		       vid, node_to_str(&sys->this_node));
 	}
 
 	return;
@@ -994,7 +996,7 @@ invalidate:
 	ret = sheep_exec_req(&sys->this_node.nid, &hdr, NULL);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to validate VID: %"PRIx32" by %s",
-		       vid, node_id_to_str(&sys->this_node.nid));
+		       vid, node_to_str(&sys->this_node));
 	}
 
 	return;
@@ -1048,7 +1050,7 @@ main_fn int inode_coherence_update(uint32_t vid, bool validate,
 
 		if (!invalidated) {
 			sd_err("%s isn't participating in VID: %"PRIx32,
-			       node_id_to_str(sender), vid);
+			       node_id_to_str(sender, false), vid);
 			ret = SD_RES_NO_VDI;
 		}
 	}

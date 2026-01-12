@@ -67,8 +67,6 @@ enum etcd_node_attr_type {
 	ATTR_ZONE = 1 << 2,
 	ATTR_NR_VNODES = 1 << 3,
 	ATTR_SPACE = 1 << 4,
-	ATTR_PORT = 1 << 5,
-	ATTR_IO_PORT = 1 << 6,
 };
 
 const char *etcd_node_attr_names[] = {
@@ -77,8 +75,6 @@ const char *etcd_node_attr_names[] = {
 	[ATTR_ZONE] = "zone",
 	[ATTR_NR_VNODES] = "nr_vnodes",
 	[ATTR_SPACE] = "space",
-	[ATTR_PORT] = "port",
-	[ATTR_IO_PORT] = "io_port",
 };
 
 const char *etcd_cinfo_status_names[] = {
@@ -150,7 +146,7 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 	char key[1024], val[MAX_NODE_STR_LEN], *eptr;
 	enum etcd_node_attr_type attr_type = 0;
 	unsigned long num;
-	int rc, len;
+	int rc;
 
 	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
 		 node->node_id, attr);
@@ -163,19 +159,13 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 		return -EINVAL;
 	}
 	if (attr_type == ATTR_ADDR) {
-		len = sizeof(node->node.nid.addr);
-		if (rc < len)
-			len = rc;
-		if (!str_to_addr(val, node->node.nid.addr))
+		if (!str_to_node(val, &node->node))
 			return -EINVAL;
 		node->attr_mask |= attr_type;
 		return 0;
 	}
 	if (attr_type == ATTR_IO_ADDR) {
-		len = sizeof(node->node.nid.io_addr);
-		if (rc < len)
-			len = rc;
-		if (!str_to_addr(val, node->node.nid.io_addr))
+		if (!str_to_io_node(val, &node->node))
 			return -EINVAL;
 		node->attr_mask |= attr_type;
 		return 0;
@@ -193,12 +183,6 @@ static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
 		break;
 	case ATTR_SPACE:
 		node->node.space = num;
-		break;
-	case ATTR_PORT:
-		node->node.nid.port = num;
-		break;
-	case ATTR_IO_PORT:
-		node->node.nid.io_port = num;
 		break;
 	default:
 		return -EINVAL;
@@ -225,13 +209,12 @@ static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
 	size_t len;
 
 	if (!strcmp(attr, "addr")) {
-		const char *addr = addr_to_str(node->node.nid.addr,
-					       node->node.nid.port);
+		const char *addr = node_to_str(&node->node);
+
 		strcpy(val, addr);
 		len = strlen(val);
 	} else if (!strcmp(attr, "io_addr")) {
-		const char *addr = addr_to_str(node->node.nid.io_addr,
-					       node->node.nid.io_port);
+		const char *addr = io_node_to_str(&node->node);
 		strcpy(val, addr);
 		len = strlen(val);
 	} else
@@ -282,14 +265,6 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 			rc = etcd_node_set_int_attr(node, "space",
 						    node->node.space);
 			break;
-		case ATTR_PORT:
-			rc = etcd_node_set_int_attr(node, "port",
-						    node->node.nid.port);
-			break;
-		case ATTR_IO_PORT:
-			rc = etcd_node_set_int_attr(node, "io_port",
-						    node->node.nid.io_port);
-			break;
 		default:
 			rc = -EINVAL;
 			break;
@@ -314,7 +289,6 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 				  struct etcd_node *node)
 {
 	char *attr;
-	size_t len;
 	unsigned long num;
 	int attr_type;
 	struct disk_info *disk_info = NULL;
@@ -327,18 +301,13 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		return -EINVAL;
 	}
 	attr++;
-	len = kv->value_len;
 	attr_type = etcd_attr_to_type(attr);
 	if (attr_type == ATTR_ADDR) {
-		if (len > sizeof(node->node.nid.addr))
-			len = sizeof(node->node.nid.addr);
-		memcpy(node->node.nid.addr, kv->value, len);
+		str_to_node(kv->value, &node->node);
 		return 0;
 	}
 	if (attr_type == ATTR_IO_ADDR) {
-		if (len > sizeof(node->node.nid.io_addr))
-			len = sizeof(node->node.nid.io_addr);
-		memcpy(node->node.nid.io_addr, kv->value, len);
+		str_to_io_node(kv->value, &node->node);
 		return 0;
 	}
 		
@@ -357,12 +326,6 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		return 0;
 	case ATTR_SPACE:
 		node->node.space = num;
-		return 0;
-	case ATTR_PORT:
-		node->node.nid.port = num;
-		return 0;
-	case ATTR_IO_PORT:
-		node->node.nid.io_port = num;
 		return 0;
 #ifdef HAVE_ACCELIO
 	case ATTR_TRANSPORT:
@@ -687,6 +650,8 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			sd_warn("%s: failed to download '%s'",
 				__func__, node->node_id);
 		}
+		sd_debug("node %s id %s",
+			 node->node_id, node_to_str(&node->node));
 	}
 	return num_val;
 }

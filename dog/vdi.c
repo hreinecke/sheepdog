@@ -367,13 +367,13 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 	       name, snapid, vid, tag);
 
 	if (found->lock_state == LOCK_STATE_LOCKED) {
-		printf(" %s\n", node_id_to_str(&found->lock_owner));
+		printf(" %s\n", node_id_to_str(&found->lock_owner, false));
 		return;
 	}
 
 	/* LOCK_STATE_SHARED */
 	for (uint32_t j = 0; j < found->nr_participants; j++) {
-		printf(" %s", node_id_to_str(&found->participants[j]));
+		printf(" %s", node_id_to_str(&found->participants[j], false));
 
 		const uint32_t state = found->participants_state[j];
 		switch(state) {
