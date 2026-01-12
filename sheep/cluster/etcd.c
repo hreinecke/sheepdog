@@ -1853,6 +1853,7 @@ static int etcd_get_local_addr(uint8_t *bytes)
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 
+	sd_debug("resolving %s:%d", this_ctx->host, this_ctx->port);
 	ret = getaddrinfo(this_ctx->host, port, &hints, &ai);
 	if (ret != 0) {
 		sd_warn("getaddrinfo on %s:%d failed: %s",
