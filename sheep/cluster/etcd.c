@@ -141,56 +141,6 @@ static inline int etcd_node_delete(struct etcd_node *node)
 	return etcd_kv_delete(node->ctx, key);
 }
 
-static inline int etcd_get_node_attr(struct etcd_node *node, const char *attr)
-{
-	char key[1024], val[MAX_NODE_STR_LEN], *eptr;
-	enum etcd_node_attr_type attr_type = 0;
-	unsigned long num;
-	int rc;
-
-	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/%s",
-		 node->node_id, attr);
-	rc = etcd_kv_get(node->ctx, key, val, sizeof(val));
-	if (rc < 0)
-		return rc;
-	attr_type = etcd_attr_to_type(attr);
-	if (!attr_type) {
-		sd_warn("%s: invalid attribute '%s'", __func__, attr);
-		return -EINVAL;
-	}
-	if (attr_type == ATTR_ADDR) {
-		if (!str_to_node(val, &node->node))
-			return -EINVAL;
-		node->attr_mask |= attr_type;
-		return 0;
-	}
-	if (attr_type == ATTR_IO_ADDR) {
-		if (!str_to_io_node(val, &node->node))
-			return -EINVAL;
-		node->attr_mask |= attr_type;
-		return 0;
-	}
-	errno = 0;
-	num = strtoul(val, &eptr, 10);
-	if (errno || val == eptr)
-		return -ERANGE;
-	switch (attr_type) {
-	case ATTR_ZONE:
-		node->node.zone = num;
-		break;
-	case ATTR_NR_VNODES:
-		node->node.nr_vnodes = num;
-		break;
-	case ATTR_SPACE:
-		node->node.space = num;
-		break;
-	default:
-		return -EINVAL;
-	}
-	node->attr_mask |= attr_type;
-	return 0;
-}
-
 static int etcd_node_set_int_attr(struct etcd_node *node, const char *attr,
 				  unsigned long num)
 {
