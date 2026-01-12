@@ -1445,7 +1445,8 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
-		sd_debug("I'm the master now, %d nodes", nr_nodes);
+		sd_debug("I'm the master now, %d nodes, status %d",
+			 nr_nodes, cinfo.status);
 		obj = json_object_new_object();
 		etcd_cinfo_to_json(&cinfo, obj, &joining);
 		etcd_update_event(ctx, EVENT_ACCEPT, obj);
@@ -1509,6 +1510,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
+	sd_debug("ACCEPT %s status %d", joining.node_id, cinfo.status);
 	if (cinfo.status != SD_STATUS_OK) {
 		const char *status_str =
 			etcd_cinfo_status_to_string(cinfo.status);
@@ -1519,7 +1521,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	}
 	INIT_RB_ROOT(&node_root);
 
-	sd_debug("ACCEPT %s", joining.node_id);
 	nr_nodes = etcd_build_node_list(this_ctx, &node_root, &joining);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
