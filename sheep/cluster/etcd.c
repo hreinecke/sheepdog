@@ -675,6 +675,8 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		num_val++;
 		json_object_iter_next(&itb);
 	}
+	sd_debug("%s: cinfo proto_ver %d, flags %d, status %d",
+		 __func__, cinfo->proto_ver, cinfo->flags, cinfo->status);
 	node_obj = json_object_object_get(obj, "node");
 	if (node && node_obj) {
 		int ret;
@@ -1443,7 +1445,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
-		sd_debug("I'm the master now");
+		sd_debug("I'm the master now, %d nodes", nr_nodes);
 		obj = json_object_new_object();
 		etcd_cinfo_to_json(&cinfo, obj, &joining);
 		etcd_update_event(ctx, EVENT_ACCEPT, obj);
