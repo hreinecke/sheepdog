@@ -750,6 +750,7 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 		struct etcd_kv *kv = &kvs[i];
 		char *id = kv->key + strlen(key), *attr;
 
+		sd_debug("%s: checking id '%s'", __func__, id);
 		attr = strrchr(id, '/');
 		if (attr && !strcmp(attr, "space")) {
 			/*
