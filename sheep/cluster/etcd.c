@@ -752,7 +752,7 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 
 		sd_debug("%s: checking id '%s'", __func__, id);
 		attr = strrchr(id, '/');
-		if (attr && !strcmp(attr, "space")) {
+		if (attr && !strcmp(attr, "/space")) {
 			/*
 			 * The master node is the node
 			 * with the earliest creation date.
