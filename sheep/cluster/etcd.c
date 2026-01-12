@@ -1677,8 +1677,9 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	sd_debug("event %s (%d) value '%s' deleted %d",
-		 event, type, kv->value_len ? kv->value : "{}", kv->deleted);
+	sd_debug("event %s (%d) value '%s' deleted %d created %lu mod %lu",
+		 event, type, kv->value_len ? kv->value : "{}",
+		 kv->deleted, kv->create_revision, kv->mod_revision);
 
 	switch (type) {
 	case EVENT_JOIN:
