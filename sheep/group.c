@@ -1383,6 +1383,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 
 		if (ret < 0)
 			return -1;
+		sd_debug("node addr %s", node_to_str(&sys->this_node));
 	}
 
 	sys->this_node.nid.port = port;
