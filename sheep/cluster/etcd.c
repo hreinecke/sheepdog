@@ -14,6 +14,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <semaphore.h>
 
@@ -1840,6 +1841,36 @@ static int etcd_update_node(struct sd_node *node)
 	return SD_RES_NO_SUPPORT;
 }
 
+static int etcd_get_local_addr(uint8_t *bytes)
+{
+	char port[16];
+	struct addrinfo hints, *ai, *aip;
+	int ret;
+
+	sprintf(port, "%d", this_ctx->port);
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+
+	ret = getaddrinfo(this_ctx->host, port, &hints, &ai);
+	if (ret != 0) {
+		sd_warn("getaddrinfo on %s:%d failed: %s",
+			this_ctx->host, this_ctx->port, gai_strerror(ret));
+		return -EINVAL;
+	}
+	if (!ai) {
+		sd_warn("no results from getaddrinfo()");
+		return -EHOSTUNREACH;
+	}
+	for (aip = ai; aip != NULL; aip = aip->ai_next) {
+		memset(bytes, 0, 12);
+		memcpy(bytes + 12, aip->ai_addr, aip->ai_addrlen);
+		break;
+	}
+	freeaddrinfo(ai);
+	return 0;
+}
+
 static struct cluster_driver cdrv_etcd = {
 	.name       = "etcd",
 
@@ -1852,7 +1883,7 @@ static struct cluster_driver cdrv_etcd = {
 	.lock         = etcd_lock,
 	.unlock       = etcd_unlock,
 	.update_node  = etcd_update_node,
-	.get_local_addr = get_local_addr,
+	.get_local_addr = etcd_get_local_addr,
 };
 
 cdrv_register(cdrv_etcd);
