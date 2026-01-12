@@ -322,8 +322,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 
 	attr = strrchr(kv->key, '/');
 	if (!attr) {
-		sd_debug("%s: skipping key '%s'",
-			 __func__, kv->key);
+		sd_debug("skipping key '%s'", kv->key);
 		return -EINVAL;
 	}
 	attr++;
@@ -345,7 +344,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	errno = 0;
 	num = strtoul(kv->value, NULL, 10);
 	if (errno) {
-		sd_debug("%s: parsing error on '%s'", __func__, kv->value);
+		sd_debug("parsing error on '%s'", kv->value);
 		return -errno;
 	}
 	switch (attr_type) {
@@ -374,8 +373,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	}
 
 	if (!strstr(kv->key, "disks")) {
-		sd_debug("%s: unhandled attribute '%s'",
-			 __func__, attr);
+		sd_debug("unhandled attribute '%s'", attr);
 		return -EINVAL;
 	}
 	disk_id = strtoul(attr, NULL, 10);
@@ -676,8 +674,8 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		num_val++;
 		json_object_iter_next(&itb);
 	}
-	sd_debug("%s: cinfo proto_ver %d, flags %d, status %d",
-		 __func__, cinfo->proto_ver, cinfo->flags, cinfo->status);
+	sd_debug("cinfo proto_ver %d, flags %d, status %d",
+		 cinfo->proto_ver, cinfo->flags, cinfo->status);
 	node_obj = json_object_object_get(obj, "node");
 	if (node && node_obj) {
 		int ret;
@@ -731,7 +729,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root,
 			return rc;
 		}
 	}
-	sd_debug("%s: %zu nodes", __func__, nr_nodes);
+	sd_debug("%zu nodes", nr_nodes);
 	etcd_kv_free(kvs, num_kvs);
 	return nr_nodes;
 }
@@ -747,8 +745,6 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	num_kvs = etcd_kv_range(node->ctx, key, &kvs);
 	if (num_kvs < 0)
 		return num_kvs;
-	sd_debug("%s: found %d entries for key '%s'",
-		 __func__, num_kvs, key);
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
 		char *id = kv->key + strlen(key), *attr;
@@ -761,8 +757,8 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 			 * If we only have one node there
 			 * is no master.
 			 */
-			sd_debug("%s: id %s num %d master %s",
-				 __func__, id, num_nodes, master);
+			sd_debug("id %s num %d master %s",
+				 id ? id : "<none>", num_nodes, master);
 			if (!master)
 				master = id;
 			num_nodes++;
@@ -1432,8 +1428,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	if (!etcd_node_is_master(&this_node) &&
 	    !strcmp(this_node.node_id, joining.node_id)) {
 		/* Let's await master acking the join-request */
-		sd_debug("%s: node '%s' is not master", __func__,
-			 this_node.node_id);
+		sd_debug("node '%s' is not master", this_node.node_id);
 		json_object_put(obj);
 		return;
 	}
@@ -1681,9 +1676,8 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			break;
 		}
 	}
-	sd_debug("%s: event %s (%d) value '%s' deleted %d",
-		 __func__, event, type, kv->value_len ? kv->value : "{}",
-		kv->deleted);
+	sd_debug("event %s (%d) value '%s' deleted %d",
+		 event, type, kv->value_len ? kv->value : "{}", kv->deleted);
 
 	switch (type) {
 	case EVENT_JOIN:
