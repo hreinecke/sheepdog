@@ -92,11 +92,9 @@ struct etcd_node {
 	struct rb_node rb;
 	struct etcd_ctx *ctx;
 	char node_id[MAX_NODE_STR_LEN];
-	struct cluster_info *cinfo;
 	struct sd_node node;
 	unsigned int attr_mask;
 	bool callbacked;
-	bool init;
 };
 
 static LIST_HEAD(etcd_block_list);
@@ -530,7 +528,7 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 {
 	char key[1024];
 	struct etcd_kv *kvs;
-	int num_kvs, i;
+	int num_kvs, num_val = 0, i;
 
 	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
 	num_kvs = etcd_kv_range(ctx, key, &kvs);
@@ -543,6 +541,7 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 
 		name = strrchr(kv->key, '/');
 		name++;
+		num_val++;
 		if (!strcmp(name, "status")) {
 			cinfo->status = etcd_cinfo_status_to_type(kv->value);
 			continue;
@@ -566,12 +565,14 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 			cinfo->copy_policy = val;
 		else if (!strcmp(name, "block_size_shift"))
 			cinfo->block_size_shift = val;
-		else
-			sd_warn("%s: invalid attribute '%s'",
+		else {
+			sd_warn("%s: unhandled attribute '%s'",
 				__func__, kv->key);
+			num_val--;
+		}
 	}
 	etcd_kv_free(kvs, num_kvs);
-	return 0;
+	return num_val;
 }
 
 static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
@@ -823,21 +824,26 @@ static int etcd_join(const struct sd_node *myself,
 		     void *opaque, size_t opaque_len)
 {
 	int rc;
-	struct cluster_info *cinfo = opaque;
+	struct cluster_info *cinfo = opaque, cur_cinfo;
 	struct json_object *cinfo_obj;
 
-	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
+	rc = etcd_cinfo_download(this_ctx, &cur_cinfo);
+	if (rc < 0) {
+		sd_warn("%s: failed to download cinfo", __func__);
+		return rc;
+	}
+	if (rc == 0) {
+		cinfo->proto_ver = SD_SHEEP_PROTO_VER;
+		rc = etcd_cinfo_upload(this_ctx, cinfo, true);
+		if (rc < 0) {
+			sd_err("%s: cluster init failed", __func__);
+			return rc;
+		}
+	}
+
 	this_node.ctx = this_ctx;
 	this_node.node = *myself;
 	strcpy(this_node.node_id, node_to_str(myself));
-	this_node.cinfo = cinfo;
-
-	this_node.init = true;
-	rc = etcd_cinfo_upload(this_ctx, cinfo, true);
-	if (rc < 0) {
-		sd_err("cluster init failed");
-		return rc;
-	}
 	rc = etcd_node_upload(&this_node, true);
 	if (rc < 0) {
 		etcd_event_delete(&this_node);
@@ -847,7 +853,6 @@ static int etcd_join(const struct sd_node *myself,
 			       DIV_ROUND_UP(etcd_timeout, 1000));
 		exit(1);
 	}
-	this_node.init = false;
 	cinfo_obj = json_object_new_object();
 	etcd_cinfo_to_json(cinfo, cinfo_obj, &this_node);
 	rc = etcd_update_event(this_ctx, EVENT_JOIN, cinfo_obj);
