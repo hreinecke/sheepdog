@@ -293,7 +293,7 @@ out:
 static uint64_t init_path_space(const char *path, bool purge)
 {
 	uint64_t size;
-	char stale[PATH_MAX];
+	char stale[PATH_MAX + 7];
 
 	if (!is_xattr_enabled(path)) {
 		sd_warn("multi-disk support need xattr feature for path: %s",
@@ -304,7 +304,7 @@ static uint64_t init_path_space(const char *path, bool purge)
 	if (purge && purge_directory(path) < 0)
 		sd_err("failed to purge %s", path);
 
-	snprintf(stale, PATH_MAX - 7, "%s/.stale", path);
+	snprintf(stale, PATH_MAX + 7, "%s/.stale", path);
 	if (xmkdir(stale, sd_def_dmode) < 0) {
 		sd_err("can't mkdir for %s, %m", stale);
 		goto broken_path;
@@ -503,7 +503,7 @@ int for_each_object_in_stale(int (*func)(uint64_t oid, const char *path,
 			     void *arg)
 {
 	int ret = SD_RES_SUCCESS;
-	char path[PATH_MAX];
+	char path[PATH_MAX + 7];
 	const struct disk *disk;
 
 	sd_read_lock(&md.lock);
