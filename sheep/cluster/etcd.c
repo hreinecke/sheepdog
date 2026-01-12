@@ -1497,14 +1497,16 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 {
 	struct rb_root node_root, sd_root;
 	struct json_object *obj;
-	struct etcd_node *enode, joining;
-	struct cluster_info cinfo;
+	struct etcd_node *enode, joining = {};
+	struct cluster_info cinfo = {};
 	int nr_nodes, ret;
 
-	memset(&cinfo, 0, sizeof(cinfo));
-	memset(&joining, 0, sizeof(joining));
-	joining.ctx = ctx;
 	obj = json_tokener_parse(opaque);
+	if (!obj) {
+		sd_warn("%s: failed to parse opaque", __func__);
+		return;
+	}
+	joining.ctx = ctx;
 	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
