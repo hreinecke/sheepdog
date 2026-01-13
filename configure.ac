@@ -124,6 +124,9 @@ AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stdint.h \
 AC_CHECK_HEADERS([urcu.h urcu/uatomic.h],,
 	AC_MSG_ERROR(liburcu 0.6.0 or later is required))
 
+AC_CHECK_HEADERS([json-c/json.h],,
+	AC_MSG_ERROR(libjson-c is required))
+
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
 AC_TYPE_UID_T
