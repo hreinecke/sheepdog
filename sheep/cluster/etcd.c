@@ -1429,7 +1429,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	sd_debug("ACCEPT %s status %d", joining.node_id, cinfo.status);
 	INIT_RB_ROOT(&node_root);
 
-	nr_nodes = etcd_build_node_list(this_ctx, &node_root, &joining);
+	nr_nodes = etcd_build_node_list(this_ctx, &node_root, NULL);
 	if (nr_nodes < 0) {
 		sd_err("%s: failed to build node list", __func__);
 		json_object_put(obj);

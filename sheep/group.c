@@ -1239,7 +1239,7 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 	sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
 	sys->cinfo.flags |= flags;
 
-	sd_debug("join %s", node_to_str(joined));
+	sd_debug("join %s, %lu nodes", node_to_str(joined), nr_nodes);
 	rb_for_each_entry(n, nroot, rb) {
 		sd_debug("%s", node_to_str(n));
 	}
