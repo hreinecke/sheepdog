@@ -1412,7 +1412,6 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		nr_nodes++;
 	}
 	sd_leave_handler(&node->node, &sd_root, nr_nodes);
-	free(node);
 }
 
 static void etcd_handle_accept(struct etcd_ctx *ctx,
