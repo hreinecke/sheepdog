@@ -612,6 +612,46 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 	return num_val;
 }
 
+static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
+{
+	size_t num_kvs, nr_nodes = 0;
+	struct etcd_node *node = NULL;
+	char base[MAX_NODE_STR_LEN];
+	struct etcd_kv *kvs;
+	int node_size = sizeof(*node) + sizeof(struct disk_info) * DISK_MAX;
+	int i, rc;
+
+	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
+	num_kvs = etcd_kv_range(ctx, base, &kvs);
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		struct etcd_node node_key;
+		char *key, *a;
+
+		key = kv->key + strlen(base);
+		strcpy(node_key.node_id, key);
+		a = strchr(node_key.node_id, '/');
+		*a = '\0';
+		node = rb_search(root, &node_key, rb, etcd_node_cmp);
+		if (!node) {
+			node = xzalloc(node_size);
+			strcpy(node->node_id, node_key.node_id);
+			rb_insert(root, node, rb, etcd_node_cmp);
+			nr_nodes++;
+		}
+		rc = etcd_kv_to_node(kv, node);
+		if (rc < 0) {
+			sd_err("%s: failed to load node attr '%s'",
+			       __func__, key);
+			etcd_kv_free(kvs, num_kvs);
+			return rc;
+		}
+	}
+	sd_debug("%zu nodes", nr_nodes);
+	etcd_kv_free(kvs, num_kvs);
+	return nr_nodes;
+}
+
 static inline int etcd_node_is_master(struct etcd_node *node)
 {
 	char key[1024], *master = NULL;;
@@ -717,6 +757,8 @@ static int etcd_join(const struct sd_node *myself,
 			return rc;
 		}
 	}
+
+	etcd_build_node_list(this_ctx, &etcd_node_root);
 
 	this_node.ctx = this_ctx;
 	this_node.node = *myself;
