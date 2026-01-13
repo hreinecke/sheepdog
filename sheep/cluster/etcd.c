@@ -1376,26 +1376,27 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 static void etcd_handle_leave(struct etcd_ctx *ctx,
 			      void *opaque, int opaque_len)
 {
-	struct json_object *obj;
-	struct cluster_info cinfo;
+	struct json_object *obj, *node_obj;
 	struct rb_root sd_root;
 	struct etcd_node *node, *sd_node, leaving;
-	int nr_nodes = 0, ret;
+	int nr_nodes = 0;
 
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
 		sd_warn("%s: failed to parse opaque", __func__);
 		return;
 	}
-	memset(&cinfo, 0, sizeof(cinfo));
+	node_obj = json_object_object_get(obj, "node");
+	if (!node_obj) {
+		sd_warn("node object not found");
+		json_object_put(obj);
+		return;
+	}
+
 	memset(&leaving, 0, sizeof(leaving));
+	strcpy(leaving.node_id, json_object_get_string(node_obj));
 	leaving.ctx = ctx;
 	rb_init_node(&leaving.rb);
-	ret = etcd_json_to_cinfo(obj, &cinfo, &leaving);
-	if (!ret) {
-		sd_warn("%s: no elements parsed from opaque",
-			__func__);
-	}
 	sd_debug("LEAVE %s", leaving.node_id);
 	node = rb_search(&etcd_node_root, &leaving, rb, etcd_node_cmp);
 	if (!node) {
