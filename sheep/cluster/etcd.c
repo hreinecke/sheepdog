@@ -230,14 +230,13 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 		if (!node->node.disks[i].disk_id)
 			continue;
 		rc = etcd_node_set_disk_attr(node, i);
-		if (rc < 0)
-			goto out_cleanup;
+		if (rc < 0) {
+			etcd_node_delete(node);
+			return rc;
+		}
 	}
 #endif
 	return 0;
-out_cleanup:
-	etcd_node_delete(node);
-	return rc;
 }
 
 static inline int etcd_kv_to_node(struct etcd_kv *kv,
@@ -246,9 +245,11 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	char *attr;
 	unsigned long num;
 	int attr_type;
+#ifdef HAVE_DISKVNODES
 	struct disk_info *disk_info = NULL;
 	unsigned long disk_id;
 	int i, disk_num = -1;
+#endif
 
 	attr = strrchr(kv->key, '/');
 	if (!attr) {
@@ -869,14 +870,12 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 			     void *data, size_t data_len)
 {
 	struct sd_req *req = &msg->req;
+	struct sd_rsp *rsp = &msg->rsp;
 	struct json_object *req_obj, *vdi_obj, *data_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
 	uint32_t *vdi_id = (uint32_t *)data;
 	struct sd_node *node;
 
-	if (msg->req.data_length)
-		json_object_object_add(obj, "data_length",
-				       json_object_new_int(req->data_length));
 	req_obj = json_object_new_object();
 	json_object_object_add(req_obj, "proto_ver",
 			       json_object_new_int(req->proto_ver));
@@ -891,6 +890,9 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 	if (req->id)
 		json_object_object_add(req_obj, "id",
 				       json_object_new_int(req->id));
+	if (req->data_length)
+		json_object_object_add(req_obj, "data_length",
+				       json_object_new_int(req->data_length));
 	switch (req->opcode) {
 	case SD_OP_NEW_VDI:
 	case SD_OP_NOTIFY_VDI_ADD:
@@ -974,6 +976,14 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	}
 	json_object_object_add(obj, "req", req_obj);
+	if (rsp->data_length) {
+		struct json_object *rsp_obj =
+			json_object_new_object();
+
+		json_object_object_add(rsp_obj, "data_length",
+				       json_object_new_int(rsp->data_length));
+		json_object_object_add(obj, "rsp", rsp_obj);
+	}
 }
 
 static void etcd_json_to_vdi(struct json_object *obj,
@@ -1248,25 +1258,40 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 					       size_t *msg_len)
 {
 	struct vdi_op_message *msg;
-	struct json_object *req_obj;
+	struct json_object *req_obj, *rsp_obj, *val_obj;
 	struct json_object_iterator itb, ite;
 	size_t data_len = 0;
 
-	req_obj = json_object_object_get(obj, "data_length");
-	if (req_obj)
-		data_len = json_object_get_int(req_obj);
+	req_obj = json_object_object_get(obj, "req");
+	if (!req_obj) {
+		sd_warn("no request element found");
+		return NULL;
+	}
+	val_obj = json_object_object_get(req_obj, "data_length");
+	if (!val_obj) {
+		rsp_obj = json_object_object_get(obj, "rsp");
+		if (rsp_obj)
+			val_obj = json_object_object_get(rsp_obj,
+							 "data_length");
+	}
+	if (val_obj)
+		data_len = json_object_get_int(val_obj);
 	msg = xzalloc(sizeof(*msg) + data_len);
 	if (!msg)
 		return NULL;
 	*msg_len = sizeof(*msg) + data_len;
-	msg->req.data_length = data_len;
+	if (rsp_obj)
+		msg->rsp.data_length = data_len;
+	else
+		msg->req.data_length = data_len;
+
 	itb = json_object_iter_begin(obj);
 	ite = json_object_iter_end(obj);
 
 	while (!json_object_iter_equal(&itb, &ite)) {
 		const char *key = json_object_iter_peek_name(&itb);
-		struct json_object *val_obj = json_object_iter_peek_value(&itb);
 
+		val_obj = json_object_iter_peek_value(&itb);
 		if (!strcmp(key, "req")) {
 			etcd_json_to_req(val_obj, &msg->req);
 		} else if (!strcmp(key, "data")) {
@@ -1276,7 +1301,7 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 			if (node)
 				strcpy(node->node_id,
 				       json_object_get_string(val_obj));
-		} else if (strcmp(key, "data_length"))
+		} else if (strcmp(key, "rsp"))
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
 		json_object_iter_next(&itb);
