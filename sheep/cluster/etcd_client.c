@@ -1159,7 +1159,7 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx)
 {
 	struct etcd_conn_ctx *conn;
 
-	conn = malloc(sizeof(struct etcd_conn_ctx));
+	conn = malloc(sizeof(*conn));
 	if (!conn)
 		return NULL;
 

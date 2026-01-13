@@ -976,12 +976,17 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	}
 	json_object_object_add(obj, "req", req_obj);
-	if (rsp->data_length) {
+	if (rsp->result || rsp->data_length) {
 		struct json_object *rsp_obj =
 			json_object_new_object();
 
-		json_object_object_add(rsp_obj, "data_length",
-				       json_object_new_int(rsp->data_length));
+		if (rsp->data_length)
+			json_object_object_add(rsp_obj, "data_length",
+					       json_object_new_int(rsp->data_length));
+
+		if (rsp->result)
+			json_object_object_add(rsp_obj, "result",
+					       json_object_new_int(rsp->result));
 		json_object_object_add(obj, "rsp", rsp_obj);
 	}
 }
@@ -1260,7 +1265,8 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 	struct vdi_op_message *msg;
 	struct json_object *req_obj, *rsp_obj, *val_obj;
 	struct json_object_iterator itb, ite;
-	size_t data_len = 0;
+	size_t data_len = 0, req_data_len = 0, rsp_data_len = 0;
+	int rsp_result = SD_RES_SUCCESS;
 
 	req_obj = json_object_object_get(obj, "req");
 	if (!req_obj) {
@@ -1268,23 +1274,34 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 		return NULL;
 	}
 	val_obj = json_object_object_get(req_obj, "data_length");
-	if (!val_obj) {
-		rsp_obj = json_object_object_get(obj, "rsp");
-		if (rsp_obj)
-			val_obj = json_object_object_get(rsp_obj,
-							 "data_length");
-	}
 	if (val_obj)
-		data_len = json_object_get_int(val_obj);
+		req_data_len = json_object_get_int(val_obj);
+
+	rsp_obj = json_object_object_get(obj, "rsp");
+	if (rsp_obj) {
+		val_obj = json_object_object_get(rsp_obj,
+						 "data_length");
+		if (val_obj)
+			rsp_data_len = json_object_get_int(val_obj);
+		val_obj = json_object_object_get(rsp_obj, "result");
+		if (val_obj)
+			rsp_result = json_object_get_int(val_obj);
+	}
+	if (req_data_len)
+		data_len = req_data_len;
+	else
+		data_len = rsp_data_len;
+
 	msg = xzalloc(sizeof(*msg) + data_len);
 	if (!msg)
 		return NULL;
 	*msg_len = sizeof(*msg) + data_len;
-	if (rsp_obj)
-		msg->rsp.data_length = data_len;
+	if (req_data_len)
+		msg->req.data_length = req_data_len;
 	else
-		msg->req.data_length = data_len;
-
+		msg->rsp.data_length = rsp_data_len;
+	if (rsp_result != SD_RES_SUCCESS)
+		msg->rsp.result = rsp_result;
 	itb = json_object_iter_begin(obj);
 	ite = json_object_iter_end(obj);
 
