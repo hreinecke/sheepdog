@@ -1313,7 +1313,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	    !strcmp(this_node.node_id, joining.node_id)) {
 		/* Let's await master acking the join-request */
 		sd_debug("node '%s' is not master", this_node.node_id);
-		json_object_put(obj);
 		return;
 	}
 
