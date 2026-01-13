@@ -1396,6 +1396,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
+	json_object_put(obj);
 	sd_debug("ACCEPT %s status %d", joining->node_id, cinfo.status);
 
 	rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
@@ -1407,7 +1408,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	}
 
 	sd_accept_handler(&joining->node, &sd_root, nr_nodes, &cinfo);
-	json_object_put(obj);
 }
 
 static void etcd_kick_block_event(void)
