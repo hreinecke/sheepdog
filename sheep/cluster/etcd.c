@@ -1238,6 +1238,7 @@ static void etcd_json_to_data(struct json_object *obj, void *data,
 }
 
 static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
+					       struct etcd_node *node,
 					       size_t *msg_len)
 {
 	struct vdi_op_message *msg;
@@ -1265,6 +1266,10 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 		} else if (!strcmp(key, "data")) {
 			etcd_json_to_data(val_obj, &msg->data,
 					  data_len);
+		} else if (!strcmp(key, "node")) {
+			if (node)
+				strcpy(node->node_id,
+				       json_object_get_string(val_obj));
 		} else if (strcmp(key, "data_length"))
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
@@ -1403,7 +1408,6 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 	sd_leave_handler(&leaving.node, &sd_root, nr_nodes);
 	rb_destroy(&node_root, struct etcd_node, rb);
-	memset(&this_node.node, 0, sizeof(this_node.node));
 }
 
 static void etcd_handle_accept(struct etcd_ctx *ctx,
@@ -1503,7 +1507,7 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 		sd_warn("%s: failed to parse opaque", __func__);
 		return;
 	}
-	msg = etcd_json_to_msg(obj, &msg_len);
+	msg = etcd_json_to_msg(obj, NULL, &msg_len);
 	if (!msg) {
 		sd_warn("%s: failed to deserialize json", __func__);
 		json_object_put(obj);
@@ -1521,37 +1525,30 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 static void etcd_handle_notify(struct etcd_ctx *ctx,
 			       void *opaque, size_t opaque_len)
 {
-	struct json_object *obj, *node_obj;
+	struct json_object *obj;
 	struct etcd_node node;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
 	int ret;
 
+	memset(&node, 0, sizeof(node));
+	node.ctx = ctx;
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
 		sd_warn("%s: failed to parse opaque", __func__);
 		return;
 	}
-	node_obj = json_object_object_get(obj, "node");
-	if (!node_obj) {
-		sd_warn("%s: failed to retrieve 'node' object", __func__);
+	msg = etcd_json_to_msg(obj, &node, &msg_len);
+	if (!msg) {
+		sd_warn("%s: failed to deserialize json", __func__);
 		json_object_put(obj);
 		return;
 	}
-	memset(&node, 0, sizeof(node));
-	node.ctx = ctx;
-	strcpy(node.node_id, json_object_get_string(node_obj));
 	sd_debug("NOTIFY %s", node.node_id);
 	ret = etcd_node_download(&node);
 	if (ret < 0) {
 		sd_warn("%s: failed to download '%s'",
 			__func__, node.node_id);
-		json_object_put(obj);
-		return;
-	}
-	msg = etcd_json_to_msg(obj, &msg_len);
-	if (!msg) {
-		sd_warn("%s: failed to deserialize json", __func__);
 		json_object_put(obj);
 		return;
 	}
