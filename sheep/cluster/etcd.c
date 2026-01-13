@@ -1404,7 +1404,6 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		json_object_put(obj);
 		return;
 	}
-	rb_erase(&node->rb, &etcd_node_root);
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(sd_node, &etcd_node_root, rb) {
