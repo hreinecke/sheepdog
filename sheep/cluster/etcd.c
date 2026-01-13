@@ -876,12 +876,15 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 			       json_object_new_int(req->proto_ver));
 	json_object_object_add(req_obj, "opcode",
 			       json_object_new_int(req->opcode));
-	json_object_object_add(req_obj, "flags",
-			       json_object_new_int(req->flags));
-	json_object_object_add(req_obj, "epoch",
-			       json_object_new_int(req->epoch));
-	json_object_object_add(req_obj, "id",
-			       json_object_new_int(req->id));
+	if (req->flags)
+		json_object_object_add(req_obj, "flags",
+				       json_object_new_int(req->flags));
+	if (req->epoch)
+		json_object_object_add(req_obj, "epoch",
+				       json_object_new_int(req->epoch));
+	if (req->id)
+		json_object_object_add(req_obj, "id",
+				       json_object_new_int(req->id));
 	switch (req->opcode) {
 	case SD_OP_NEW_VDI:
 	case SD_OP_NOTIFY_VDI_ADD:
@@ -1131,6 +1134,16 @@ static void etcd_json_to_req(struct json_object *obj,
 			if (attr_obj)
 				req->inode_coherence.validate =
 					json_object_get_int(attr_obj);
+		} else if (!strcmp(key, "proto_ver")) {
+			req->proto_ver = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "opcode")) {
+			req->opcode = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "flags")) {
+			req->flags = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "epoch")) {
+			req->epoch = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "id")) {
+			req->id = json_object_get_int(val_obj);
 		} else
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
@@ -1252,22 +1265,7 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 		} else if (!strcmp(key, "data")) {
 			etcd_json_to_data(val_obj, &msg->data,
 					  data_len);
-		} else if (!strcmp(key, "proto_ver")) {
-			msg->req.proto_ver =
-				json_object_get_int(val_obj);
-		} else if (!strcmp(key, "opcode")) {
-			msg->req.opcode =
-				json_object_get_int(val_obj);
-		} else if (!strcmp(key, "flags")) {
-			msg->req.flags =
-				json_object_get_int(val_obj);
-		} else if (!strcmp(key, "epoch")) {
-			msg->req.epoch =
-				json_object_get_int(val_obj);
-		} else if (!strcmp(key, "id")) {
-			msg->req.id =
-				json_object_get_int(val_obj);
-		} else if (!strcmp(key, "data_length"))
+		} else if (strcmp(key, "data_length"))
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
 		json_object_iter_next(&itb);
