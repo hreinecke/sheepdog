@@ -1072,7 +1072,8 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 		return false;
 	}
 
-	sd_debug("check %s, %d", node_to_str(joining), sys->cinfo.status);
+	sd_debug("check %s, %d, %lu nodes", node_to_str(joining),
+		 sys->cinfo.status, nr_nodes);
 
 	if (sys->cinfo.status == SD_STATUS_WAIT)
 		status = cluster_wait_check(joining, nroot, nr_nodes, cinfo);
