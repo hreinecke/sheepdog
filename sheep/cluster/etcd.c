@@ -786,16 +786,15 @@ static int etcd_join(const struct sd_node *myself,
 static int etcd_leave(void)
 {
 	int rc;
-	struct cluster_info cinfo;
-	struct json_object *cinfo_obj;
+	struct json_object *node_obj;
 
 	sd_info("leaving from cluster");
+	node_obj = json_object_new_object();
+	json_object_object_add(node_obj, "node",
+			       json_object_new_string(this_node.node_id));
 	block_event_list_del(&this_node);
-	etcd_cinfo_download(this_ctx, &cinfo);
-	cinfo_obj = json_object_new_object();
-	etcd_cinfo_to_json(&cinfo, cinfo_obj, &this_node);
-	rc = etcd_update_event(this_ctx, EVENT_LEAVE, cinfo_obj);
-	json_object_put(cinfo_obj);
+	rc = etcd_update_event(this_ctx, EVENT_LEAVE, node_obj);
+	json_object_put(node_obj);
 	return rc;
 }
 
