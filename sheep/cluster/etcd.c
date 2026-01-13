@@ -1296,6 +1296,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	memset(&cinfo, 0, sizeof(cinfo));
 	memset(&joining, 0, sizeof(joining));
 	joining.ctx = ctx;
+	rb_init_node(&joining.rb);
 	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
@@ -1316,7 +1317,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes++;
 	}
-	sd_debug("sender: %s", joining.node_id);
+	sd_debug("sender: %s, %d nodes", joining.node_id, nr_nodes);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
 		sd_debug("I'm the master now, %d nodes, status %d",
 			 nr_nodes, cinfo.status);
@@ -1344,6 +1345,7 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	memset(&cinfo, 0, sizeof(cinfo));
 	memset(&leaving, 0, sizeof(leaving));
 	leaving.ctx = ctx;
+	rb_init_node(&leaving.rb);
 	ret = etcd_json_to_cinfo(obj, &cinfo, &leaving);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
@@ -1388,6 +1390,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		return;
 	}
 	joining->ctx = ctx;
+	rb_init_node(&joining->rb);
 	ret = etcd_json_to_cinfo(obj, &cinfo, joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
@@ -1421,9 +1424,8 @@ static void etcd_kick_block_event(void)
 static void etcd_handle_block(struct etcd_ctx *ctx,
 			      void *opaque, int opaque_len)
 {
-	struct etcd_node *block = xzalloc(sizeof(*block));
+	struct etcd_node block, *node;
 	struct json_object *obj, *node_obj;
-	int ret;
 
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
@@ -1436,20 +1438,19 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 		json_object_put(obj);
 		return;
 	}
-	strcpy(block->node_id, json_object_get_string(node_obj));
-	block->ctx = ctx;
-	sd_debug("BLOCK %s", block->node_id);
-	ret = etcd_node_download(block);
-	if (ret < 0) {
-		sd_warn("%s: failed to download '%s'",
-			__func__, block->node_id);
+	strcpy(block.node_id, json_object_get_string(node_obj));
+	sd_debug("BLOCK %s", block.node_id);
+	rb_init_node(&block.rb);
+	node = rb_search(&etcd_node_root, &block, rb, etcd_node_cmp);
+	if (!node) {
+		sd_warn("blocking node not registered");
 		json_object_put(obj);
 		return;
 	}
-	list_add_tail(&block->list, &etcd_block_list);
-	block = list_first_entry(&etcd_block_list, typeof(*block), list);
-	if (!block->callbacked)
-		block->callbacked = sd_block_handler(&block->node);
+	list_add_tail(&node->list, &etcd_block_list);
+	node = list_first_entry(&etcd_block_list, typeof(*node), list);
+	if (!node->callbacked)
+		node->callbacked = sd_block_handler(&node->node);
 	json_object_put(obj);
 }
 
@@ -1486,33 +1487,31 @@ static void etcd_handle_notify(struct etcd_ctx *ctx,
 			       void *opaque, size_t opaque_len)
 {
 	struct json_object *obj;
-	struct etcd_node node;
+	struct etcd_node notify, *node;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
-	int ret;
 
-	memset(&node, 0, sizeof(node));
-	node.ctx = ctx;
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
 		sd_warn("%s: failed to parse opaque", __func__);
 		return;
 	}
-	msg = etcd_json_to_msg(obj, &node, &msg_len);
+	memset(&notify, 0, sizeof(notify));
+	rb_init_node(&notify.rb);
+	msg = etcd_json_to_msg(obj, &notify, &msg_len);
 	if (!msg) {
 		sd_warn("%s: failed to deserialize json", __func__);
 		json_object_put(obj);
 		return;
 	}
-	sd_debug("NOTIFY %s", node.node_id);
-	ret = etcd_node_download(&node);
-	if (ret < 0) {
-		sd_warn("%s: failed to download '%s'",
-			__func__, node.node_id);
+	sd_debug("NOTIFY %s", notify.node_id);
+	node = rb_search(&etcd_node_root, &notify, rb, etcd_node_cmp);
+	if (!node) {
+		sd_warn("notify node not registered");
 		json_object_put(obj);
 		return;
 	}
-	sd_notify_handler(&node.node, (void *)msg, msg_len);
+	sd_notify_handler(&node->node, (void *)msg, msg_len);
 	json_object_put(obj);
 }
 
