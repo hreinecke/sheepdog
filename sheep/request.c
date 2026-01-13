@@ -976,8 +976,11 @@ static void client_handler(int fd, int events, void *data)
 
 	sd_debug("%x, %d", events, ci->conn.dead);
 
-	if (events & (EPOLLERR | EPOLLHUP))
+	if (events & (EPOLLERR | EPOLLHUP)) {
+		sd_debug("unhandled event %d, connection dead", events);
 		ci->conn.dead = true;
+	}
+
 	/*
 	 * Although dead is true, ci might not be freed immediately
 	 * because of refcnt. Never mind, we will complete it later
