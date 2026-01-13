@@ -176,6 +176,7 @@ static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
 	return etcd_kv_new(node->ctx, key, val, len);
 }
 
+#ifdef HAVE_DISKVNODES
 static int etcd_node_set_disk_attr(struct etcd_node *node, int disk_num)
 {
 	char key[1024], val[MAX_NODE_STR_LEN];
@@ -187,6 +188,7 @@ static int etcd_node_set_disk_attr(struct etcd_node *node, int disk_num)
 		node->node_id, node->node.disks[disk_num].disk_id);
 	return etcd_kv_new(node->ctx, key, val, len);
 }
+#endif
 
 static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 {
@@ -223,6 +225,7 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 		if (rc < 0)
 			return rc;
 	}
+#ifdef HAVE_DISKVNODES
 	for (i = 0; i < DISK_MAX; i++) {
 		if (!node->node.disks[i].disk_id)
 			continue;
@@ -230,6 +233,7 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 		if (rc < 0)
 			goto out_cleanup;
 	}
+#endif
 	return 0;
 out_cleanup:
 	etcd_node_delete(node);
@@ -287,6 +291,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		break;
 	}
 
+#ifdef HAVE_DISKVNODES
 	if (!strstr(kv->key, "disks")) {
 		sd_debug("unhandled attribute '%s'", attr);
 		return -EINVAL;
@@ -310,7 +315,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	}
 	disk_info->disk_id = disk_id;
 	disk_info->disk_space = num;
-
+#endif
 	return 0;
 }
 
@@ -1375,7 +1380,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	struct rb_root sd_root;
 	struct json_object *obj;
 	struct etcd_node *node, *joining;
-	struct cluster_info cinfo = {};
+	struct cluster_info cinfo;
 	int nr_nodes = 0, ret;
 
 	obj = json_tokener_parse(opaque);
@@ -1391,6 +1396,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	}
 	joining->ctx = ctx;
 	rb_init_node(&joining->rb);
+	memset(&cinfo, 0, sizeof(cinfo));
 	ret = etcd_json_to_cinfo(obj, &cinfo, joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",

@@ -200,7 +200,7 @@ int init_config_file(void)
 		close(fd);
 		return -1;
 	}
-	cfg_file = xzalloc(st.st_size);
+	cfg_file = xzalloc(st.st_size + 1);
 	ret = xread(fd, cfg_file, st.st_size);
 	if (ret == 0) {
 		goto create;
