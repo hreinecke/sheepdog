@@ -1447,6 +1447,11 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		return;
 	}
 	rb_erase(&node->rb, &etcd_node_root);
+	rb_init_node(&node->rb);
+	if (!strcmp(node->node_id, this_node.node_id)) {
+		sd_debug("deleting node '%s'", this_node.node_id);
+		etcd_node_delete(&this_node);
+	}
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(sd_node, &etcd_node_root, rb) {
