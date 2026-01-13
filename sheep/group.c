@@ -340,7 +340,7 @@ main_fn void queue_cluster_request(struct request *req)
 			       sd_strerror(ret));
 			goto error;
 		}
-
+		INIT_LIST_NODE(&req->pending_list);
 		list_add_tail(&req->pending_list,
 			      main_thread_get(pending_notify_list));
 

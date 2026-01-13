@@ -713,7 +713,7 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 	event = etcd_event_names[type];
 	if (!event) {
 		sd_warn("%s: invalid type %d", __func__, type);
-		return -EINVAL;
+		return SD_RES_CLUSTER_ERROR;
 	}
 	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s", event);
 
@@ -723,7 +723,7 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 		       __func__, event, type, rc);
 		return SD_RES_CLUSTER_ERROR;
 	}
-	return 0;
+	return SD_RES_SUCCESS;
 }
 
 static void block_event_list_del(struct etcd_node *n)
