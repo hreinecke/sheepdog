@@ -212,11 +212,13 @@ int init_config_file(void)
 
 	obj = json_tokener_parse(cfg_file);
 	if (!obj) {
-		sd_err("failed to parse config file");
-		goto create;
+		sd_info("reading from binary config file");
+		memcpy(&config, cfg_file, sizeof(config));
+	} else {
+		sd_info("reading from json config file");
+		json_to_config(obj, &config);
+		json_object_put(obj);
 	}
-	json_to_config(obj, &config);
-	json_object_put(obj);
 
 	if (config.version != SD_FORMAT_VERSION) {
 		sd_err("This sheep version is not compatible with"
