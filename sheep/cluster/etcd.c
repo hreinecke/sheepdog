@@ -666,7 +666,8 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 		char *id = kv->key + strlen(key), *attr;
 
 		attr = strrchr(id, '/');
-		if (attr && !strcmp(attr, "/space")) {
+		*attr++ = '\0';
+		if (attr && !strcmp(attr, "space")) {
 			/*
 			 * The master node is the node
 			 * with the earliest creation date.
@@ -680,7 +681,9 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 			num_nodes++;
 		}
 	}
-	if (master && num_nodes > 0)
+	if (master && !strcmp(master, node->node_id))
+		is_master = true;
+	if (!num_nodes)
 		is_master = true;
 	etcd_kv_free(kvs, num_kvs);
 	return is_master;
