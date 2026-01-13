@@ -1479,14 +1479,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 			__func__);
 	}
 	sd_debug("ACCEPT %s status %d", joining.node_id, cinfo.status);
-	if (cinfo.status != SD_STATUS_OK) {
-		const char *status_str =
-			etcd_cinfo_status_to_string(cinfo.status);
-		sd_warn("%s: ACCEPT failed, status %s (%d)",
-			__func__, status_str, cinfo.status);
-		json_object_put(obj);
-		return;
-	}
 	INIT_RB_ROOT(&node_root);
 
 	nr_nodes = etcd_build_node_list(this_ctx, &node_root, &joining);
@@ -1499,7 +1491,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	rb_for_each_entry(enode, &node_root, rb)
 		rb_insert(&sd_root, &enode->node, rb, node_cmp);
 
-	etcd_cinfo_download(this_ctx, &cinfo);
 	sd_accept_handler(&joining.node, &sd_root, nr_nodes, &cinfo);
 	json_object_put(obj);
 }
