@@ -95,6 +95,7 @@ struct etcd_node {
 };
 
 static LIST_HEAD(etcd_block_list);
+static struct rb_root etcd_node_root = RB_ROOT;
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
@@ -604,50 +605,6 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			 node->node_id, node_to_str(&node->node));
 	}
 	return num_val;
-}
-
-static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root,
-				struct etcd_node *test_node)
-{
-	size_t num_kvs, nr_nodes = 0;
-	struct etcd_node *node = NULL;
-	char base[MAX_NODE_STR_LEN];
-	struct etcd_kv *kvs;
-	int node_size = sizeof(*node) + sizeof(struct disk_info) * DISK_MAX;
-	int i, rc;
-
-	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
-	num_kvs = etcd_kv_range(ctx, base, &kvs);
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		struct etcd_node node_key;
-		char *key, *a;
-
-		key = kv->key + strlen(base);
-		strcpy(node_key.node_id, key);
-		a = strchr(node_key.node_id, '/');
-		*a = '\0';
-		node = rb_search(root, &node_key, rb, etcd_node_cmp);
-		if (!node) {
-			if (test_node &&
-			    !strcmp(node_key.node_id, test_node->node_id))
-				continue;
-			node = xzalloc(node_size);
-			strcpy(node->node_id, node_key.node_id);
-			rb_insert(root, node, rb, etcd_node_cmp);
-			nr_nodes++;
-		}
-		rc = etcd_kv_to_node(kv, node);
-		if (rc < 0) {
-			sd_err("%s: failed to load node attr '%s'",
-			       __func__, key);
-			etcd_kv_free(kvs, num_kvs);
-			return rc;
-		}
-	}
-	sd_debug("%zu nodes", nr_nodes);
-	etcd_kv_free(kvs, num_kvs);
-	return nr_nodes;
 }
 
 static inline int etcd_node_is_master(struct etcd_node *node)
@@ -1327,9 +1284,9 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 {
 	struct json_object *obj;
 	struct cluster_info cinfo;
-	struct rb_root node_root, sd_root;
+	struct rb_root sd_root;
 	struct etcd_node joining, *node;
-	int nr_nodes, ret;
+	int nr_nodes = 0, ret;
 
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
@@ -1346,7 +1303,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	json_object_put(obj);
 	sd_debug("JOIN %s", joining.node_id);
-	INIT_RB_ROOT(&node_root);
 	if (!etcd_node_is_master(&this_node) &&
 	    !strcmp(this_node.node_id, joining.node_id)) {
 		/* Let's await master acking the join-request */
@@ -1355,15 +1311,10 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		return;
 	}
 
-	nr_nodes = etcd_build_node_list(ctx, &node_root, &joining);
-	if (nr_nodes < 0) {
-		sd_err("%s: failed to build node list", __func__);
-		json_object_put(obj);
-		return;
-	}
 	INIT_RB_ROOT(&sd_root);
-	rb_for_each_entry(node, &node_root, rb) {
+	rb_for_each_entry(node, &etcd_node_root, rb) {
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
+		nr_nodes++;
 	}
 	sd_debug("sender: %s", joining.node_id);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
@@ -1374,7 +1325,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		etcd_update_event(ctx, EVENT_ACCEPT, obj);
 		json_object_put(obj);
 	}
-	rb_destroy(&node_root, struct etcd_node, rb);
 }
 
 static void etcd_handle_leave(struct etcd_ctx *ctx,
@@ -1382,9 +1332,9 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 {
 	struct json_object *obj;
 	struct cluster_info cinfo;
-	struct rb_root node_root, sd_root;
-	struct etcd_node *node, leaving;
-	int nr_nodes, ret;
+	struct rb_root sd_root;
+	struct etcd_node *node, *sd_node, leaving;
+	int nr_nodes = 0, ret;
 
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
@@ -1400,53 +1350,60 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 			__func__);
 	}
 	sd_debug("LEAVE %s", leaving.node_id);
-	INIT_RB_ROOT(&node_root);
-	nr_nodes = etcd_build_node_list(this_ctx, &node_root, NULL);
-	if (nr_nodes < 0) {
-		sd_err("%s: failed to build node list", __func__);
+	node = rb_search(&etcd_node_root, &leaving, rb, etcd_node_cmp);
+	if (!node) {
+		sd_warn("leaving node not registered");
+		json_object_put(obj);
 		return;
 	}
+	rb_erase(&node->rb, &etcd_node_root);
+
 	INIT_RB_ROOT(&sd_root);
-	rb_for_each_entry(node, &node_root, rb)
-		rb_insert(&sd_root, &node->node, rb, node_cmp);
-	sd_leave_handler(&leaving.node, &sd_root, nr_nodes);
-	rb_destroy(&node_root, struct etcd_node, rb);
+	rb_for_each_entry(sd_node, &etcd_node_root, rb) {
+		rb_insert(&sd_root, &sd_node->node, rb, node_cmp);
+		nr_nodes++;
+	}
+	sd_leave_handler(&node->node, &sd_root, nr_nodes);
+	free(node);
 }
 
 static void etcd_handle_accept(struct etcd_ctx *ctx,
 			       void *opaque, size_t opaque_len)
 {
-	struct rb_root node_root, sd_root;
+	struct rb_root sd_root;
 	struct json_object *obj;
-	struct etcd_node *node, joining = {};
+	struct etcd_node *node, *joining;
 	struct cluster_info cinfo = {};
-	int nr_nodes, ret;
+	int nr_nodes = 0, ret;
 
 	obj = json_tokener_parse(opaque);
 	if (!obj) {
 		sd_warn("%s: failed to parse opaque", __func__);
 		return;
 	}
-	joining.ctx = ctx;
-	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
+	joining = xzalloc(sizeof(*joining));
+	if (!joining) {
+		sd_warn("failed to allocate joining node");
+		json_object_put(obj);
+		return;
+	}
+	joining->ctx = ctx;
+	ret = etcd_json_to_cinfo(obj, &cinfo, joining);
 	if (!ret) {
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
-	sd_debug("ACCEPT %s status %d", joining.node_id, cinfo.status);
-	INIT_RB_ROOT(&node_root);
+	sd_debug("ACCEPT %s status %d", joining->node_id, cinfo.status);
 
-	nr_nodes = etcd_build_node_list(this_ctx, &node_root, NULL);
-	if (nr_nodes < 0) {
-		sd_err("%s: failed to build node list", __func__);
-		json_object_put(obj);
-		return;
-	}
+	rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
+
 	INIT_RB_ROOT(&sd_root);
-	rb_for_each_entry(node, &node_root, rb)
+	rb_for_each_entry(node, &etcd_node_root, rb) {
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
+		nr_nodes ++;
+	}
 
-	sd_accept_handler(&joining.node, &sd_root, nr_nodes, &cinfo);
+	sd_accept_handler(&joining->node, &sd_root, nr_nodes, &cinfo);
 	json_object_put(obj);
 }
 
