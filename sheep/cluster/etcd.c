@@ -1380,7 +1380,7 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	struct json_object *obj;
 	struct cluster_info cinfo;
 	struct rb_root node_root, sd_root;
-	struct etcd_node *enode, leaving;
+	struct etcd_node *node, leaving;
 	int nr_nodes, ret;
 
 	obj = json_tokener_parse(opaque);
@@ -1404,8 +1404,8 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
-	rb_for_each_entry(enode, &node_root, rb)
-		rb_insert(&sd_root, &enode->node, rb, node_cmp);
+	rb_for_each_entry(node, &node_root, rb)
+		rb_insert(&sd_root, &node->node, rb, node_cmp);
 	sd_leave_handler(&leaving.node, &sd_root, nr_nodes);
 	rb_destroy(&node_root, struct etcd_node, rb);
 }
@@ -1415,7 +1415,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 {
 	struct rb_root node_root, sd_root;
 	struct json_object *obj;
-	struct etcd_node *enode, joining = {};
+	struct etcd_node *node, joining = {};
 	struct cluster_info cinfo = {};
 	int nr_nodes, ret;
 
@@ -1440,8 +1440,8 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
-	rb_for_each_entry(enode, &node_root, rb)
-		rb_insert(&sd_root, &enode->node, rb, node_cmp);
+	rb_for_each_entry(node, &node_root, rb)
+		rb_insert(&sd_root, &node->node, rb, node_cmp);
 
 	sd_accept_handler(&joining.node, &sd_root, nr_nodes, &cinfo);
 	json_object_put(obj);
