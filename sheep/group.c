@@ -1282,7 +1282,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	struct sd_node *n;
 	int ret;
 
-	sd_debug("leave %s", node_to_str(left));
+	sd_debug("leave %s, status %d", node_to_str(left), sys->cinfo.status);
 	rb_for_each_entry(n, nroot, rb) {
 		sd_debug("%s", node_to_str(n));
 	}

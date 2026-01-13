@@ -1249,7 +1249,7 @@ int main(int argc, char **argv)
 	while (sys->nr_outstanding_reqs != 0 ||
 	       (sys->cinfo.status != SD_STATUS_KILLED &&
 		sys->cinfo.status != SD_STATUS_SHUTDOWN))
-		event_loop(-1);
+		event_loop(1000);
 
 	rc = 0;
 	sd_info("shutdown");
