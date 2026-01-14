@@ -908,12 +908,15 @@ static void destroy_client(struct client_info *ci)
 static void clear_client_info(struct client_info *ci)
 {
 	struct request *req;
+	struct list_head done;
 
 	tracepoint(request, clear_client, ci->conn.fd);
 
 	sd_debug("connection seems to be dead");
 
-	list_for_each_entry(req, &ci->done_reqs, request_list) {
+	INIT_LIST_HEAD(&done);
+	list_splice_init(&ci->done_reqs, &done);
+	list_for_each_entry(req, &done, request_list) {
 		list_del(&req->request_list);
 		free_request(req);
 	}
@@ -1100,6 +1103,7 @@ void unregister_listening_fds(void)
 	list_for_each_entry(fd, &listening_fd_list, list) {
 		sd_debug("unregistering fd: %d", fd->fd);
 		unregister_event(fd->fd);
+		free(fd);
 	}
 }
 
