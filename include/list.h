@@ -101,7 +101,7 @@ static inline void __list_del_entry(struct list_node *entry)
 static inline void list_del(struct list_node *entry)
 {
 	__list_del(entry->prev, entry->next);
-	entry->next = entry->prev = NULL;
+	INIT_LIST_NODE(entry);
 }
 
 static inline void list_move(struct list_node *list, struct list_head *head)
