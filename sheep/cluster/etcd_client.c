@@ -335,9 +335,10 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	} else
 		*ret_kvs = NULL;
 
+	json_object_put(post_obj);
 	free(encoded_range);
 	free(encoded_key);
-	json_object_put(post_obj);
+	free(range);
 	etcd_conn_delete(conn);
 	return ret;
 }

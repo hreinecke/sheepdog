@@ -1746,7 +1746,7 @@ static int etcd_cluster_init(const char *option)
 {
 	char *hosts, *to, *p;
 	sd_thread_t t;
-	int ret;
+	int ret = 0;
 	char *addr = NULL;
 
 	if (!option) {
@@ -1770,25 +1770,28 @@ static int etcd_cluster_init(const char *option)
 	if (!this_ctx) {
 		sd_err("failed to initialize etcd '%s'",
 		       addr ? addr: "localhost");
-		return -1;
+		ret = -1;
+		goto out;
 	}
 	ret = etcd_lease_grant(this_ctx);
 	if (ret < 0) {
 		sd_err("no lease granted, error %d", ret);
-		return -1;
+		goto out;
 	}
 	ret = sd_thread_create("etcd-lease", &t, etcd_lease_refresh, this_ctx);
 	if (ret) {
 		sd_err("failed to start lease, error %d", ret);
-		return -1;
+		ret = -1;
+		goto out;
 	}
 	sd_info("node %s id %s", this_ctx->node_name, this_ctx->node_id);
 	ret = sd_thread_create("etcd-watch", &t, etcd_event_watcher, this_ctx);
 	if (ret) {
 		sd_err("failed to start etcd, error %d", ret);
-		return -1;
+		ret = -1;
 	}
-	return 0;
+out:
+	return ret < 0 ? ret : 0;
 }
 
 static int etcd_update_node(struct sd_node *node)
