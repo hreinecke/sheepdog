@@ -151,6 +151,13 @@ struct cluster_driver {
 	 */
 	int (*update_status)(struct cluster_info *cinfo);
 
+	/*
+	 * Update drivers private copy of the cluster information
+	 *
+	 * Returns SD_RES_XX
+	 */
+	int (*update_cluster)(const struct cluster_info *cinfo);
+
 	struct list_node list;
 };
 

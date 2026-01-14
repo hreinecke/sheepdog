@@ -299,6 +299,9 @@ void init_config_path(const char *base_path)
 
 int set_cluster_config(const struct cluster_info *cinfo)
 {
+	if (sys->cdrv->update_cluster)
+		sys->cdrv->update_cluster(cinfo);
+
 	config.ctime = cinfo->ctime;
 	config.copies = cinfo->nr_copies;
 	config.copy_policy = cinfo->copy_policy;
