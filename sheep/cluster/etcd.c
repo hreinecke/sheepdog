@@ -1244,7 +1244,7 @@ static void etcd_json_to_req(struct json_object *obj,
 			req->epoch = json_object_get_int(val_obj);
 		} else if (!strcmp(key, "id")) {
 			req->id = json_object_get_int(val_obj);
-		} else
+		} else if (strcmp(key, "data_length"))
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
 		json_object_iter_next(&itb);
