@@ -163,32 +163,12 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 }
 
 static void
-etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
+etcd_parse_kvs(struct json_object *resp, struct etcd_kv_event *ev)
 {
-	struct json_object *header_obj, *kvs_obj;
-	struct etcd_kv_event *ev = arg;
+	struct json_object *kvs_obj;
 	int i;
 
-	if (!etcd_resp) {
-		ev->error = -EBADMSG;
-		return;
-	}
-	header_obj = json_object_object_get(etcd_resp, "header");
-	if (!header_obj) {
-		sd_err("%s: invalid response, 'header' not found",
-		       __func__);
-		ev->error = -EBADMSG;
-	} else {
-		struct json_object *rev_obj;
-
-		rev_obj = json_object_object_get(header_obj, "revision");
-		if (rev_obj) {
-			ev->ev_revision =
-				json_object_get_int64(rev_obj);
-		} else
-			ev->ev_revision = -1;
-	}
-	kvs_obj = json_object_object_get(etcd_resp, "kvs");
+	kvs_obj = json_object_object_get(resp, "kvs");
 	if (!kvs_obj) {
 		ev->num_kvs = 0;
 		return;
@@ -232,6 +212,34 @@ etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
 			kv->version = json_object_get_int64(attr_obj);
 		}
 	}
+}
+
+static void
+etcd_parse_kvs_response (struct json_object *etcd_resp, void *arg)
+{
+	struct json_object *header_obj;
+	struct etcd_kv_event *ev = arg;
+
+	if (!etcd_resp) {
+		ev->error = -EBADMSG;
+		return;
+	}
+	header_obj = json_object_object_get(etcd_resp, "header");
+	if (!header_obj) {
+		sd_err("%s: invalid response, 'header' not found",
+		       __func__);
+		ev->error = -EBADMSG;
+	} else {
+		struct json_object *rev_obj;
+
+		rev_obj = json_object_object_get(header_obj, "revision");
+		if (rev_obj) {
+			ev->ev_revision =
+				json_object_get_int64(rev_obj);
+		} else
+			ev->ev_revision = -1;
+	}
+	etcd_parse_kvs(etcd_resp, ev);
 }
 
 int etcd_kv_get(struct etcd_ctx *ctx, const char *key,
@@ -434,10 +442,33 @@ int etcd_kv_delete(struct etcd_ctx *ctx, const char *key)
 	return ret;
 }
 
+static void etcd_parse_txn_put_response(struct json_object *obj,
+					struct etcd_kv_event *ev)
+{
+	const char *key;
+	struct json_object *next;
+
+	key = "header";
+	next = json_object_object_get(obj, key);
+	if (!next)
+		goto parse_error;
+	obj = next;
+	key = "revision";
+	next = json_object_object_get(obj, key);
+	if (!next)
+		goto parse_error;
+	ev->ev_revision = json_object_get_int64(next);
+
+parse_error:
+	sd_err("%s: invalid response, '%s' not found",
+	       __func__, key);
+	ev->error = -EBADMSG;
+}
+
 static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 {
 	struct etcd_kv_event *ev = arg;
-	json_object *header_obj, *succ_obj, *next_obj, *obj;
+	json_object *header_obj, *succ_obj, *obj;
 	const char *key, *json_str;
 	int num_objs, i;
 
@@ -454,11 +485,8 @@ static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 
 	key = "succeeded";
 	succ_obj = json_object_object_get(resp, key);
-	if (!succ_obj)
-		goto parse_error;
-
-	if (!json_object_get_boolean(succ_obj))
-		return;
+	if (!succ_obj || !json_object_get_boolean(succ_obj))
+		ev->error = -EPERM;
 
 	key = "responses";
 	obj = json_object_object_get(resp, key);
@@ -466,25 +494,21 @@ static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 		goto parse_error;
 	num_objs = json_object_array_length(obj);
 	for (i = 0; i < num_objs; i++) {
-		struct json_object *o;
+		struct json_object *o, *e;
 
 		o = json_object_array_get_idx(obj, i);
 		key = "response_put";
-		next_obj = json_object_object_get(o, key);
-		if (!next_obj)
+		e = json_object_object_get(o, key);
+		if (e) {
+			etcd_parse_txn_put_response(e, ev);
 			continue;
-		obj = next_obj;
-		key = "header";
-		next_obj = json_object_object_get(obj, key);
-		if (!next_obj)
-			goto parse_error;
-		obj = next_obj;
-		key = "revision";
-		next_obj = json_object_object_get(obj, key);
-		if (!next_obj)
-			goto parse_error;
-		ev->ev_revision = json_object_get_int64(next_obj);
-		ev->error = 0;
+		}
+		key = "response_range";
+		e = json_object_object_get(o, key);
+		if (e) {
+			etcd_parse_kvs(e, ev);
+			continue;
+		}
 		break;
 	}
 	return;
@@ -495,7 +519,8 @@ parse_error:
 }
 
 int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
-		       const char *old_value, const char *new_value)
+		       const char *old_value, const char *new_value,
+		       char *cur_value)
 {
 	struct etcd_conn_ctx *conn;
 	struct etcd_kv_event ev;
@@ -556,6 +581,19 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
 	}
+	if (ret == -EPERM && ev.num_kvs) {
+		int i;
+
+		for (i = 0; i < ev.num_kvs; i++) {
+			struct etcd_kv *kv = &ev.kvs[i];
+			if (!strcmp(kv->key, key)) {
+				strcpy(cur_value, kv->value);
+			}
+		}
+		etcd_kv_free(ev.kvs, ev.num_kvs);
+	} else if (ret == 0)
+		strcpy(cur_value, new_value);
+
 	free(encoded_key);
 	free(encoded_old);
 	free(encoded_new);

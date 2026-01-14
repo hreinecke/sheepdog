@@ -394,7 +394,8 @@ static const char *etcd_cinfo_status_to_string(enum sd_status status)
 static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 			       unsigned long old_num, unsigned long new_num)
 {
-	char key[1024], *new_val, *old_val;
+	char key[1024], cur_val[256], *new_val, *old_val;
+	unsigned long val = old_num;
 	int rc;
 
 	rc = asprintf(&new_val, "%lu", new_num);
@@ -405,27 +406,37 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 		free(new_val);
 		return rc;
 	}
+	memset(cur_val, 0, sizeof(cur_val));
 	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
-	rc = etcd_kv_txn_update(ctx, key, old_val, new_val);
-	if (rc)
+	rc = etcd_kv_txn_update(ctx, key, old_val, new_val, cur_val);
+	if (strlen(cur_val)) {
+		val = strtoul(cur_val, NULL, 10);
+		if (val != new_num)
+			sd_debug("value mismatch on '%s', '%s' should be '%s'",
+				 attr, old_val, cur_val);
+	} else if (rc) {
 		sd_debug("failed to update '%s' from '%s' to '%s'",
 			 attr, old_val, new_val);
+		val = rc;
+	}
+			
 	free(old_val);
 	free(new_val);
-	return rc;
+	return val;
 }
 
 #define _UPDATE_CINFO(c, n, v)		\
-	if (etcd_cinfo.v != (n)->v) {					\
-		rc = etcd_set_cinfo_attr(c, #v, etcd_cinfo.v, (n)->v); \
-		if (rc < 0) return rc;				\
-		etcd_cinfo.v = (n)->v;				\
+	while (etcd_cinfo.v != (n)->v) {			\
+		rc = etcd_set_cinfo_attr(c, #v, etcd_cinfo.v,	\
+					 (n)->v);		\
+		if (rc < 0) break;				\
+		etcd_cinfo.v = rc; rc = 0;			\
 	}
 
 static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 			     const struct cluster_info *cinfo)
 {
-	int rc = 0;
+	unsigned long rc = 0;
 
 	_UPDATE_CINFO(ctx, cinfo, proto_ver);
 	_UPDATE_CINFO(ctx, cinfo, disable_recovery);
