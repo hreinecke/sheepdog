@@ -381,6 +381,9 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 	}
 	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
 	rc = etcd_kv_txn_update(ctx, key, old_val, new_val);
+	if (rc)
+		sd_debug("failed to update '%s' from '%s' to '%s'",
+			 attr, old_val, new_val);
 	free(old_val);
 	free(new_val);
 	return rc;
