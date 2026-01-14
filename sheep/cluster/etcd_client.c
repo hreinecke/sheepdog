@@ -469,15 +469,12 @@ static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 {
 	struct etcd_kv_event *ev = arg;
 	json_object *header_obj, *succ_obj, *obj;
-	const char *key, *json_str;
+	const char *key;
 	int num_objs, i;
 
 	if (!resp)
 		return;
 
-	json_str = json_object_to_json_string_ext(resp,
-						  JSON_C_TO_STRING_PRETTY);
-	sd_debug("txn response %s", json_str);
 	key = "header";
 	header_obj = json_object_object_get(resp, key);
 	if (!header_obj)
