@@ -426,11 +426,22 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 }
 
 #define _UPDATE_CINFO(c, n, v)		\
-	while (etcd_cinfo.v != (n)->v) {			\
+	if (etcd_cinfo.v != (n)->v) {			\
 		rc = etcd_set_cinfo_attr(c, #v, etcd_cinfo.v,	\
 					 (n)->v);		\
-		if (rc < 0) break;				\
-		etcd_cinfo.v = rc; rc = 0;			\
+		if (rc >= 0 && rc != (n)->v) {			\
+			etcd_cinfo.v = rc;			\
+			rc = etcd_set_cinfo_attr(c, #v,		\
+						 etcd_cinfo.v,	\
+						 (n)->v);	\
+			if (rc >= 0) {				\
+				if (rc == (n)->v)		\
+					etcd_cinfo.v = rc;	\
+				else \
+					sd_warn("failed to update %s", #v);\
+				rc = 0;				\
+			}					\
+		}						\
 	}
 
 static int etcd_cinfo_upload(struct etcd_ctx *ctx,
