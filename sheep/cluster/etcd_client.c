@@ -696,9 +696,10 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 		ret = ev->error;
 	}
 
+	json_object_put(post_obj);
 	free(encoded_key);
 	free(encoded_end);
-	json_object_put(post_obj);
+	free(end_key);
 	return ret < 0 ? ret : 0;
 }
 

@@ -1437,13 +1437,13 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 
 	memset(&leaving, 0, sizeof(leaving));
 	strcpy(leaving.node_id, json_object_get_string(node_obj));
+	json_object_put(obj);
 	leaving.ctx = ctx;
 	rb_init_node(&leaving.rb);
 	sd_debug("LEAVE %s", leaving.node_id);
 	node = rb_search(&etcd_node_root, &leaving, rb, etcd_node_cmp);
 	if (!node) {
 		sd_warn("leaving node not registered");
-		json_object_put(obj);
 		return;
 	}
 	rb_erase(&node->rb, &etcd_node_root);
@@ -1567,13 +1567,16 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 		json_object_put(obj);
 		return;
 	}
-	if (list_empty(&etcd_block_list))
+	if (list_empty(&etcd_block_list)) {
+		free(msg);
 		return;
+	}
 	block = list_first_entry(&etcd_block_list, typeof(*block), list);
 	sd_notify_handler(&block->node, (void *)msg, msg_len);
 
 	list_del(&block->list);
 	free(block);
+	free(msg);
 }
 
 static void etcd_handle_notify(struct etcd_ctx *ctx,
@@ -1602,10 +1605,12 @@ static void etcd_handle_notify(struct etcd_ctx *ctx,
 	if (!node) {
 		sd_warn("notify node not registered");
 		json_object_put(obj);
+		free(msg);
 		return;
 	}
 	sd_notify_handler(&node->node, (void *)msg, msg_len);
 	json_object_put(obj);
+	free(msg);
 }
 
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
