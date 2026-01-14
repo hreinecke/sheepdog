@@ -84,6 +84,32 @@ const char *etcd_cinfo_status_names[] = {
 	[SD_STATUS_KILLED] = "killed",
 };
 
+enum cinfo_attr_type {
+	CINFO_ATTR_PROTO_VER = 1 << 0,
+	CINFO_ATTR_DISABLE_RECOVERY = 1 << 1,
+	CINFO_ATTR_NR_NODES = 1 << 2,
+	CINFO_ATTR_EPOCH = 1 << 3,
+	CINFO_ATTR_CTIME = 1 << 4,
+	CINFO_ATTR_FLAGS = 1 << 5,
+	CINFO_ATTR_NR_COPIES = 1 << 6,
+	CINFO_ATTR_COPY_POLICY = 1 << 7,
+	CINFO_ATTR_BSS = 1 << 8,
+	CINFO_ATTR_DEFAULT_STORE = 1 << 9,
+};
+
+const char *etcd_cinfo_attr_names[] = {
+	[CINFO_ATTR_PROTO_VER] = "proto_ver",
+	[CINFO_ATTR_DISABLE_RECOVERY] = "disable_recovery",
+	[CINFO_ATTR_NR_NODES] = "nr_nodes",
+	[CINFO_ATTR_EPOCH] = "epoch",
+	[CINFO_ATTR_CTIME] = "ctime",
+	[CINFO_ATTR_FLAGS] = "flags",
+	[CINFO_ATTR_NR_COPIES] = "flags",
+	[CINFO_ATTR_COPY_POLICY] = "copy_policy",
+	[CINFO_ATTR_BSS] = "block_size_shift",
+	[CINFO_ATTR_DEFAULT_STORE] = "default_store",
+};
+
 struct etcd_node {
 	struct list_node list;
 	struct rb_node rb;
@@ -410,6 +436,82 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 	_UPDATE_CINFO(ctx, cinfo, nr_copies);
 	_UPDATE_CINFO(ctx, cinfo, copy_policy);
 	_UPDATE_CINFO(ctx, cinfo, block_size_shift);
+	return rc;
+}
+
+static int etcd_cinfo_create(struct etcd_ctx *ctx)
+{
+	int rc = 0, i, j;
+	char key[1024];
+	struct etcd_kv *kvs;
+	unsigned long attr_mask = -1;
+
+	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
+	rc = etcd_kv_range(ctx, key, &kvs);
+	for (i = 0; i < rc; i++) {
+		size_t elems = ARRAY_SIZE(etcd_cinfo_attr_names);
+		const char *attr;
+
+		attr = strrchr(kvs[i].key, '/');
+		for (j = 0; j < elems; j++) {
+			const char *n = etcd_cinfo_attr_names[j];
+
+			if (!n)
+				continue;
+			if (!strcmp(n, attr + 1))
+				attr_mask &= ~j;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(etcd_cinfo_attr_names); i++) {
+		const char *n = etcd_cinfo_attr_names[i];
+		char val[128];
+
+		if (!n)
+			continue;
+		if (!(attr_mask & i))
+			continue;
+		sprintf(key, DEFAULT_BASE CLUSTER_ZNODE "%s", n);
+		val[0] = '\0';
+		switch (i) {
+		case CINFO_ATTR_PROTO_VER:
+			sprintf(val, "%u", etcd_cinfo.proto_ver);
+			break;
+		case CINFO_ATTR_DISABLE_RECOVERY:
+			sprintf(val, "%u", etcd_cinfo.disable_recovery);
+			break;
+		case CINFO_ATTR_NR_NODES:
+			sprintf(val, "%u", etcd_cinfo.nr_nodes);
+			break;
+		case CINFO_ATTR_EPOCH:
+			sprintf(val, "%u", etcd_cinfo.epoch);
+			break;
+		case CINFO_ATTR_CTIME:
+			sprintf(val, "%lu", etcd_cinfo.ctime);
+			break;
+		case CINFO_ATTR_FLAGS:
+			sprintf(val, "%u", etcd_cinfo.flags);
+			break;
+		case CINFO_ATTR_NR_COPIES:
+			sprintf(val, "%u", etcd_cinfo.nr_copies);
+			break;
+		case CINFO_ATTR_COPY_POLICY:
+			sprintf(val, "%u", etcd_cinfo.copy_policy);
+			break;
+		case CINFO_ATTR_BSS:
+			sprintf(val, "%u", etcd_cinfo.block_size_shift);
+			break;
+		case CINFO_ATTR_DEFAULT_STORE:
+			if (strlen((const char *)etcd_cinfo.default_store))
+				sprintf(val, "%s",
+					etcd_cinfo.default_store);
+			break;
+		default:
+			break;
+		}
+		if (strlen(val))
+			rc = etcd_kv_store(ctx, key, val, strlen(val));
+	}
 	return rc;
 }
 
@@ -1725,6 +1827,9 @@ static int etcd_cluster_init(const char *option)
 		sd_err("no lease granted, error %d", ret);
 		goto out;
 	}
+
+	etcd_cinfo_create(this_ctx);
+
 	ret = sd_thread_create("etcd-lease", &t, etcd_lease_refresh, this_ctx);
 	if (ret) {
 		sd_err("failed to start lease, error %d", ret);

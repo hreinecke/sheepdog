@@ -538,7 +538,7 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_string(encoded_key));
 	json_object_object_add(put_obj, "value",
 			       json_object_new_string(encoded_new));
-	json_object_object_add(succ_op_obj, "requestPut", put_obj);
+	json_object_object_add(succ_op_obj, "request_put", put_obj);
 	json_object_array_add(succ_obj, succ_op_obj);
 	json_object_object_add(post_obj, "success", succ_obj);
 
@@ -547,7 +547,7 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 	range_obj = json_object_new_object();
 	json_object_object_add(range_obj, "key",
 			       json_object_new_string(encoded_key));
-	json_object_object_add(fail_op_obj, "requestRange", range_obj);
+	json_object_object_add(fail_op_obj, "request_range", range_obj);
 	json_object_array_add(fail_obj, fail_op_obj);
 	json_object_object_add(post_obj, "failure", fail_obj);
 
