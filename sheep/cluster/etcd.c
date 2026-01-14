@@ -1295,7 +1295,7 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 			if (node)
 				strcpy(node->node_id,
 				       json_object_get_string(val_obj));
-		} else if (strcmp(key, "rsp"))
+		} else if (strcmp(key, "rsp") && strcmp(key, "event"))
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
 		json_object_iter_next(&itb);
