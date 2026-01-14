@@ -427,6 +427,7 @@ void resume_suspended_recovery(void);
 int create_cluster(int port, int64_t zone, int nr_vnodes,
 		   bool explicit_addr);
 int leave_cluster(void);
+int cluster_update_status(enum sd_status status);
 
 void queue_cluster_request(struct request *req);
 

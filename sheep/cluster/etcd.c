@@ -375,9 +375,9 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 	return etcd_kv_store(ctx, key, val, len);
 }
 
-static int etcd_set_cinfo_status(struct etcd_ctx *ctx, const char *attr,
-				 enum sd_status status)
+static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
 {
+	const char *attr = "status";
 	const char *status_str;
 	char key[1024];
 	size_t len;
@@ -437,7 +437,7 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx, struct cluster_info *cinfo,
 	if (rc < 0)
 		return rc;
 
-	rc = etcd_set_cinfo_status(ctx, "status", cinfo->status);
+	rc = etcd_set_cinfo_status(ctx, cinfo->status);
 	if (rc < 0)
 		return rc;
 	return rc;
@@ -1842,6 +1842,18 @@ static int etcd_get_local_addr(uint8_t *bytes)
 	return 0;
 }
 
+static int etcd_update_status(struct cluster_info *cinfo)
+{
+	int ret;
+
+	if (!this_ctx)
+		return SD_RES_STARTUP;
+	ret = etcd_set_cinfo_status(this_ctx, cinfo->status);
+	if (ret)
+		return SD_RES_CLUSTER_ERROR;
+	return SD_RES_SUCCESS;
+}
+
 static struct cluster_driver cdrv_etcd = {
 	.name       = "etcd",
 
@@ -1855,6 +1867,7 @@ static struct cluster_driver cdrv_etcd = {
 	.unlock       = etcd_unlock,
 	.update_node  = etcd_update_node,
 	.get_local_addr = etcd_get_local_addr,
+	.update_status = etcd_update_status,
 };
 
 cdrv_register(cdrv_etcd);

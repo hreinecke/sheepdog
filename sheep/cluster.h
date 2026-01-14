@@ -144,6 +144,13 @@ struct cluster_driver {
 	 */
 	int (*update_node)(struct sd_node *);
 
+	/*
+	 * Update drivers private copy of the cluster status
+	 *
+	 * Returns SD_RES_XX
+	 */
+	int (*update_status)(struct cluster_info *cinfo);
+
 	struct list_node list;
 };
 

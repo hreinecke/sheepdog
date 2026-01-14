@@ -1166,7 +1166,7 @@ static void requeue_cluster_request(void)
 
 main_fn int sd_reconnect_handler(void)
 {
-	sys->cinfo.status = SD_STATUS_WAIT;
+	cluster_update_status(SD_STATUS_WAIT);
 	if (sys->cdrv->init(sys->cdrv_option) != 0)
 		return -1;
 	if (send_join_request() != 0)
@@ -1426,7 +1426,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		}
 	}
 
-	sys->cinfo.status = SD_STATUS_WAIT;
+	cluster_update_status(SD_STATUS_WAIT);
 
 	main_thread_set(pending_block_list,
 			  xzalloc(sizeof(struct list_head)));
@@ -1459,4 +1459,14 @@ int leave_cluster(void)
 
 	left = true;
 	return sys->cdrv->leave();
+}
+
+int cluster_update_status(enum sd_status status)
+{
+	int ret = SD_RES_SUCCESS;
+
+	sys->cinfo.status = status;
+	if (sys->cdrv->update_status)
+		ret = sys->cdrv->update_status(&sys->cinfo);
+	return ret;
 }
