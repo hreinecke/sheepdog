@@ -439,6 +439,7 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 	return rc;
 }
 
+#if 0
 static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 {
 	char key[1024];
@@ -489,7 +490,7 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
 	etcd_kv_free(kvs, num_kvs);
 	return num_val;
 }
-
+#endif
 static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 {
 	const char *status_str = etcd_cinfo_status_to_string(status);
@@ -731,22 +732,10 @@ static int etcd_join(const struct sd_node *myself,
 		     void *opaque, size_t opaque_len)
 {
 	int rc;
-	struct cluster_info *cinfo = opaque, cur_cinfo;
+	struct cluster_info *cinfo = opaque;
 	struct json_object *cinfo_obj;
 
-	rc = etcd_cinfo_download(this_ctx, &cur_cinfo);
-	if (rc < 0) {
-		sd_warn("%s: failed to download cinfo", __func__);
-		return rc;
-	}
-	if (rc == 0) {
-		cinfo->proto_ver = SD_SHEEP_PROTO_VER;
-		rc = etcd_cinfo_upload(this_ctx, cinfo, true);
-		if (rc < 0) {
-			sd_err("%s: cluster init failed", __func__);
-			return rc;
-		}
-	}
+	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 
 	etcd_build_node_list(this_ctx, &etcd_node_root);
 
