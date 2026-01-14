@@ -390,52 +390,26 @@ static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
 	return etcd_kv_store(ctx, key, status_str, len);
 }
 
-static int etcd_cinfo_upload(struct etcd_ctx *ctx,
-			     const struct cluster_info *cinfo, bool create)
-{
-	int rc;
-
-	if (create) {
-		char key[1024];
-		struct etcd_kv *kvs;
-
-		strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
-		rc = etcd_kv_range(ctx, key, &kvs);
-		if (rc < 0)
-			return rc;
-		etcd_kv_free(kvs, rc);
-		if (rc > 0)
-			return 0;
+#define _UPDATE_CINFO(o, c, n) \
+	if ((c)->n) { \
+		rc = etcd_set_cinfo_attr(o, #n, (c)->n);	\
+		if (rc < 0) return rc;				\
 	}
-	rc = etcd_set_cinfo_attr(ctx, "proto_ver", cinfo->proto_ver);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "disable_recovery",
-				 cinfo->disable_recovery);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "nr_nodes", cinfo->nr_nodes);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "epoch", cinfo->epoch);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "ctime", cinfo->ctime);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "flags", cinfo->flags);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "nr_copies", cinfo->nr_copies);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "copy_policy", cinfo->copy_policy);
-	if (rc < 0)
-		return rc;
-	rc = etcd_set_cinfo_attr(ctx, "block_size_shift",
-				 cinfo->block_size_shift);
-	if (rc < 0)
-		return rc;
+
+static int etcd_cinfo_upload(struct etcd_ctx *ctx,
+			     const struct cluster_info *cinfo)
+{
+	int rc = 0;
+
+	_UPDATE_CINFO(ctx, cinfo, proto_ver);
+	_UPDATE_CINFO(ctx, cinfo, disable_recovery);
+	_UPDATE_CINFO(ctx, cinfo, nr_nodes);
+	_UPDATE_CINFO(ctx, cinfo, epoch);
+	_UPDATE_CINFO(ctx, cinfo, ctime);
+	_UPDATE_CINFO(ctx, cinfo, flags);
+	_UPDATE_CINFO(ctx, cinfo, nr_copies);
+	_UPDATE_CINFO(ctx, cinfo, copy_policy);
+	_UPDATE_CINFO(ctx, cinfo, block_size_shift);
 	return rc;
 }
 
@@ -1813,7 +1787,7 @@ static int etcd_update_cinfo(const struct cluster_info *cinfo)
 
 	if (!this_ctx)
 		return SD_RES_STARTUP;
-	ret = etcd_cinfo_upload(this_ctx, cinfo, false);
+	ret = etcd_cinfo_upload(this_ctx, cinfo);
 	if (ret)
 		return SD_RES_CLUSTER_ERROR;
 	return SD_RES_SUCCESS;
