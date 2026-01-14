@@ -523,7 +523,8 @@ static struct request *alloc_local_request(void *data, int data_length)
 	}
 
 	req->local = true;
-
+	INIT_LIST_NODE(&req->request_list);
+	INIT_LIST_NODE(&req->pending_list);
 	refcount_set(&req->refcnt, 1);
 
 	return req;
@@ -674,7 +675,8 @@ struct request *alloc_request(struct client_info *ci, uint32_t data_length)
 	refcount_inc(&ci->refcnt);
 
 	refcount_set(&req->refcnt, 1);
-
+	INIT_LIST_NODE(&req->request_list);
+	INIT_LIST_NODE(&req->pending_list);
 	uatomic_inc(&sys->nr_outstanding_reqs);
 
 	return req;

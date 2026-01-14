@@ -15,12 +15,12 @@ struct list_head {
 };
 
 #define LIST_HEAD_INIT(name) { { &(name.n), &(name.n) } }
-#define LIST_NODE_INIT { NULL, NULL }
+#define LIST_NODE_INIT(name) { .prev = &(name), .next = &(name) }
 
 #define LIST_HEAD(name) \
 	struct list_head name = LIST_HEAD_INIT(name)
 #define LIST_NODE(name) \
-	struct list_node name = LIST_NODE_INIT
+	struct list_node name = LIST_NODE_INIT(name)
 
 static inline void INIT_LIST_HEAD(struct list_head *list)
 {
@@ -30,8 +30,8 @@ static inline void INIT_LIST_HEAD(struct list_head *list)
 
 static inline void INIT_LIST_NODE(struct list_node *list)
 {
-	list->next = NULL;
-	list->prev = NULL;
+	list->next = list;
+	list->prev = list;
 }
 
 #define list_first_entry(head, type, member) \
@@ -44,7 +44,7 @@ static inline bool list_empty(const struct list_head *head)
 
 static inline bool list_linked(const struct list_node *node)
 {
-	return node->next != NULL;
+	return node->next != node;
 }
 
 #define list_entry(ptr, type, member) \
@@ -101,7 +101,7 @@ static inline void __list_del_entry(struct list_node *entry)
 static inline void list_del(struct list_node *entry)
 {
 	__list_del(entry->prev, entry->next);
-	entry->next = entry->prev = NULL;
+	INIT_LIST_NODE(entry);
 }
 
 static inline void list_move(struct list_node *list, struct list_head *head)
