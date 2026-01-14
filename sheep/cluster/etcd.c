@@ -96,6 +96,7 @@ struct etcd_node {
 
 static LIST_HEAD(etcd_block_list);
 static struct rb_root etcd_node_root = RB_ROOT;
+static struct cluster_info etcd_cinfo = {};
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
@@ -365,35 +366,31 @@ static const char *etcd_cinfo_status_to_string(enum sd_status status)
 }
 
 static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
-			       unsigned long num)
+			       unsigned long old_num, unsigned long new_num)
 {
-	char key[1024], val[MAX_NODE_STR_LEN];
-	size_t len;
+	char key[1024], *new_val, *old_val;
+	int rc;
 
-	len = snprintf(val, sizeof(val), "%lu", num);
+	rc = asprintf(&new_val, "%lu", new_num);
+	if (rc <  0)
+		return rc;
+	rc = asprintf(&old_val, "%lu", old_num);
+	if (rc < 0) {
+		free(new_val);
+		return rc;
+	}
 	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
-	return etcd_kv_store(ctx, key, val, len);
+	rc = etcd_kv_txn_update(ctx, key, old_val, new_val);
+	free(old_val);
+	free(new_val);
+	return rc;
 }
 
-static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
-{
-	const char *attr = "status";
-	const char *status_str;
-	char key[1024];
-	size_t len;
-
-	status_str = etcd_cinfo_status_to_string(status);
-	if (!status_str)
-		status_str = "unknown";
-	len = strlen(status_str);
-	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
-	return etcd_kv_store(ctx, key, status_str, len);
-}
-
-#define _UPDATE_CINFO(o, c, n) \
-	if ((c)->n) { \
-		rc = etcd_set_cinfo_attr(o, #n, (c)->n);	\
+#define _UPDATE_CINFO(c, n, v)		\
+	if (etcd_cinfo.v != (n)->v) {					\
+		rc = etcd_set_cinfo_attr(c, #v, etcd_cinfo.v, (n)->v); \
 		if (rc < 0) return rc;				\
+		etcd_cinfo.v = (n)->v;				\
 	}
 
 static int etcd_cinfo_upload(struct etcd_ctx *ctx,
@@ -411,6 +408,21 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 	_UPDATE_CINFO(ctx, cinfo, copy_policy);
 	_UPDATE_CINFO(ctx, cinfo, block_size_shift);
 	return rc;
+}
+
+static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
+{
+	const char *attr = "status";
+	const char *status_str;
+	char key[1024];
+	size_t len;
+
+	status_str = etcd_cinfo_status_to_string(status);
+	if (!status_str)
+		status_str = "unknown";
+	len = strlen(status_str);
+	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
+	return etcd_kv_store(ctx, key, status_str, len);
 }
 
 #if 0
