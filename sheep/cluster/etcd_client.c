@@ -458,7 +458,7 @@ static void etcd_parse_txn_put_response(struct json_object *obj,
 	if (!next)
 		goto parse_error;
 	ev->ev_revision = json_object_get_int64(next);
-
+	return;
 parse_error:
 	sd_err("%s: invalid response, '%s' not found",
 	       __func__, key);
