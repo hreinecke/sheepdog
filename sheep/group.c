@@ -1426,6 +1426,9 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		}
 	}
 
+	if (sys->cdrv->update_cluster)
+		sys->cdrv->update_cluster(&sys->cinfo);
+
 	cluster_update_status(SD_STATUS_WAIT);
 
 	main_thread_set(pending_block_list,
