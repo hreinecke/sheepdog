@@ -1796,6 +1796,8 @@ static int etcd_cluster_init(const char *option)
 		ret = -1;
 	}
 out:
+	if (addr)
+		free(addr);
 	return ret < 0 ? ret : 0;
 }
 
