@@ -438,12 +438,15 @@ static void etcd_parse_txn_response(struct json_object *resp, void *arg)
 {
 	struct etcd_kv_event *ev = arg;
 	json_object *header_obj, *succ_obj, *next_obj, *obj;
-	const char *key;
+	const char *key, *json_str;
 	int num_objs, i;
 
 	if (!resp)
 		return;
 
+	json_str = json_object_to_json_string_ext(resp,
+						  JSON_C_TO_STRING_PRETTY);
+	sd_debug("txn response %s", json_str);
 	key = "header";
 	header_obj = json_object_object_get(resp, key);
 	if (!header_obj)
@@ -499,6 +502,7 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 	struct json_object *post_obj = NULL;
 	struct json_object *comp_obj, *comp_op_obj;
 	struct json_object *succ_obj, *succ_op_obj, *put_obj;
+	struct json_object *fail_obj, *fail_op_obj, *range_obj;
 	char *encoded_key, *encoded_old, *encoded_new;
 	int ret;
 
@@ -538,6 +542,14 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 	json_object_array_add(succ_obj, succ_op_obj);
 	json_object_object_add(post_obj, "success", succ_obj);
 
+	fail_obj = json_object_new_array();
+	fail_op_obj = json_object_new_object();
+	range_obj = json_object_new_object();
+	json_object_object_add(range_obj, "key",
+			       json_object_new_string(encoded_key));
+	json_object_object_add(fail_op_obj, "requestRange", range_obj);
+	json_object_array_add(fail_obj, fail_op_obj);
+	json_object_object_add(post_obj, "failure", fail_obj);
 
 	ret = etcd_kv_exec(conn, "/v3/kv/txn", post_obj,
 			   etcd_parse_txn_response, &ev);
