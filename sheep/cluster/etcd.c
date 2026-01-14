@@ -33,7 +33,7 @@
 #define CLUSTER_ZNODE "cluster/"
 #define LOCK_ZNODE "lock/"
 #define SEQ_ZNODE "seq/"
-#define EV_ZNODE "events/"
+#define EV_ZNODE "events"
 #define QUEUE_POS_ZNODE "queue_pos/"
 
 static int etcd_timeout = SESSION_TIMEOUT;
@@ -692,15 +692,6 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	return is_master;
 }
 
-static inline bool etcd_event_delete(struct etcd_node *node)
-{
-	char key[1024];
-
-	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s/",
-		 node->node_id);
-	return etcd_kv_delete(node->ctx, key);
-}
-
 static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 			     struct json_object *obj)
 {
@@ -708,14 +699,16 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 	const char *event, *json_str;
 	int rc;
 
-	json_str = json_object_to_json_string_ext(obj,
-						  JSON_C_TO_STRING_PLAIN);
 	event = etcd_event_names[type];
 	if (!event) {
 		sd_warn("%s: invalid type %d", __func__, type);
 		return SD_RES_CLUSTER_ERROR;
 	}
-	snprintf(key, sizeof(key), DEFAULT_BASE EV_ZNODE "%s", event);
+	json_object_object_add(obj, "event",
+			       json_object_new_string(event));
+	json_str = json_object_to_json_string_ext(obj,
+						  JSON_C_TO_STRING_PLAIN);
+	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE EV_ZNODE);
 
 	rc = etcd_kv_store(ctx, key, json_str, strlen(json_str));
 	if (rc < 0) {
@@ -766,7 +759,6 @@ static int etcd_join(const struct sd_node *myself,
 	strcpy(this_node.node_id, this_ctx->node_name);
 	rc = etcd_node_upload(&this_node, true);
 	if (rc < 0) {
-		etcd_event_delete(&this_node);
 		if (rc == -EEXIST)
 			sd_err("Previous etcd key exist, shoot myself. Please "
 			       "wait for %d seconds to join me again.",
@@ -1368,19 +1360,13 @@ static int etcd_unblock(void *msg, size_t msg_len)
 }
 
 static void etcd_handle_join(struct etcd_ctx *ctx,
-			     void *opaque, size_t opaque_len)
+			     struct json_object *obj)
 {
-	struct json_object *obj;
 	struct cluster_info cinfo;
 	struct rb_root sd_root;
 	struct etcd_node joining, *node;
 	int nr_nodes = 0, ret;
 
-	obj = json_tokener_parse(opaque);
-	if (!obj) {
-		sd_warn("%s: failed to parse opaque", __func__);
-		return;
-	}
 	memset(&cinfo, 0, sizeof(cinfo));
 	memset(&joining, 0, sizeof(joining));
 	joining.ctx = ctx;
@@ -1390,7 +1376,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
-	json_object_put(obj);
 	sd_debug("JOIN %s", joining.node_id);
 	if (!etcd_node_is_master(&this_node) &&
 	    !strcmp(this_node.node_id, joining.node_id)) {
@@ -1406,38 +1391,33 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("sender: %s, %d nodes", joining.node_id, nr_nodes);
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
+		struct json_object *cinfo_obj;
+
 		sd_debug("I'm the master now, %d nodes, status %d",
 			 nr_nodes, cinfo.status);
-		obj = json_object_new_object();
-		etcd_cinfo_to_json(&cinfo, obj, &joining);
+		cinfo_obj = json_object_new_object();
+		etcd_cinfo_to_json(&cinfo, cinfo_obj, &joining);
 		etcd_update_event(ctx, EVENT_ACCEPT, obj);
-		json_object_put(obj);
+		json_object_put(cinfo_obj);
 	}
 }
 
 static void etcd_handle_leave(struct etcd_ctx *ctx,
-			      void *opaque, int opaque_len)
+			      struct json_object *obj)
 {
-	struct json_object *obj, *node_obj;
+	struct json_object *node_obj;
 	struct rb_root sd_root;
 	struct etcd_node *node, *sd_node, leaving;
 	int nr_nodes = 0;
 
-	obj = json_tokener_parse(opaque);
-	if (!obj) {
-		sd_warn("%s: failed to parse opaque", __func__);
-		return;
-	}
 	node_obj = json_object_object_get(obj, "node");
 	if (!node_obj) {
 		sd_warn("node object not found");
-		json_object_put(obj);
 		return;
 	}
 
 	memset(&leaving, 0, sizeof(leaving));
 	strcpy(leaving.node_id, json_object_get_string(node_obj));
-	json_object_put(obj);
 	leaving.ctx = ctx;
 	rb_init_node(&leaving.rb);
 	sd_debug("LEAVE %s", leaving.node_id);
@@ -1462,23 +1442,16 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 }
 
 static void etcd_handle_accept(struct etcd_ctx *ctx,
-			       void *opaque, size_t opaque_len)
+			       struct json_object *obj)
 {
 	struct rb_root sd_root;
-	struct json_object *obj;
 	struct etcd_node *node, *joining;
 	struct cluster_info cinfo;
 	int nr_nodes = 0, ret;
 
-	obj = json_tokener_parse(opaque);
-	if (!obj) {
-		sd_warn("%s: failed to parse opaque", __func__);
-		return;
-	}
 	joining = xzalloc(sizeof(*joining));
 	if (!joining) {
 		sd_warn("failed to allocate joining node");
-		json_object_put(obj);
 		return;
 	}
 	joining->ctx = ctx;
@@ -1489,7 +1462,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
-	json_object_put(obj);
 	sd_debug("ACCEPT %s status %d", joining->node_id, cinfo.status);
 
 	rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
@@ -1515,20 +1487,14 @@ static void etcd_kick_block_event(void)
 }
 
 static void etcd_handle_block(struct etcd_ctx *ctx,
-			      void *opaque, int opaque_len)
+			      struct json_object *obj)
 {
 	struct etcd_node block, *node;
-	struct json_object *obj, *node_obj;
+	struct json_object *node_obj;
 
-	obj = json_tokener_parse(opaque);
-	if (!obj) {
-		sd_warn("%s: failed to parse opaque", __func__);
-		return;
-	}
 	node_obj = json_object_object_get(obj, "node");
 	if (!node_obj) {
 		sd_warn("%s: failed to retrieve 'node' object", __func__);
-		json_object_put(obj);
 		return;
 	}
 	strcpy(block.node_id, json_object_get_string(node_obj));
@@ -1537,34 +1503,25 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 	node = rb_search(&etcd_node_root, &block, rb, etcd_node_cmp);
 	if (!node) {
 		sd_warn("blocking node not registered");
-		json_object_put(obj);
 		return;
 	}
 	list_add_tail(&node->list, &etcd_block_list);
 	node = list_first_entry(&etcd_block_list, typeof(*node), list);
 	if (!node->callbacked)
 		node->callbacked = sd_block_handler(&node->node);
-	json_object_put(obj);
 }
 
 static void etcd_handle_unblock(struct etcd_ctx *ctx,
-				void *opaque, size_t opaque_len)
+				struct json_object *obj)
 {
 	struct etcd_node *block;
-	struct json_object *obj;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
 
 	sd_debug("UNBLOCK");
-	obj = json_tokener_parse(opaque);
-	if (!obj) {
-		sd_warn("%s: failed to parse opaque", __func__);
-		return;
-	}
 	msg = etcd_json_to_msg(obj, NULL, &msg_len);
 	if (!msg) {
 		sd_warn("%s: failed to deserialize json", __func__);
-		json_object_put(obj);
 		return;
 	}
 	if (list_empty(&etcd_block_list)) {
@@ -1580,50 +1537,60 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 }
 
 static void etcd_handle_notify(struct etcd_ctx *ctx,
-			       void *opaque, size_t opaque_len)
+			       struct json_object *obj)
 {
-	struct json_object *obj;
 	struct etcd_node notify, *node;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
 
-	obj = json_tokener_parse(opaque);
-	if (!obj) {
-		sd_warn("%s: failed to parse opaque", __func__);
-		return;
-	}
 	memset(&notify, 0, sizeof(notify));
 	rb_init_node(&notify.rb);
 	msg = etcd_json_to_msg(obj, &notify, &msg_len);
 	if (!msg) {
 		sd_warn("%s: failed to deserialize json", __func__);
-		json_object_put(obj);
 		return;
 	}
 	sd_debug("NOTIFY %s", notify.node_id);
 	node = rb_search(&etcd_node_root, &notify, rb, etcd_node_cmp);
 	if (!node) {
 		sd_warn("notify node not registered");
-		json_object_put(obj);
 		free(msg);
 		return;
 	}
 	sd_notify_handler(&node->node, (void *)msg, msg_len);
-	json_object_put(obj);
 	free(msg);
 }
 
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
-	char *event;
-	const char *base = DEFAULT_BASE EV_ZNODE;
+	struct json_object *obj, *event_obj;
+	const char *event;
+	char *key;
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
 	int i;
 
-	if (strncmp(kv->key, base, strlen(base)))
+	key = strrchr(kv->key, '/');
+	if (!key || strcmp(key + 1, EV_ZNODE)) {
+		sd_debug("skipping updates to '%s'", kv->key);
 		return;
-	event = kv->key + strlen(base);
+	}
+	if (kv->value_len) {
+		obj = json_tokener_parse(kv->value);
+		if (!obj) {
+			sd_warn("%s: failed to parse value", __func__);
+			return;
+		}
+	} else {
+		obj = json_object_new_object();
+	}
+	event_obj = json_object_object_get(obj, "event");
+	if (!event_obj) {
+		sd_warn("no event specified");
+		json_object_put(obj);
+		return;
+	}
+	event = json_object_get_string(event_obj);
 	if (!event)
 		return;
 
@@ -1641,22 +1608,22 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 
 	switch (type) {
 	case EVENT_JOIN:
-		etcd_handle_join(ctx, kv->value, kv->value_len);
+		etcd_handle_join(ctx, obj);
 		break;
 	case EVENT_ACCEPT:
-		etcd_handle_accept(ctx, kv->value, kv->value_len);
+		etcd_handle_accept(ctx, obj);
 		break;
 	case EVENT_LEAVE:
-		etcd_handle_leave(ctx, kv->value, kv->value_len);
+		etcd_handle_leave(ctx, obj);
 		break;
 	case EVENT_BLOCK:
-		etcd_handle_block(ctx, kv->value, kv->value_len);
+		etcd_handle_block(ctx, obj);
 		break;
 	case EVENT_UNBLOCK:
-		etcd_handle_unblock(ctx, kv->value, kv->value_len);
+		etcd_handle_unblock(ctx, obj);
 		break;
 	case EVENT_NOTIFY:
-		etcd_handle_notify(ctx, kv->value, kv->value_len);
+		etcd_handle_notify(ctx, obj);
 		break;
 	case EVENT_UPDATE_NODE:
 		break;
@@ -1664,6 +1631,7 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		sd_err("invalid event '%s'", kv->key);
 		return;
 	}
+	json_object_put(obj);
 	etcd_kick_block_event();
 }
 
@@ -1702,7 +1670,7 @@ static void *etcd_event_watcher(void *arg)
 	ev.watch_arg = conn->ctx;
 
 	for (;;) {
-		ret = etcd_kv_watch(conn, DEFAULT_BASE EV_ZNODE,
+		ret = etcd_kv_watch(conn, DEFAULT_BASE CLUSTER_ZNODE,
 				    &ev, pthread_self());
 		if (ret && ret != -ETIME)
 			break;
