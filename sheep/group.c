@@ -30,8 +30,9 @@ static refcnt_t nr_get_vdis_works;
 
 static pthread_mutex_t pending_block_mutex;
 static pthread_mutex_t pending_notify_mutex;
+static pthread_mutex_t current_vnode_mutex;
 
-static main_thread(struct vnode_info *) current_vnode_info;
+static struct vnode_info *current_vnode_info;
 static struct list_head pending_block_list;
 static struct list_head pending_notify_list;
 
@@ -80,18 +81,20 @@ struct vnode_info *grab_vnode_info(struct vnode_info *vnode_info)
 }
 
 /*
- * Get a reference to the currently active vnode information structure,
- * this must only be called from the main thread.
+ * Get a reference to the currently active vnode information structure.
  * This can return NULL if cluster is not started yet.
  */
-main_fn struct vnode_info *get_vnode_info(void)
+struct vnode_info *get_vnode_info(void)
 {
-	struct vnode_info *cur_vinfo = main_thread_get(current_vnode_info);
+	struct vnode_info *cur_vinfo;
 
-	if (cur_vinfo == NULL)
-		return NULL;
+	pthread_mutex_lock(&current_vnode_mutex);
+	cur_vinfo = current_vnode_info;
+	if (cur_vinfo)
+		grab_vnode_info(cur_vinfo);
+	pthread_mutex_unlock(&current_vnode_mutex);
 
-	return grab_vnode_info(cur_vinfo);
+	return cur_vinfo;
 }
 
 /* Release a reference to the current vnode information. */
@@ -941,22 +944,20 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 	if (!sys->gateway_only)
 		setup_backend_store(cinfo);
 
-	/*
-	 * We need use main_thread_get() to obtain current_vnode_info. The
-	 * reference count of old_vnode_info is decremented at the last of this
-	 * function in order to release old_vnode_info. The counter part
-	 * of this dereference is alloc_vnode_info().
-	 */
-	old_vnode_info = main_thread_get(current_vnode_info);
-	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
+	pthread_mutex_lock(&current_vnode_mutex);
+	old_vnode_info = current_vnode_info;
+	current_vnode_info = alloc_vnode_info(nroot);
+	pthread_mutex_lock(&current_vnode_mutex);
 
 	if (node_is_local(joined)) {
 		sockfd_cache_add_group(nroot);
 
 		if (0 < cinfo->epoch && cinfo->status == SD_STATUS_OK) {
-			struct vnode_info *members = grab_vnode_info(
-				main_thread_get(current_vnode_info));
+			struct vnode_info *members;
 
+			pthread_mutex_lock(&current_vnode_mutex);
+			members = grab_vnode_info(current_vnode_info);
+			pthread_mutex_unlock(&current_vnode_mutex);
 			if (members->nr_nodes == 1) {
 				sd_debug("Currently, there are no other"
 					 " members. I don't have to collect"
@@ -996,13 +997,16 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 				panic("cannot log current epoch %d",
 				      sys_epoch());
 
-			start_recovery(main_thread_get(current_vnode_info),
+			pthread_mutex_lock(&current_vnode_mutex);
+			start_recovery(current_vnode_info,
 				       old_vnode_info, true, false);
+			pthread_mutex_unlock(&current_vnode_mutex);
 		} else if (!was_cluster_shutdowned() || wildcard_recovery) {
-			start_recovery(main_thread_get(current_vnode_info),
-				       main_thread_get(current_vnode_info),
+			pthread_mutex_lock(&current_vnode_mutex);
+			start_recovery(current_vnode_info,
+				       current_vnode_info,
 				       false, wildcard_recovery);
-
+			pthread_mutex_unlock(&current_vnode_mutex);
 			/*
 			 * wildcard recovery is invoked only at first time of
 			 * sheep process launch
@@ -1327,12 +1331,10 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 		/* Mark leave node as gateway only node */
 		sys->this_node.nr_vnodes = 0;
 
-	/*
-	 * Using main_thread_get() instead of get_vnode_info() is allowed
-	 * because of the same reason of update_cluster_info()
-	 */
-	old_vnode_info = main_thread_get(current_vnode_info);
-	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
+	pthread_mutex_lock(&current_vnode_mutex);
+	old_vnode_info = current_vnode_info;
+	current_vnode_info = alloc_vnode_info(nroot);
+	pthread_mutex_unlock(&current_vnode_mutex);
 	if (status == SD_STATUS_OK) {
 		if (is_gateway_only_cluster(nroot)) {
 			sd_info("only gateway nodes are remaining, exiting");
@@ -1342,8 +1344,10 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 		ret = inc_and_log_epoch();
 		if (ret != 0)
 			panic("cannot log current epoch %d", sys_epoch());
-		start_recovery(main_thread_get(current_vnode_info),
+		pthread_mutex_lock(&current_vnode_mutex);
+		start_recovery(current_vnode_info,
 			       old_vnode_info, true, false);
+		pthread_mutex_unlock(&current_vnode_mutex);
 	}
 
 	put_vnode_info(old_vnode_info);
@@ -1380,14 +1384,19 @@ static void kick_node_recover(void)
 	 * Using main_thread_get() instead of get_vnode_info() is allowed
 	 * because of the same reason of update_cluster_info()
 	 */
-	struct vnode_info *old = main_thread_get(current_vnode_info);
+	struct vnode_info *old;
 	int ret;
 
-	main_thread_set(current_vnode_info, alloc_vnode_info(&old->nroot));
+	pthread_mutex_lock(&current_vnode_mutex);
+	old = current_vnode_info;
+	current_vnode_info = alloc_vnode_info(&old->nroot);
+	pthread_mutex_unlock(&current_vnode_mutex);
 	ret = inc_and_log_epoch();
 	if (ret != 0)
 		panic("cannot log current epoch %d", sys_epoch());
-	start_recovery(main_thread_get(current_vnode_info), old, true, false);
+	pthread_mutex_lock(&current_vnode_mutex);
+	start_recovery(current_vnode_info, old, true, false);
+	pthread_mutex_unlock(&current_vnode_mutex);
 	put_vnode_info(old);
 }
 
@@ -1467,6 +1476,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 	INIT_LIST_HEAD(&pending_block_list);
 	pthread_mutex_init(&pending_notify_mutex, NULL);
 	INIT_LIST_HEAD(&pending_notify_list);
+	pthread_mutex_init(&current_vnode_mutex, NULL);
 
 	INIT_LIST_HEAD(&sys->local_req_queue);
 	INIT_LIST_HEAD(&sys->req_wait_queue);
