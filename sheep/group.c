@@ -963,9 +963,11 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 	get_vdis(nroot, joined);
 
 	if (cinfo->status == SD_STATUS_OK) {
-		if (!is_cluster_formatted())
+		if (!is_cluster_formatted()) {
 			/* initialize config file */
+			sys_update_cluster();
 			set_cluster_config(&sys->cinfo);
+		}
 
 		if (membership_changed(cinfo, nroot, nr_nodes)) {
 			int ret;

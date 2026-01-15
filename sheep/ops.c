@@ -626,9 +626,11 @@ static int cluster_force_recover_main(const struct sd_req *req,
 		goto err;
 	}
 
-	if (!is_cluster_formatted())
+	if (!is_cluster_formatted()) {
 		/* initialize config file */
+		sys_update_cluster();
 		set_cluster_config(&sys->cinfo);
+	}
 
 	sys_update_status(SD_STATUS_OK);
 
@@ -762,6 +764,7 @@ static int cluster_alter_cluster_copy(const struct sd_req *req,
 		return SD_RES_INVALID_PARMS;
 
 	sys->cinfo.nr_copies = req->cluster.copies;
+	sys_update_cluster();
 	return set_cluster_config(&sys->cinfo);
 }
 
