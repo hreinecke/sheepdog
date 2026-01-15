@@ -489,7 +489,7 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 	}
 
 	for (i = 0; i < ARRAY_SIZE(etcd_cinfo_attr_names); i++) {
-		const char *n = etcd_cinfo_attr_names[i];
+		const char *n = etcd_cinfo_attr_names[i], *v;
 		char val[128];
 
 		if (!n)
@@ -527,13 +527,15 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 			sprintf(val, "%u", etcd_cinfo.block_size_shift);
 			break;
 		case CINFO_ATTR_DEFAULT_STORE:
-			if (strlen((const char *)etcd_cinfo.default_store))
-				sprintf(val, "%s",
-					etcd_cinfo.default_store);
+			v = (const char *)etcd_cinfo.default_store;
+			if (strlen(v))
+				strcpy(val, v);
 			break;
 		case CINFO_ATTR_STATUS:
-			sprintf(val, "%s",
-				etcd_cinfo_status_to_string(etcd_cinfo.status));
+			v = etcd_cinfo_status_to_string(etcd_cinfo.status);
+			if (!v || !strlen(v))
+				v = "wait";
+			strcpy(val, v);
 			break;
 		default:
 			break;
