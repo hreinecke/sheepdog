@@ -655,6 +655,7 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 	if (strlen(default_store))
 		json_object_object_add(cinfo_obj, "default_store",
 				       json_object_new_string(default_store));
+#if 0
 	if (cinfo->nr_nodes) {
 		struct json_object *nodes_obj;
 
@@ -679,6 +680,7 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 		}
 		json_object_object_add(cinfo_obj, "nodes", nodes_obj);
 	}
+#endif
 	json_object_object_add(obj, "cluster", cinfo_obj);
 	if (node)
 		json_object_object_add(obj, "node",
@@ -1542,7 +1544,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
-		sd_debug("adding node '%s'", node->node_id);
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes++;
 	}
@@ -1623,7 +1624,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
-		sd_debug("adding node '%s'", node->node_id);
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes ++;
 	}
