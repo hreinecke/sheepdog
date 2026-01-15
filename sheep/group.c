@@ -147,7 +147,7 @@ struct vnode_info *alloc_vnode_info(const struct rb_root *nroot)
 		vnode_info->nr_nodes++;
 	}
 
-	if (is_cluster_autovnodes(&sys->cinfo))
+	if (sys->autovnodes)
 		recalculate_vnodes(&vnode_info->nroot);
 
 	if (is_cluster_diskmode(&sys->cinfo))
@@ -441,12 +441,26 @@ static bool enough_nodes_gathered(struct cluster_info *cinfo,
  * We have to use memcpy because some cluster drivers like corosync can't
  * support to send the whole cluster_info structure.
  */
-static void cluster_info_copy(struct cluster_info *dst,
-			      const struct cluster_info *src)
+static void cluster_info_import(const struct cluster_info *cinfo)
 {
 	int len = offsetof(struct cluster_info, nodes) +
-		src->nr_nodes * sizeof(struct sd_node);
-	memcpy(dst, src, len);
+		cinfo->nr_nodes * sizeof(struct sd_node);
+	memcpy(&sys->cinfo, cinfo, len);
+	if (cinfo->flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+		sys->autovnodes = true;
+	else
+		sys->autovnodes = false;
+}
+
+static void cluster_info_export(struct cluster_info *cinfo)
+{
+	int len = offsetof(struct cluster_info, nodes) +
+		sys->cinfo.nr_nodes * sizeof(struct sd_node);
+	memcpy(cinfo, &src->cinfo, len);
+	if (sys->autovnodes)
+		cinfo->flags |= SD_CLUSTER_FLAG_AUTO_VNODES;
+	else
+		cinfo->flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
 }
 
 static enum sd_status cluster_wait_check(const struct sd_node *joining,
@@ -462,7 +476,7 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 	if (cinfo->epoch > sys->cinfo.epoch) {
 		sd_debug("joining node has a larger epoch, %" PRIu32 ", %"
 			 PRIu32, cinfo->epoch, sys->cinfo.epoch);
-		cluster_info_copy(&sys->cinfo, cinfo);
+		cluster_info_import(cinfo);
 	}
 
 	/*
@@ -1075,7 +1089,7 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 	else
 		status = sys->cinfo.status;
 
-	cluster_info_copy(cinfo, &sys->cinfo);
+	cluster_info_export(cinfo);
 	cinfo->status = status;
 	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 
@@ -1182,13 +1196,11 @@ static bool cluster_join_check(const struct cluster_info *cinfo)
 		return false;
 
 	if (cinfo->ctime > 0 && sys->this_node.nr_vnodes != 0) {
-		if (!is_cluster_autovnodes(&sys->cinfo)
-			&& is_cluster_autovnodes(cinfo)) {
+		if (!sys->autovnodes && is_cluster_autovnodes(cinfo)) {
 			sd_err("failed to join for vnodes strategy unmatch. "
 				" cluster:fixed, joined:auto");
 			return false;
-		} else if (is_cluster_autovnodes(&sys->cinfo)
-			&& !is_cluster_autovnodes(cinfo)) {
+		} else if (sys->autovnodes && !is_cluster_autovnodes(cinfo)) {
 			sd_err("failed to join for vnodes strategy unmatch. "
 				" cluster:auto, joined:fixed");
 			return false;
@@ -1216,25 +1228,23 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 {
 	const struct cluster_info *cinfo = opaque;
 	struct sd_node *n;
-	uint16_t flags;
+	bool autovnodes;
 
 	if (node_is_local(joined) && sys->gateway_only
 		&& sys->cinfo.ctime <= 0)
-		flags = cinfo->flags & SD_CLUSTER_FLAG_AUTO_VNODES;
+		autovnodes = cinfo->flags & SD_CLUSTER_FLAGS_AUTO_VNODES;
 	else
-		flags = sys->cinfo.flags & SD_CLUSTER_FLAG_AUTO_VNODES;
+		autovnodes = sys->autovnodes;
 
 	if (node_is_local(joined) && !cluster_join_check(cinfo)) {
 		sd_err("failed to join Sheepdog");
 		exit(1);
 	}
 
-	cluster_info_copy(&sys->cinfo, cinfo);
+	cluster_info_import(cinfo);
+	sys->autovnodes = autovnodes;
 
-	sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
-	sys->cinfo.flags |= flags;
-
-	sd_debug("join %s", node_to_str(joined));
+	sd_debug("join %s, %lu nodes", node_to_str(joined), nr_nodes);
 	rb_for_each_entry(n, nroot, rb) {
 		sd_debug("%s", node_to_str(n));
 	}
@@ -1324,7 +1334,7 @@ static void update_node_info(struct sd_node *node)
 		panic("can't find %s", node_to_str(node));
 	n->space = node->space;
 
-	if (!is_cluster_autovnodes(&sys->cinfo))
+	if (!sys->autovnodes)
 		n->nr_vnodes = node->nr_vnodes;
 
 	if (is_cluster_diskmode(&sys->cinfo)) {
@@ -1404,7 +1414,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		sys->cinfo.nr_nodes = nr_nodes;
 	}
 
-	if (!is_cluster_autovnodes(&sys->cinfo)) {
+	if (!sys->autovnodes) {
 		for (i = 0; i < nr_nodes; i++) {
 			if (!node_id_cmp(&sys->this_node.nid,
 					 &sys->cinfo.nodes[i].nid)) {

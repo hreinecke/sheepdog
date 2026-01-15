@@ -159,6 +159,7 @@ struct system_info {
 
 	bool gateway_only;
 	bool nosync;
+	bool autovnodes;
 
 	struct recovery_throttling rthrottling;
 

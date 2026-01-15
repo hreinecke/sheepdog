@@ -838,7 +838,7 @@ int main(int argc, char **argv)
 	struct stat logdir_st;
 	enum log_dst_type log_dst_type;
 
-	sys->cinfo.flags |= SD_CLUSTER_FLAG_AUTO_VNODES;
+	sys->autovnodes = true;
 	sys->node_status = SD_NODE_STATUS_INITIALIZATION;
 
 	sys->rthrottling.max_exec_count = 0;
@@ -982,7 +982,7 @@ int main(int argc, char **argv)
 			exit(0);
 			break;
 		case 'V':
-			sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
+			sys->autovnodes = false;
 			if (nr_vnodes == 0) {
 				sd_err("Options '-g' and '-V' can not be both specified");
 				exit(1);

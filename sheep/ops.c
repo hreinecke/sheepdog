@@ -1453,7 +1453,7 @@ static int local_set_vnodes(const struct sd_req *req,
 		sd_err("failed to set vnodes, cause operating in gateway mode.");
 		return SD_RES_GATEWAY_MODE;
 	}
-	if (is_cluster_autovnodes(&sys->cinfo)) {
+	if (sys->autovnodes) {
 		sd_err("failed to set vnodes, cause operating in auto vnodes strategy.");
 		return SD_RES_INVALID_VNODES_STRATEGY;
 	}

@@ -82,18 +82,20 @@ static void check_tmp_config(void)
 	sd_info("removed temporal config file");
 }
 
-static int get_cluster_config(struct cluster_info *cinfo)
+static int get_cluster_config(void)
 {
-	cinfo->ctime = config.ctime;
-	cinfo->nr_copies = config.copies;
+	bool autovnodes = config.flags & SD_CLUSTER_FLAG_AUTO_VNODES;
+	int flags = config.flags & ~SD_CLUSTER_FLAG_AUTO_VNODES;
+
+	sys->cinfo.ctime = config.ctime;
+	sys->cinfo.nr_copies = config.copies;
+
+	sys->cinfo.flags = flags;
 	if (config.ctime > 0)
-		cinfo->flags = config.flags;
-	else
-		cinfo->flags = (config.flags & ~SD_CLUSTER_FLAG_AUTO_VNODES) |
-			(cinfo->flags & SD_CLUSTER_FLAG_AUTO_VNODES);
-	cinfo->copy_policy = config.copy_policy;
-	cinfo->block_size_shift = config.block_size_shift;
-	memcpy(cinfo->default_store, config.default_store,
+		sys->autovnodes = autovnodes;
+	sys->cinfo.copy_policy = config.copy_policy;
+	sys->cinfo.block_size_shift = config.block_size_shift;
+	memcpy(sys->cinfo.default_store, config.default_store,
 	       sizeof(config.default_store));
 
 	return SD_RES_SUCCESS;
@@ -258,7 +260,7 @@ int init_config_file(void)
 
 reload:
 	if ((config.flags & SD_CLUSTER_FLAG_AUTO_VNODES) !=
-	    (sys->cinfo.flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+	    (sys->autovnodes)
 		&& !sys->gateway_only
 		&& config.ctime > 0) {
 		sd_err("Designation of before a restart and a vnodes option is different.");
@@ -266,7 +268,7 @@ reload:
 	}
 
 	ret = 0;
-	get_cluster_config(&sys->cinfo);
+	get_cluster_config();
 	if ((config.flags & SD_CLUSTER_FLAG_DISKMODE) !=
 	    (sys->cinfo.flags & SD_CLUSTER_FLAG_DISKMODE)) {
 		sd_err("This sheep can't run because "
@@ -329,11 +331,7 @@ int get_node_space(uint64_t *space)
 
 bool is_cluster_formatted(void)
 {
-	struct cluster_info cinfo;
-
-	get_cluster_config(&cinfo);
-
-	return cinfo.ctime != 0;
+	return config.ctime != 0;
 }
 
 int set_cluster_shutdown(bool down)
