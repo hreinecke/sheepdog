@@ -147,7 +147,7 @@ struct vnode_info *alloc_vnode_info(const struct rb_root *nroot)
 		vnode_info->nr_nodes++;
 	}
 
-	if (is_cluster_autovnodes(&sys->cinfo))
+	if (is_node_autovnodes())
 		recalculate_vnodes(&vnode_info->nroot);
 
 	if (is_cluster_diskmode(&sys->cinfo))
@@ -1187,12 +1187,12 @@ static bool cluster_join_check(const struct cluster_info *cinfo)
 		return false;
 
 	if (cinfo->ctime > 0 && sys->this_node.nr_vnodes != 0) {
-		if (!is_cluster_autovnodes(&sys->cinfo)
+		if (!is_node_autovnodes()
 			&& is_cluster_autovnodes(cinfo)) {
 			sd_err("failed to join for vnodes strategy unmatch. "
 				" cluster:fixed, joined:auto");
 			return false;
-		} else if (is_cluster_autovnodes(&sys->cinfo)
+		} else if (is_node_autovnodes()
 			&& !is_cluster_autovnodes(cinfo)) {
 			sd_err("failed to join for vnodes strategy unmatch. "
 				" cluster:auto, joined:fixed");
@@ -1211,7 +1211,7 @@ static bool cluster_join_check(const struct cluster_info *cinfo)
 	 *
 	 * That said, we don't check epoch history at all.
 	 */
-
+	sys->joined = true;
 	return true;
 }
 
@@ -1221,13 +1221,10 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 {
 	const struct cluster_info *cinfo = opaque;
 	struct sd_node *n;
-	uint16_t flags;
 
 	if (node_is_local(joined) && sys->gateway_only
 		&& sys->cinfo.ctime <= 0)
-		flags = cinfo->flags & SD_CLUSTER_FLAG_AUTO_VNODES;
-	else
-		flags = sys->cinfo.flags & SD_CLUSTER_FLAG_AUTO_VNODES;
+		sys->noautovnodes = true;
 
 	if (node_is_local(joined) && !cluster_join_check(cinfo)) {
 		sd_err("failed to join Sheepdog");
@@ -1235,9 +1232,6 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 	}
 
 	cluster_info_copy(&sys->cinfo, cinfo);
-
-	sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
-	sys->cinfo.flags |= flags;
 
 	sd_debug("join %s, %lu nodes", node_to_str(joined), nr_nodes);
 	rb_for_each_entry(n, nroot, rb) {
@@ -1329,7 +1323,7 @@ static void update_node_info(struct sd_node *node)
 		panic("can't find %s", node_to_str(node));
 	n->space = node->space;
 
-	if (!is_cluster_autovnodes(&sys->cinfo))
+	if (!is_node_autovnodes())
 		n->nr_vnodes = node->nr_vnodes;
 
 	if (is_cluster_diskmode(&sys->cinfo)) {
@@ -1410,7 +1404,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		sys->cinfo.nr_nodes = nr_nodes;
 	}
 
-	if (!is_cluster_autovnodes(&sys->cinfo)) {
+	if (!is_node_autovnodes()) {
 		for (i = 0; i < nr_nodes; i++) {
 			if (!node_id_cmp(&sys->this_node.nid,
 					 &sys->cinfo.nodes[i].nid)) {

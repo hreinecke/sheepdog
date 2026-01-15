@@ -159,6 +159,8 @@ struct system_info {
 
 	bool gateway_only;
 	bool nosync;
+	bool noautovnodes;
+	bool joined;
 
 	struct recovery_throttling rthrottling;
 
@@ -338,6 +340,13 @@ static inline uint32_t sys_epoch(void)
 static inline bool is_aligned_to_pagesize(void *p)
 {
 	return ((uintptr_t)p & (getpagesize() - 1)) == 0;
+}
+
+static inline bool is_node_autovnodes(void)
+{
+	if (sys->noautovnodes)
+		return false;
+	return is_cluster_autovnodes(&sys->cinfo);
 }
 
 int create_listen_port(const char *bindaddr, int port);
