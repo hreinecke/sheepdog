@@ -337,6 +337,11 @@ static inline uint32_t sys_epoch(void)
 	return uatomic_read(&sys->cinfo.epoch);
 }
 
+static inline void sys_set_epoch(uint32_t epoch)
+{
+	uatomic_set(&sys->cinfo.epoch, epoch);
+}
+
 static inline int sys_update_cluster(void)
 {
 	int ret = SD_RES_SUCCESS;
@@ -351,9 +356,61 @@ static inline int sys_update_status(enum sd_status status)
 	int ret = SD_RES_SUCCESS;
 
 	sys->cinfo.status = status;
+	if (status == SD_STATUS_KILLED)
+		return ret;
 	if (sys->joined && sys->cdrv->update_status)
 		ret = sys->cdrv->update_status(&sys->cinfo);
 	return ret;
+}
+
+static inline uint8_t sys_get_proto_ver(void)
+{
+	return sys->cinfo.proto_ver;
+}
+
+static inline bool sys_get_disable_recovery(void)
+{
+	return sys->cinfo.disable_recovery;
+}
+
+static inline uint16_t sys_get_nr_nodes(void)
+{
+	return sys->cinfo.nr_nodes;
+}
+
+static inline void sys_set_nr_nodes(uint16_t nr_nodes)
+{
+	sys->cinfo.nr_nodes = nr_nodes;
+}
+
+static inline uint64_t sys_get_ctime(void)
+{
+	return sys->cinfo.ctime;
+}
+
+static inline uint16_t sys_get_flags(void)
+{
+	return sys->cinfo.flags;
+}
+
+static inline uint8_t sys_get_nr_copies(void)
+{
+	return sys->cinfo.nr_copies;
+}
+
+static inline uint8_t sys_get_copy_policy(void)
+{
+	return sys->cinfo.copy_policy;
+}
+
+static inline enum sd_status sys_get_status(void)
+{
+	return sys->cinfo.status;
+}
+
+static inline uint8_t sys_get_block_size_shift(void)
+{
+	return sys->cinfo.block_size_shift;
 }
 
 static inline bool is_aligned_to_pagesize(void *p)

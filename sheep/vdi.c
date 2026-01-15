@@ -249,9 +249,11 @@ int get_vdi_copy_number(uint32_t vid)
 	sd_rw_unlock(&vdi_state_lock);
 
 	if (!entry) {
+		uint8_t nr_copies = sys_get_nr_copies();
+
 		sd_alert("copy number for %" PRIx32 " not found, set %d", vid,
-			 sys->cinfo.nr_copies);
-		return sys->cinfo.nr_copies;
+			 nr_copies);
+		return nr_copies;
 	}
 
 	return entry->nr_copies;
@@ -266,9 +268,11 @@ int get_vdi_copy_policy(uint32_t vid)
 	sd_rw_unlock(&vdi_state_lock);
 
 	if (!entry) {
+		uint8_t copy_policy = sys_get_copy_policy();
+
 		sd_alert("copy policy for %" PRIx32 " not found, set %d", vid,
-			 sys->cinfo.copy_policy);
-		return sys->cinfo.copy_policy;
+			 copy_policy);
+		return copy_policy;
 	}
 
 	return entry->copy_policy;
@@ -284,7 +288,7 @@ uint32_t get_vdi_object_size(uint32_t vid)
 	sd_rw_unlock(&vdi_state_lock);
 
 	if (!entry) {
-		object_size = UINT32_C(1) << sys->cinfo.block_size_shift;
+		object_size = UINT32_C(1) << sys_get_block_size_shift();
 		sd_alert("object_size for %" PRIx32 " not found, set %" PRIu32,
 			 vid, object_size);
 		return object_size;
@@ -303,10 +307,11 @@ uint8_t get_vdi_block_size_shift(uint32_t vid)
 	sd_rw_unlock(&vdi_state_lock);
 
 	if (!entry) {
+		uint8_t bss = sys_get_block_size_shift();
+
 		sd_alert("block_size_shift for %" PRIx32
-			 " not found, set %" PRIu8, vid,
-			 sys->cinfo.block_size_shift);
-		return sys->cinfo.block_size_shift;
+			 " not found, set %" PRIu8, vid, bss);
+		return bss;
 	}
 
 	return entry->block_size_shift;
@@ -384,7 +389,7 @@ static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
 		already_exists = true;
 	}
 
-	if (sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID && !already_exists)
+	if (sys_get_flags() & SD_CLUSTER_FLAG_RECYCLE_VID && !already_exists)
 		update_vdi_family(parent_vid, entry, unordered);
 
 	sd_rw_unlock(&vdi_state_lock);
@@ -1489,7 +1494,7 @@ int vdi_lookup(const struct vdi_iocb *iocb, struct vdi_info *info)
 	unsigned long left, right;
 	int ret;
 
-	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID)) {
+	if (!(sys_get_flags() & SD_CLUSTER_FLAG_RECYCLE_VID)) {
 		ret = get_vdi_bitmap_range(iocb->name, &left, &right);
 		info->free_bit = right;
 		sd_debug("%s left %lx right %lx, %x", iocb->name, left, right,
@@ -2075,11 +2080,11 @@ int sd_create_hyper_volume(const char *name, uint32_t *vdi_id)
 	hdr.data_length = SD_MAX_VDI_LEN;
 
 	hdr.vdi.vdi_size = SD_MAX_VDI_SIZE;
-	hdr.vdi.copies = sys->cinfo.nr_copies;
-	hdr.vdi.copy_policy = sys->cinfo.copy_policy;
+	hdr.vdi.copies = sys_get_nr_copies();
+	hdr.vdi.copy_policy = sys_get_copy_policy();
 	hdr.vdi.store_policy = 1;
 	/* XXX Cannot use both features, Hypervolume and Change object size */
-	if (sys->cinfo.block_size_shift != SD_DEFAULT_BLOCK_SIZE_SHIFT) {
+	if (sys_get_block_size_shift() != SD_DEFAULT_BLOCK_SIZE_SHIFT) {
 		hdr.vdi.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;
 		sd_warn("Cluster default object size is not"
 			" SD_DATA_OBJ_SIZE(%d)."

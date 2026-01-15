@@ -862,7 +862,7 @@ static void recover_next_object(struct recovery_info *rinfo)
 	if (run_next_rw())
 		return;
 
-	if (sys->cinfo.disable_recovery) {
+	if (sys_get_disable_recovery()) {
 		sd_debug("suspended");
 		rinfo->suspended = true;
 		/* suspend until resume_suspended_recovery() is called */
@@ -1285,7 +1285,7 @@ static void prepare_object_list(struct work *work)
 	nodes = xmalloc(sizeof(struct sd_node) * nr_nodes);
 	nodes_to_buffer(&rw->cur_vinfo->nroot, nodes);
 
-	if (sys->cinfo.flags & SD_CLUSTER_FLAG_AVOID_DISKFULL
+	if (sys_get_flags() & SD_CLUSTER_FLAG_AVOID_DISKFULL
 	    && check_diskfull_possibility(rw->epoch,
 					  rw->cur_vinfo, nr_nodes, nodes)) {
 		sd_emerg("canceling recovery because of disk full");
@@ -1328,14 +1328,14 @@ int start_recovery(struct vnode_info *cur_vinfo, struct vnode_info *old_vinfo,
 		   bool epoch_lifted, bool wildcard)
 {
 	struct recovery_info *rinfo;
+	uint32_t epoch = sys_epoch();
 
 	rinfo = xzalloc(sizeof(struct recovery_info));
 	rinfo->state = RW_PREPARE_LIST;
-	rinfo->epoch = sys->cinfo.epoch;
-	rinfo->tgt_epoch = epoch_lifted ? sys->cinfo.epoch - 1 :
-		sys->cinfo.epoch;
+	rinfo->epoch = epoch;
+	rinfo->tgt_epoch = epoch_lifted ? epoch - 1 : epoch;
 	rinfo->count = 0;
-	rinfo->max_epoch = sys->cinfo.epoch;
+	rinfo->max_epoch = epoch;
 	rinfo->vinfo_array = xzalloc(sizeof(struct vnode_info *) *
 				     rinfo->max_epoch);
 	rinfo->max_exec_count = sys->rthrottling.max_exec_count;

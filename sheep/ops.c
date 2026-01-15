@@ -99,15 +99,15 @@ static int cluster_new_vdi(struct request *req)
 
 	/* Client doesn't specify redundancy scheme (copy = 0) */
 	if (!hdr->vdi.copies) {
-		iocb.nr_copies = sys->cinfo.nr_copies;
-		iocb.copy_policy = sys->cinfo.copy_policy;
+		iocb.nr_copies = sys_get_nr_copies();
+		iocb.copy_policy = sys_get_copy_policy();
 	}
 
 	if (iocb.copy_policy)
 		iocb.nr_copies = ec_policy_to_dp(iocb.copy_policy, NULL, NULL);
 
 	if (!hdr->vdi.block_size_shift)
-		iocb.block_size_shift = sys->cinfo.block_size_shift;
+		iocb.block_size_shift = sys_get_block_size_shift();
 
 	if (hdr->data_length != SD_MAX_VDI_LEN)
 		return SD_RES_INVALID_PARMS;
@@ -190,7 +190,7 @@ static int post_cluster_del_vdi(const struct sd_req *req, struct sd_rsp *rsp,
 		atomic_set_bit(vid, sys->vdi_deleted);
 		vdi_mark_deleted(vid);
 
-		if (sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID)
+		if (sys_get_flags() & SD_CLUSTER_FLAG_RECYCLE_VID)
 			run_vid_gc(vid);
 	}
 
@@ -328,7 +328,7 @@ static int cluster_make_fs(const struct sd_req *req, struct sd_rsp *rsp,
 	clean_vdi_state();
 	objlist_cache_format();
 
-	sys->cinfo.epoch = 0;
+	sys_set_epoch(0);
 
 	ret = inc_and_log_epoch();
 	if (ret) {
@@ -493,11 +493,11 @@ static int local_stat_cluster(struct request *req)
 
 		/* some filed only need to store in first elog */
 		if (i == 0) {
-			elog->ctime = sys->cinfo.ctime;
-			elog->disable_recovery = sys->cinfo.disable_recovery;
-			elog->nr_copies = sys->cinfo.nr_copies;
-			elog->copy_policy = sys->cinfo.copy_policy;
-			elog->flags = sys->cinfo.flags;
+			elog->ctime = sys_get_ctime();
+			elog->disable_recovery = sys_get_disable_recovery();
+			elog->nr_copies = sys_get_nr_copies();
+			elog->copy_policy = sys_get_copy_policy();
+			elog->flags = sys_get_flags();
 			pstrcpy(elog->drv_name, STORE_LEN,
 				(char *)sys->cinfo.default_store);
 		}
@@ -527,11 +527,11 @@ static int local_stat_cluster(struct request *req)
 		epoch--;
 	}
 out:
-	switch (sys->cinfo.status) {
+	switch (sys_get_status()) {
 	case SD_STATUS_OK:
 		return SD_RES_SUCCESS;
 	case SD_STATUS_WAIT:
-		if (sys->cinfo.ctime == 0)
+		if (sys_get_ctime() == 0)
 			return SD_RES_WAIT_FOR_FORMAT;
 		else
 			return SD_RES_WAIT_FOR_JOIN;
@@ -580,7 +580,7 @@ static int cluster_force_recover_work(struct request *req)
 	 * 2) some nodes are physically down (same epoch condition).
 	 * In both case, the nodes(s) stat is WAIT_FOR_JOIN.
 	 */
-	if (sys->cinfo.status != SD_STATUS_WAIT || req->vinfo == NULL)
+	if (sys_get_status() != SD_STATUS_WAIT || req->vinfo == NULL)
 		return SD_RES_FORCE_RECOVER;
 
 	old_vnode_info = get_vnode_info_epoch(epoch, req->vinfo);
@@ -615,7 +615,7 @@ static int cluster_force_recover_main(const struct sd_req *req,
 	size_t nr_nodes = rsp->data_length / sizeof(*nodes);
 	struct rb_root nroot = RB_ROOT;
 
-	if (rsp->epoch != sys->cinfo.epoch) {
+	if (rsp->epoch != sys_epoch()) {
 		sd_err("epoch was incremented while cluster_force_recover");
 		return SD_RES_FORCE_RECOVER;
 	}
@@ -730,7 +730,7 @@ static int cluster_recovery_completion(const struct sd_req *req,
 	for (i = 0; i < nr_recovereds; i++)
 		sd_debug("[%x] %s", i, node_to_str(recovereds + i));
 
-	if (sys->cinfo.epoch != latest_epoch)
+	if (sys_epoch() != latest_epoch)
 		return SD_RES_SUCCESS;
 
 	vnode_info = get_vnode_info();
@@ -953,7 +953,7 @@ static int local_trace_read_buf(struct request *request)
 static int local_kill_node(const struct sd_req *req, struct sd_rsp *rsp,
 			   void *data, const struct sd_node *sender)
 {
-	sys->cinfo.status = SD_STATUS_KILLED;
+	sys_update_status(SD_STATUS_KILLED);
 	unregister_listening_fds();
 
 	return SD_RES_SUCCESS;
@@ -1280,7 +1280,7 @@ static int local_repair_replica(struct request *req)
 
 static int cluster_lock_vdi_work(struct request *req)
 {
-	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+	if (!(sys_get_flags() & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
 		return cluster_get_vdi_info(req);
 	}
@@ -1302,7 +1302,7 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 {
 	uint32_t vid = rsp->vdi.vdi_id;
 
-	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+	if (!(sys_get_flags() & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
 		return SD_RES_SUCCESS;
 	}
@@ -1331,7 +1331,7 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 {
 	uint32_t vid = req->vdi.base_vdi_id;
 
-	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+	if (!(sys_get_flags() & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
 		return SD_RES_SUCCESS;
 	}
@@ -1359,7 +1359,7 @@ static int local_vdi_state_checkpoint_ctl(const struct sd_req *req,
 	uint32_t vid = req->vdi_state_checkpoint.vid;
 	int ret;
 
-	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+	if (!(sys_get_flags() & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_alert("checkpoint sync is issued, but this cluster isn't"
 			 " enabled vdi locking");
 		return SD_RES_SUCCESS; /* just ignore */
@@ -1390,9 +1390,9 @@ static int local_get_cluster_default(const struct sd_req *req,
 				     struct sd_rsp *rsp,
 				     void *data, const struct sd_node *sender)
 {
-	rsp->cluster_default.nr_copies = sys->cinfo.nr_copies;
-	rsp->cluster_default.copy_policy = sys->cinfo.copy_policy;
-	rsp->cluster_default.block_size_shift = sys->cinfo.block_size_shift;
+	rsp->cluster_default.nr_copies = sys_get_nr_copies();
+	rsp->cluster_default.copy_policy = sys_get_copy_policy();
+	rsp->cluster_default.block_size_shift = sys_get_block_size_shift();
 
 	return SD_RES_SUCCESS;
 }

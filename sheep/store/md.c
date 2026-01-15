@@ -573,7 +573,7 @@ out:
 		} else {
 			sd_warn("no disks available, going down");
 			leave_cluster();
-			sys->cinfo.status = SD_STATUS_KILLED;
+			sys_update_status(SD_STATUS_KILLED);
 		}
 	}
 
@@ -864,7 +864,7 @@ out:
 		} else {
 			sd_warn("no disks plugged, going down");
 			leave_cluster();
-			sys->cinfo.status = SD_STATUS_KILLED;
+			sys_update_status(SD_STATUS_KILLED);
 		}
 	}
 

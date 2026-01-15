@@ -399,12 +399,14 @@ int epoch_log_read_remote(uint32_t epoch, struct sd_node *nodes, int len,
 
 static bool cluster_ctime_check(const struct cluster_info *cinfo)
 {
-	if (cinfo->epoch == 0 || sys->cinfo.epoch == 0)
+	uint64_t ctime = sys_get_ctime();
+
+	if (cinfo->epoch == 0 || sys_epoch() == 0)
 		return true;
 
-	if (cinfo->ctime != sys->cinfo.ctime) {
+	if (cinfo->ctime != ctime) {
 		sd_err("joining node ctime doesn't match: %" PRIu64 " vs %"
-		       PRIu64, cinfo->ctime, sys->cinfo.ctime);
+		       PRIu64, cinfo->ctime, ctime);
 		return false;
 	}
 
@@ -454,14 +456,17 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 					 size_t nr_nodes,
 					 struct cluster_info *cinfo)
 {
+	enum sd_status status = sys_get_status();
+	uint32_t epoch = sys_epoch();
+
 	if (!cluster_ctime_check(cinfo)) {
 		sd_debug("joining node is invalid");
-		return sys->cinfo.status;
+		return status;
 	}
 
-	if (cinfo->epoch > sys->cinfo.epoch) {
+	if (cinfo->epoch > epoch) {
 		sd_debug("joining node has a larger epoch, %" PRIu32 ", %"
-			 PRIu32, cinfo->epoch, sys->cinfo.epoch);
+			 PRIu32, cinfo->epoch, epoch);
 		cluster_info_copy(&sys->cinfo, cinfo);
 	}
 
@@ -469,11 +474,11 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 	 * If we have all members from the last epoch log in the in-memory
 	 * node list, we can set the cluster live now.
 	 */
-	if (sys->cinfo.epoch > 0 &&
+	if (epoch > 0 &&
 	    enough_nodes_gathered(&sys->cinfo, joining, nroot, nr_nodes))
 		return SD_STATUS_OK;
 
-	return sys->cinfo.status;
+	return status;
 }
 
 static int get_vdis_from(struct sd_node *node)
@@ -527,6 +532,7 @@ static void do_get_vdis(struct work *work)
 	struct get_vdis_work *w =
 		container_of(work, struct get_vdis_work, work);
 	struct sd_node *n;
+	enum sd_status status = sys_get_status();
 	int ret;
 
 	if (!node_is_local(&w->joined)) {
@@ -534,7 +540,7 @@ static void do_get_vdis(struct work *work)
 			 node_to_str(&w->joined));
 		ret = get_vdis_from(&w->joined);
 		if (ret != SD_RES_SUCCESS) {
-			if (sys->cinfo.status == SD_STATUS_OK)
+			if (status == SD_STATUS_OK)
 				/*
 				 * SD_STATUS_OK means enough zones are gathered,
 				 * so failed vdi bitmap collection isn't
@@ -544,8 +550,7 @@ static void do_get_vdis(struct work *work)
 					 node_to_str(&w->joined));
 			else
 				panic("failed to get vdi bitmap from %s, status %d",
-				      node_to_str(&w->joined),
-				      sys->cinfo.status);
+				      node_to_str(&w->joined), status);
 		}
 		return;
 	}
@@ -593,7 +598,7 @@ static main_fn void get_vdis_done(struct work *work)
 	free(w);
 
 	if (refcount_read(&nr_get_vdis_works) == 0 &&
-	    sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)
+	    sys_get_flags() & SD_CLUSTER_FLAG_USE_LOCK)
 		/*
 		 * Now this sheep process could construct its vdi state.
 		 * It can collect other state e.g. vdi locking.
@@ -605,20 +610,23 @@ static main_fn void get_vdis_done(struct work *work)
 int inc_and_log_epoch(void)
 {
 	struct vnode_info *cur_vinfo = get_vnode_info();
+	uint32_t epoch;
+	int nr_nodes;
 
 	if (cur_vinfo) {
 		/* update cluster info to the latest state */
-		sys->cinfo.nr_nodes = cur_vinfo->nr_nodes;
+		nr_nodes = cur_vinfo->nr_nodes;
 		nodes_to_buffer(&cur_vinfo->nroot, sys->cinfo.nodes);
 
 		put_vnode_info(cur_vinfo);
 	} else
-		sys->cinfo.nr_nodes = 0;
+		nr_nodes = 0;
 
-	uatomic_inc(&sys->cinfo.epoch);
+	epoch = uatomic_add_return(&sys->cinfo.epoch, 1);
+	sys->cinfo.nr_nodes = nr_nodes;
+	sys_update_cluster();
 
-	return update_epoch_log(sys->cinfo.epoch, sys->cinfo.nodes,
-				sys->cinfo.nr_nodes);
+	return update_epoch_log(epoch, sys->cinfo.nodes, nr_nodes);
 }
 
 static struct vnode_info *alloc_old_vnode_info(void)
@@ -633,7 +641,7 @@ static struct vnode_info *alloc_old_vnode_info(void)
 	 * We should use old nodes information which is stored in epoch to
 	 * rebuild old_vnode_info.
 	 */
-	for (int i = 0; i < sys->cinfo.nr_nodes; i++) {
+	for (int i = 0; i < sys_get_nr_nodes(); i++) {
 		struct sd_node *new = xmalloc(sizeof(*new));
 		*new = sys->cinfo.nodes[i];
 		if (rb_insert(&old_root, new, rb, node_cmp))
@@ -953,7 +961,7 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 			}
 		}
 	} else {
-		if (sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK &&
+		if (sys_get_flags() & SD_CLUSTER_FLAG_USE_LOCK &&
 		    0 < cinfo->epoch && cinfo->status == SD_STATUS_OK)
 			create_vdi_state_checkpoint(cinfo->epoch - 1);
 	}
@@ -978,7 +986,7 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 			ret = inc_and_log_epoch();
 			if (ret != 0)
 				panic("cannot log current epoch %d",
-				      sys->cinfo.epoch);
+				      sys_epoch());
 
 			start_recovery(main_thread_get(current_vnode_info),
 				       old_vnode_info, true, false);
@@ -1074,13 +1082,12 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 		return false;
 	}
 
+	status = sys_get_status();
 	sd_debug("check %s, %d, %lu nodes", node_to_str(joining),
-		 sys->cinfo.status, nr_nodes);
+		 status, nr_nodes);
 
-	if (sys->cinfo.status == SD_STATUS_WAIT)
+	if (status == SD_STATUS_WAIT)
 		status = cluster_wait_check(joining, nroot, nr_nodes, cinfo);
-	else
-		status = sys->cinfo.status;
 
 	cluster_info_copy(cinfo, &sys->cinfo);
 	cinfo->status = status;
@@ -1223,10 +1230,11 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 			       const void *opaque)
 {
 	const struct cluster_info *cinfo = opaque;
+	enum sd_status status = sys_get_status();
 	struct sd_node *n;
 
 	if (node_is_local(joined) && sys->gateway_only
-		&& sys->cinfo.ctime <= 0)
+	    && sys_get_ctime() <= 0)
 		sys->noautovnodes = true;
 
 	if (node_is_local(joined) && !cluster_join_check(cinfo)) {
@@ -1241,7 +1249,7 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 		sd_debug("%s", node_to_str(n));
 	}
 
-	if (sys->cinfo.status == SD_STATUS_SHUTDOWN)
+	if (status == SD_STATUS_SHUTDOWN)
 		return;
 
 	update_cluster_info(cinfo, joined, nroot, nr_nodes);
@@ -1276,15 +1284,16 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 			      const struct rb_root *nroot, size_t nr_nodes)
 {
 	struct vnode_info *old_vnode_info;
+	enum sd_status status = sys_get_status();
 	struct sd_node *n;
 	int ret;
 
-	sd_debug("leave %s, status %d", node_to_str(left), sys->cinfo.status);
+	sd_debug("leave %s, status %d", node_to_str(left), status);
 	rb_for_each_entry(n, nroot, rb) {
 		sd_debug("%s", node_to_str(n));
 	}
 
-	if (sys->cinfo.status == SD_STATUS_SHUTDOWN)
+	if (status == SD_STATUS_SHUTDOWN)
 		return;
 
 	if (node_is_local(left))
@@ -1297,7 +1306,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	 */
 	old_vnode_info = main_thread_get(current_vnode_info);
 	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
-	if (sys->cinfo.status == SD_STATUS_OK) {
+	if (status == SD_STATUS_OK) {
 		if (is_gateway_only_cluster(nroot)) {
 			sd_info("only gateway nodes are remaining, exiting");
 			exit(0);
@@ -1305,7 +1314,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 
 		ret = inc_and_log_epoch();
 		if (ret != 0)
-			panic("cannot log current epoch %d", sys->cinfo.epoch);
+			panic("cannot log current epoch %d", sys_epoch());
 		start_recovery(main_thread_get(current_vnode_info),
 			       old_vnode_info, true, false);
 	}
@@ -1350,7 +1359,7 @@ static void kick_node_recover(void)
 	main_thread_set(current_vnode_info, alloc_vnode_info(&old->nroot));
 	ret = inc_and_log_epoch();
 	if (ret != 0)
-		panic("cannot log current epoch %d", sys->cinfo.epoch);
+		panic("cannot log current epoch %d", sys_epoch());
 	start_recovery(main_thread_get(current_vnode_info), old, true, false);
 	put_vnode_info(old);
 }
@@ -1365,6 +1374,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		   bool explicit_addr)
 {
 	int nr_nodes = 0, ret, i, vnodes = 0;
+	uint32_t epoch;
 
 	if (!sys->cdrv) {
 		sys->cdrv = find_cdrv(DEFAULT_CLUSTER_DRIVER);
@@ -1398,9 +1408,10 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 
 	update_node_disks();
 
-	sys->cinfo.epoch = get_latest_epoch();
-	if (sys->cinfo.epoch) {
-		ret = epoch_log_read(sys->cinfo.epoch, sys->cinfo.nodes,
+	epoch = get_latest_epoch();
+	sys_set_epoch(epoch);
+	if (epoch) {
+		ret = epoch_log_read(epoch, sys->cinfo.nodes,
 			sizeof(sys->cinfo.nodes), &nr_nodes);
 		if (ret != SD_RES_SUCCESS)
 			return -1;
@@ -1415,7 +1426,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 				break;
 			}
 		}
-		if (sys->cinfo.epoch != 0 && sys->this_node.nr_vnodes != vnodes
+		if (epoch != 0 && sys->this_node.nr_vnodes != vnodes
 			&& !sys->gateway_only) {
 			sd_err("mismatch specified vnodes is compared with the previous. "
 				"previous vnodes:%d", vnodes);

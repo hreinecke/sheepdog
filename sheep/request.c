@@ -96,10 +96,11 @@ static void gateway_op_done(struct work *work)
 {
 	struct request *req = container_of(work, struct request, work);
 	struct sd_req *hdr = &req->rq;
+	uint32_t epoch = sys_epoch();
 
 	switch (req->rp.result) {
 	case SD_RES_OLD_NODE_VER:
-		if (req->rp.epoch > sys->cinfo.epoch) {
+		if (req->rp.epoch > epoch) {
 			/*
 			 * Gateway of this node is expected to process this
 			 * request later when epoch is lifted.
@@ -115,7 +116,7 @@ static void gateway_op_done(struct work *work)
 	case SD_RES_KILLED:
 		sd_debug("retrying failed I/O request op %s result %x epoch %"
 			 PRIu32 ", sys epoch %" PRIu32, op_name(req->op),
-			 req->rp.result, req->rq.epoch, sys->cinfo.epoch);
+			 req->rp.result, req->rq.epoch, epoch);
 		goto retry;
 	case SD_RES_EIO:
 		if (is_access_local(req, hdr->obj.oid)) {
@@ -152,16 +153,18 @@ static void local_op_done(struct work *work)
 
 static int check_request_epoch(struct request *req)
 {
-	if (before(req->rq.epoch, sys->cinfo.epoch)) {
-		sd_err("old node version %u, %u (%s)", sys->cinfo.epoch,
+	uint32_t epoch = sys_epoch();
+
+	if (before(req->rq.epoch, epoch)) {
+		sd_err("old node version %u, %u (%s)", epoch,
 		       req->rq.epoch, op_name(req->op));
 		/* Ask for sleeping req on requester's wait queue */
 		req->rp.result = SD_RES_OLD_NODE_VER;
-		req->rp.epoch = sys->cinfo.epoch;
+		req->rp.epoch = epoch;
 		put_request(req);
 		return -1;
-	} else if (after(req->rq.epoch, sys->cinfo.epoch)) {
-		sd_err("new node version %u, %u (%s)", sys->cinfo.epoch,
+	} else if (after(req->rq.epoch, epoch)) {
+		sd_err("new node version %u, %u (%s)", epoch,
 		       req->rq.epoch, op_name(req->op));
 		/* Wait for local epoch to be lifted */
 		req->rp.result = SD_RES_NEW_NODE_VER;
@@ -222,7 +225,7 @@ void wakeup_requests_on_epoch(void)
 			 */
 			sd_assert(is_gateway_op(req->op));
 			sd_debug("gateway %016"PRIx64, req->rq.obj.oid);
-			req->rq.epoch = sys->cinfo.epoch;
+			req->rq.epoch = sys_epoch();
 			del_requeue_request(req);
 			break;
 		case SD_RES_NEW_NODE_VER:
@@ -325,7 +328,7 @@ static void queue_gateway_request(struct request *req)
 		sd_err("there is no living nodes");
 		goto end_request;
 	}
-	if (sys->cinfo.flags & SD_CLUSTER_FLAG_STRICT &&
+	if (sys_get_flags() & SD_CLUSTER_FLAG_STRICT &&
 	    (hdr->opcode == SD_OP_CREATE_AND_WRITE_OBJ ||
 	     hdr->opcode == SD_OP_WRITE_OBJ) &&
 	    !has_enough_zones(req)) {
@@ -429,6 +432,8 @@ void queue_request(struct request *req)
 {
 	struct sd_req *hdr = &req->rq;
 	struct sd_rsp *rsp = &req->rp;
+	enum sd_status status = sys_get_status();
+	uint32_t epoch;
 
 	/*
 	 * Check the protocol version for all internal commands, and public
@@ -454,9 +459,9 @@ void queue_request(struct request *req)
 		goto done;
 	}
 
-	sd_debug("%s, %d", op_name(req->op), sys->cinfo.status);
+	sd_debug("%s, %d", op_name(req->op), status);
 
-	switch (sys->cinfo.status) {
+	switch (status) {
 	case SD_STATUS_KILLED:
 		rsp->result = SD_RES_KILLED;
 		goto done;
@@ -465,7 +470,7 @@ void queue_request(struct request *req)
 		goto done;
 	case SD_STATUS_WAIT:
 		if (!is_force_op(req->op)) {
-			if (sys->cinfo.ctime == 0)
+			if (sys_get_ctime() == 0)
 				rsp->result = SD_RES_WAIT_FOR_FORMAT;
 			else
 				rsp->result = SD_RES_WAIT_FOR_JOIN;
@@ -477,17 +482,18 @@ void queue_request(struct request *req)
 	}
 
 	req->vinfo = get_vnode_info();
+	epoch = sys_epoch();
 	stat_request_begin(req);
 	if (is_peer_op(req->op)) {
 		queue_peer_request(req);
 	} else if (is_gateway_op(req->op)) {
-		hdr->epoch = sys->cinfo.epoch;
+		hdr->epoch = epoch;
 		queue_gateway_request(req);
 	} else if (is_local_op(req->op)) {
-		hdr->epoch = sys->cinfo.epoch;
+		hdr->epoch = epoch;
 		queue_local_request(req);
 	} else if (is_cluster_op(req->op)) {
-		hdr->epoch = sys->cinfo.epoch;
+		hdr->epoch = epoch;
 		queue_cluster_request(req);
 	} else {
 		sd_err("unknown operation %d", hdr->opcode);
@@ -843,7 +849,7 @@ static void tx_work(struct work *work)
 	/* use cpu_to_le */
 	memcpy(&rsp, &req->rp, sizeof(rsp));
 
-	rsp.epoch = sys->cinfo.epoch;
+	rsp.epoch = sys_epoch();
 	rsp.opcode = req->rq.opcode;
 	rsp.id = req->rq.id;
 
@@ -1042,7 +1048,7 @@ static void listen_handler(int listen_fd, int events, void *data)
 	struct client_info *ci;
 	bool is_inet_socket = *(bool *)data;
 
-	if (sys->cinfo.status == SD_STATUS_SHUTDOWN) {
+	if (sys_get_status() == SD_STATUS_SHUTDOWN) {
 		sd_debug("unregistering connection %d", listen_fd);
 		unregister_event(listen_fd);
 		return;

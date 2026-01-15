@@ -182,6 +182,7 @@ int init_config_file(void)
 	struct stat st;
 	char *cfg_file = NULL;
 	struct json_object *obj;
+	uint16_t cluster_flags;
 
 	check_tmp_config();
 
@@ -255,8 +256,9 @@ int init_config_file(void)
 	}
 
 reload:
+	cluster_flags = sys_get_flags();
 	if ((config.flags & SD_CLUSTER_FLAG_AUTO_VNODES) !=
-			(sys->cinfo.flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+	    (cluster_flags & SD_CLUSTER_FLAG_AUTO_VNODES)
 		&& !sys->gateway_only
 		&& config.ctime > 0) {
 		sd_err("Designation of before a restart and a vnodes option is different.");
@@ -266,7 +268,7 @@ reload:
 	ret = 0;
 	get_cluster_config(&sys->cinfo);
 	if ((config.flags & SD_CLUSTER_FLAG_DISKMODE) !=
-	    (sys->cinfo.flags & SD_CLUSTER_FLAG_DISKMODE)) {
+	    (cluster_flags & SD_CLUSTER_FLAG_DISKMODE)) {
 		sd_err("This sheep can't run because "
 		       "exists data format mismatch");
 		return -1;

@@ -850,7 +850,7 @@ int gateway_write_obj(struct request *req)
 			goto out;
 		}
 
-		if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID)) {
+		if (!(sys_get_flags() & SD_CLUSTER_FLAG_RECYCLE_VID)) {
 			sd_debug("update ledger objects of %016"PRIx64,
 				 hdr->obj.oid);
 			refcnt_work = zalloc(sizeof(*refcnt_work));
