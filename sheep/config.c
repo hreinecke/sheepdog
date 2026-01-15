@@ -299,8 +299,7 @@ void init_config_path(const char *base_path)
 
 int set_cluster_config(const struct cluster_info *cinfo)
 {
-	if (sys->cdrv->update_cluster)
-		sys->cdrv->update_cluster(cinfo);
+	sys_update_cluster();
 
 	config.ctime = cinfo->ctime;
 	config.copies = cinfo->nr_copies;

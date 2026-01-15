@@ -1420,8 +1420,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		}
 	}
 
-	if (sys->cdrv->update_cluster)
-		sys->cdrv->update_cluster(&sys->cinfo);
+	sys_update_cluster();
 
 	cluster_update_status(SD_STATUS_WAIT);
 

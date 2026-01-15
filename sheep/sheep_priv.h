@@ -337,6 +337,15 @@ static inline uint32_t sys_epoch(void)
 	return uatomic_read(&sys->cinfo.epoch);
 }
 
+static inline int sys_update_cluster(void)
+{
+	int ret = 0;
+
+	if (sys->joined && sys->cdrv->update_cluster)
+		ret = sys->cdrv->update_cluster(&sys->cinfo);
+	return ret;
+}
+
 static inline bool is_aligned_to_pagesize(void *p)
 {
 	return ((uintptr_t)p & (getpagesize() - 1)) == 0;
