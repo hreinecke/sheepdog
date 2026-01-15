@@ -482,8 +482,11 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 	 * If we have all members from the last epoch log in the in-memory
 	 * node list, we can set the cluster live now.
 	 */
-	if (epoch > 0 &&
-	    enough_nodes_gathered(&sys->cinfo, joining, nroot, nr_nodes))
+	if (!epoch) {
+		sd_debug("no epoch set, wait for initialisation");
+		return status;
+	}
+	if (enough_nodes_gathered(&sys->cinfo, joining, nroot, nr_nodes))
 		return SD_STATUS_OK;
 
 	return status;
