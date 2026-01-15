@@ -1952,6 +1952,15 @@ static struct sd_op_template sd_ops[] = {
 
 const struct sd_op_template *get_sd_op(uint8_t opcode)
 {
+	if (ARRAY_SIZE(sd_ops) < opcode) {
+		sd_warn("invalid opcode %x", opcode);
+		return NULL;
+	}
+	if (!strlen(sd_ops[opcode].name)) {
+		sd_warn("disabled opcode %d", opcode);
+		return NULL;
+	}
+			
 	if (sd_ops[opcode].type == 0)
 		return NULL;
 
