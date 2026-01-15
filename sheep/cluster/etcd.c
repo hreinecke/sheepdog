@@ -95,6 +95,7 @@ enum cinfo_attr_type {
 	CINFO_ATTR_COPY_POLICY = 1 << 7,
 	CINFO_ATTR_BSS = 1 << 8,
 	CINFO_ATTR_DEFAULT_STORE = 1 << 9,
+	CINFO_ATTR_STATUS = 1 << 10,
 };
 
 const char *etcd_cinfo_attr_names[] = {
@@ -108,6 +109,7 @@ const char *etcd_cinfo_attr_names[] = {
 	[CINFO_ATTR_COPY_POLICY] = "copy_policy",
 	[CINFO_ATTR_BSS] = "block_size_shift",
 	[CINFO_ATTR_DEFAULT_STORE] = "default_store",
+	[CINFO_ATTR_STATUS] = "status",
 };
 
 struct etcd_node {
@@ -458,6 +460,7 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 	_UPDATE_CINFO(ctx, cinfo, nr_copies);
 	_UPDATE_CINFO(ctx, cinfo, copy_policy);
 	_UPDATE_CINFO(ctx, cinfo, block_size_shift);
+	_UPDATE_CINFO(ctx, cinfo, status);
 	return rc;
 }
 
@@ -527,6 +530,10 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 			if (strlen((const char *)etcd_cinfo.default_store))
 				sprintf(val, "%s",
 					etcd_cinfo.default_store);
+			break;
+		case CINFO_ATTR_STATUS:
+			sprintf(val, "%s",
+				etcd_cinfo_status_to_string(etcd_cinfo.status));
 			break;
 		default:
 			break;
@@ -646,10 +653,56 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 	if (strlen(default_store))
 		json_object_object_add(cinfo_obj, "default_store",
 				       json_object_new_string(default_store));
+	if (cinfo->nr_nodes) {
+		struct json_object *nodes_obj;
+
+		nodes_obj = json_object_new_array();
+		for (int i = 0; i < cinfo->nr_nodes; i++) {
+			struct sd_node *s = &cinfo->nodes[i];
+			struct etcd_node *enode =  NULL, *e;
+			const char *node_id = node_to_str(s);
+
+			rb_for_each_entry(e, &etcd_node_root, rb) {
+				if (!strcmp(node_id, node_to_str(&e->node))) {
+					enode = e;
+					break;
+				}
+			}
+			if (!enode) {
+				sd_warn("cannot find node '%s'", node_id);
+				continue;
+			}
+			json_object_array_add(nodes_obj,
+					      json_object_new_string(enode->node_id));
+		}
+		json_object_object_add(cinfo_obj, "nodes", nodes_obj);
+	}
 	json_object_object_add(obj, "cluster", cinfo_obj);
 	if (node)
 		json_object_object_add(obj, "node",
 				       json_object_new_string(node->node_id));
+}
+
+static void etcd_json_nodes_to_cinfo(struct json_object *obj,
+				     struct cluster_info *cinfo)
+{
+	int i, nr_nodes = json_object_array_length(obj);
+
+	for (i = 0; i < nr_nodes; i++) {
+		struct json_object *node_obj;
+		struct etcd_node *node;
+		const char *node_name;
+
+		node_obj = json_object_array_get_idx(obj, i);
+		node_name = json_object_get_string(node_obj);
+		rb_for_each_entry(node, &etcd_node_root, rb) {
+			if (!strcmp(node->node_id, node_name)) {
+				memcpy(&cinfo->nodes[i], &node->node,
+				       sizeof(struct sd_node));
+				break;
+			}
+		}
+	}
 }
 
 static int etcd_json_to_cinfo(struct json_object *obj,
@@ -699,6 +752,8 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		} else if (!strcmp(key, "default_store")) {
 			strcpy((char *)cinfo->default_store,
 			       json_object_get_string(val_obj));
+		} else if (!strcmp(key, "nodes")) {
+			etcd_json_nodes_to_cinfo(val_obj, cinfo);
 		} else {
 			sd_warn("%s: unhandled key '%s'", __func__, key);
 			num_val--;
