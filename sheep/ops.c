@@ -336,8 +336,7 @@ static int cluster_make_fs(const struct sd_req *req, struct sd_rsp *rsp,
 		goto out;
 	}
 
-	cluster_update_status(SD_STATUS_OK);
-
+	sys_update_status(SD_STATUS_OK);
 out:
 	put_vnode_info(vinfo);
 	return ret;
@@ -346,7 +345,7 @@ out:
 static int cluster_shutdown(const struct sd_req *req, struct sd_rsp *rsp,
 			    void *data, const struct sd_node *sender)
 {
-	cluster_update_status(SD_STATUS_SHUTDOWN);
+	sys_update_status(SD_STATUS_SHUTDOWN);
 	if (!node_in_recovery()) {
 		unregister_listening_fds();
 
@@ -631,7 +630,7 @@ static int cluster_force_recover_main(const struct sd_req *req,
 		/* initialize config file */
 		set_cluster_config(&sys->cinfo);
 
-	cluster_update_status(SD_STATUS_OK);
+	sys_update_status(SD_STATUS_OK);
 
 	for (int i = 0; i < nr_nodes; i++)
 		rb_insert(&nroot, &nodes[i], rb, node_cmp);

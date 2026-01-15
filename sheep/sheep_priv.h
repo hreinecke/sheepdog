@@ -339,10 +339,20 @@ static inline uint32_t sys_epoch(void)
 
 static inline int sys_update_cluster(void)
 {
-	int ret = 0;
+	int ret = SD_RES_SUCCESS;
 
 	if (sys->joined && sys->cdrv->update_cluster)
 		ret = sys->cdrv->update_cluster(&sys->cinfo);
+	return ret;
+}
+
+static inline int sys_update_status(enum sd_status status)
+{
+	int ret = SD_RES_SUCCESS;
+
+	sys->cinfo.status = status;
+	if (sys->joined && sys->cdrv->update_status)
+		ret = sys->cdrv->update_status(&sys->cinfo);
 	return ret;
 }
 
@@ -445,7 +455,6 @@ void resume_suspended_recovery(void);
 int create_cluster(int port, int64_t zone, int nr_vnodes,
 		   bool explicit_addr);
 int leave_cluster(void);
-int cluster_update_status(enum sd_status status);
 
 void queue_cluster_request(struct request *req);
 
