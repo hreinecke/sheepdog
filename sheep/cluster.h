@@ -149,7 +149,7 @@ struct cluster_driver {
 	 *
 	 * Returns SD_RES_XX
 	 */
-	int (*update_status)(struct cluster_info *cinfo);
+	int (*update_status)(enum sd_status);
 
 	/*
 	 * Update drivers private copy of the cluster information

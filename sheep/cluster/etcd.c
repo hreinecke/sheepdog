@@ -1731,6 +1731,14 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 
 	key = strrchr(kv->key, '/');
 	if (!key || strcmp(key + 1, EV_ZNODE)) {
+		if (!strcmp(key, "status")) {
+			enum sd_status status;
+
+			status = etcd_cinfo_status_to_type(kv->value);
+			sd_debug("update status to '%s'", kv->value);
+			etcd_cinfo.status = status;
+			return;
+		}
 		sd_debug("skipping updates to '%s'", kv->key);
 		return;
 	}
@@ -1972,13 +1980,13 @@ static int etcd_get_local_addr(uint8_t *bytes)
 	return 0;
 }
 
-static int etcd_update_status(struct cluster_info *cinfo)
+static int etcd_update_status(enum sd_status status)
 {
 	int ret;
 
 	if (!this_ctx)
 		return SD_RES_STARTUP;
-	ret = etcd_set_cinfo_status(this_ctx, cinfo->status);
+	ret = etcd_set_cinfo_status(this_ctx, status);
 	if (ret)
 		return SD_RES_CLUSTER_ERROR;
 	return SD_RES_SUCCESS;

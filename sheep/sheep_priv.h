@@ -351,15 +351,21 @@ static inline int sys_update_cluster(void)
 	return ret;
 }
 
+static inline void __sys_update_status(enum sd_status status)
+{
+	sys->cinfo.status = status;
+}
+
 static inline int sys_update_status(enum sd_status status)
 {
 	int ret = SD_RES_SUCCESS;
 
-	sys->cinfo.status = status;
+	sd_debug("update status to %d", status);
+	__sys_update_status(status);
 	if (status == SD_STATUS_KILLED)
 		return ret;
 	if (sys->joined && sys->cdrv->update_status)
-		ret = sys->cdrv->update_status(&sys->cinfo);
+		ret = sys->cdrv->update_status(status);
 	return ret;
 }
 
