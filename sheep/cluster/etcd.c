@@ -463,14 +463,14 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 
 static int etcd_cinfo_create(struct etcd_ctx *ctx)
 {
-	int rc = 0, i, j;
+	int rc = 0, num_kvs, i, j;
 	char key[1024];
 	struct etcd_kv *kvs;
 	unsigned long attr_mask = -1;
 
 	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
-	rc = etcd_kv_range(ctx, key, &kvs);
-	for (i = 0; i < rc; i++) {
+	num_kvs = etcd_kv_range(ctx, key, &kvs);
+	for (i = 0; i < num_kvs; i++) {
 		size_t elems = ARRAY_SIZE(etcd_cinfo_attr_names);
 		const char *attr;
 
@@ -534,6 +534,7 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 		if (strlen(val))
 			rc = etcd_kv_store(ctx, key, val, strlen(val));
 	}
+	etcd_kv_free(kvs, num_kvs);
 	return rc;
 }
 
