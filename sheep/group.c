@@ -947,7 +947,7 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 	pthread_mutex_lock(&current_vnode_mutex);
 	old_vnode_info = current_vnode_info;
 	current_vnode_info = alloc_vnode_info(nroot);
-	pthread_mutex_lock(&current_vnode_mutex);
+	pthread_mutex_unlock(&current_vnode_mutex);
 
 	if (node_is_local(joined)) {
 		sockfd_cache_add_group(nroot);
