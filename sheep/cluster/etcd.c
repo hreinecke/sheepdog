@@ -1735,8 +1735,11 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			enum sd_status status;
 
 			status = etcd_cinfo_status_to_type(kv->value);
-			sd_debug("update status to '%s'", kv->value);
-			etcd_cinfo.status = status;
+			if (status) {
+				sd_debug("update status to '%s' (%d)",
+					 kv->value, status);
+				etcd_cinfo.status = status;
+			}
 			return;
 		}
 		sd_debug("skipping updates to '%s'", kv->key);
