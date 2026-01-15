@@ -1542,6 +1542,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
+		sd_debug("adding node '%s'", node->node_id);
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes++;
 	}
@@ -1618,15 +1619,17 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
-	sd_debug("ACCEPT %s status %d", joining->node_id, cinfo.status);
-
 	rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
+		sd_debug("adding node '%s'", node->node_id);
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes ++;
 	}
+
+	sd_debug("ACCEPT %s, %d nodes, status %d",
+		 joining->node_id, nr_nodes, cinfo.status);
 
 	sd_accept_handler(&joining->node, &sd_root, nr_nodes, &cinfo);
 }
