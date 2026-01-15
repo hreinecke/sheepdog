@@ -1293,6 +1293,9 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 		sd_debug("%s", node_to_str(n));
 	}
 
+	if (node_is_local(left))
+		sys->joined = false;
+
 	if (status == SD_STATUS_SHUTDOWN)
 		return;
 
