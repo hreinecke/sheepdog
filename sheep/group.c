@@ -28,6 +28,9 @@ static struct sd_mutex wait_vdis_lock = SD_MUTEX_INITIALIZER;
 static struct sd_cond wait_vdis_cond = SD_COND_INITIALIZER;
 static refcnt_t nr_get_vdis_works;
 
+static pthread_mutex_t pending_block_mutex;
+static pthread_mutex_t pending_notify_mutex;
+
 static main_thread(struct vnode_info *) current_vnode_info;
 static main_thread(struct list_head *) pending_block_list;
 static main_thread(struct list_head *) pending_notify_list;
@@ -296,8 +299,10 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 
 	cluster_op_running = true;
 
+	pthread_mutex_lock(&pending_block_mutex);
 	req = list_first_entry(main_thread_get(pending_block_list),
 				struct request, pending_list);
+	pthread_mutex_unlock(&pending_block_mutex);
 	req->work.fn = do_process_work;
 	req->work.done = cluster_op_done;
 
@@ -325,8 +330,10 @@ main_fn void queue_cluster_request(struct request *req)
 			       sd_strerror(ret));
 			goto error;
 		}
+		pthread_mutex_lock(&pending_block_mutex);
 		list_add_tail(&req->pending_list,
 			      main_thread_get(pending_block_list));
+		pthread_mutex_unlock(&pending_block_mutex);
 	} else {
 		struct vdi_op_message *msg;
 		size_t size;
@@ -341,9 +348,10 @@ main_fn void queue_cluster_request(struct request *req)
 			goto error;
 		}
 		INIT_LIST_NODE(&req->pending_list);
+		pthread_mutex_lock(&pending_notify_mutex);
 		list_add_tail(&req->pending_list,
 			      main_thread_get(pending_notify_list));
-
+		pthread_mutex_unlock(&pending_notify_mutex);
 		free(msg);
 	}
 	req->status = REQUEST_INIT;
@@ -1028,15 +1036,21 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 	if (!op)
 		return;
 	if (node_is_local(sender)) {
-		if (has_process_work(op))
+		if (has_process_work(op)) {
+			pthread_mutex_lock(&pending_block_mutex);
 			req = list_first_entry(
 				main_thread_get(pending_block_list),
 				struct request, pending_list);
-		else
+			list_del(&req->pending_list);
+			pthread_mutex_unlock(&pending_block_mutex);
+		} else {
+			pthread_mutex_lock(&pending_notify_mutex);
 			req = list_first_entry(
 				main_thread_get(pending_notify_list),
 				struct request, pending_list);
-		list_del(&req->pending_list);
+			list_del(&req->pending_list);
+			pthread_mutex_unlock(&pending_notify_mutex);
+		}
 	}
 
 	if (ret == SD_RES_SUCCESS && has_process_main(op))
@@ -1110,10 +1124,11 @@ static int send_join_request(void)
 
 static void requeue_cluster_request(void)
 {
-	struct request *req;
+	struct request *req, *found = NULL;
 	struct vdi_op_message *msg;
 	size_t size;
 
+	pthread_mutex_lock(&pending_notify_mutex);
 	list_for_each_entry(req, main_thread_get(pending_notify_list),
 			    pending_list) {
 		/*
@@ -1129,7 +1144,10 @@ static void requeue_cluster_request(void)
 		sd_notify_handler(&sys->this_node, msg, size);
 		free(msg);
 	}
+	pthread_mutex_unlock(&pending_notify_mutex);
 
+retry:
+	pthread_mutex_lock(&pending_block_mutex);
 	list_for_each_entry(req, main_thread_get(pending_block_list),
 			    pending_list) {
 		switch (req->status) {
@@ -1137,8 +1155,7 @@ static void requeue_cluster_request(void)
 			/* this request has never been executed, re-queue it */
 			sd_debug("requeue a block request, op: %s",
 				 op_name(req->op));
-			list_del(&req->pending_list);
-			queue_cluster_request(req);
+			found = req;
 			break;
 		case REQUEST_QUEUED:
 			/*
@@ -1170,6 +1187,15 @@ static void requeue_cluster_request(void)
 		default:
 			break;
 		}
+		if (found)
+			break;
+	}
+	if (found)
+		list_del(&found->pending_list);
+	pthread_mutex_unlock(&pending_block_mutex);
+	if (found) {
+		queue_cluster_request(found);
+		goto retry;
 	}
 }
 
@@ -1439,9 +1465,11 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 
 	sys->cinfo.status = SD_STATUS_WAIT;
 
+	pthread_mutex_init(&pending_block_mutex, NULL);
 	main_thread_set(pending_block_list,
 			  xzalloc(sizeof(struct list_head)));
 	INIT_LIST_HEAD(main_thread_get(pending_block_list));
+	pthread_mutex_init(&pending_notify_mutex, NULL);
 	main_thread_set(pending_notify_list,
 			  xzalloc(sizeof(struct list_head)));
 	INIT_LIST_HEAD(main_thread_get(pending_notify_list));
