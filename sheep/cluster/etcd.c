@@ -1730,8 +1730,12 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 	int i;
 
 	key = strrchr(kv->key, '/');
-	if (!key || strcmp(key + 1, EV_ZNODE)) {
-		if (!strcmp(key, "status")) {
+	if (!key) {
+		sd_debug("skipping updates to '%s'", kv->key);
+		return;
+	}
+	if (strcmp(key + 1, EV_ZNODE)) {
+		if (!strcmp(key + 1, "status")) {
 			enum sd_status status;
 
 			status = etcd_cinfo_status_to_type(kv->value);
@@ -1742,7 +1746,7 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			}
 			return;
 		}
-		sd_debug("skipping updates to '%s'", kv->key);
+		sd_debug("skipping updates to '%s'", key + 1);
 		return;
 	}
 	if (kv->value_len) {
