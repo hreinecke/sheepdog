@@ -635,7 +635,8 @@ static int cluster_force_recover_main(const struct sd_req *req,
 	sys_update_status(SD_STATUS_OK);
 
 	for (int i = 0; i < nr_nodes; i++)
-		rb_insert(&nroot, &nodes[i], rb, node_cmp);
+		if (rb_insert(&nroot, &nodes[i], rb, node_cmp))
+			panic("epoch node %d hash collision", i);
 
 	vnode_info = get_vnode_info();
 	old_vnode_info = alloc_vnode_info(&nroot);

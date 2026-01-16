@@ -180,7 +180,8 @@ struct vnode_info *get_vnode_info_epoch(uint32_t epoch,
 			return NULL;
 	}
 	for (int i = 0; i < nr_nodes; i++)
-		rb_insert(&nroot, &nodes[i], rb, node_cmp);
+		if (rb_insert(&nroot, &nodes[i], rb, node_cmp))
+			panic("vnode %d hash collision", i);
 
 	return alloc_vnode_info(&nroot);
 }

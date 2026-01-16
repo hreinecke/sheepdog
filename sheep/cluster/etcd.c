@@ -869,8 +869,11 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		if (!node) {
 			node = xzalloc(node_size);
 			strcpy(node->node_id, node_key.node_id);
-			rb_insert(root, node, rb, etcd_node_cmp);
-			nr_nodes++;
+			if (rb_insert(root, node, rb, etcd_node_cmp)) {
+				sd_err("etcd node '%s' hash collision",
+				       node_key.node_id);
+			} else
+				nr_nodes++;
 		}
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
@@ -1682,7 +1685,9 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		sd_warn("%s: no elements parsed from opaque",
 			__func__);
 	}
-	rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
+	if (rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp)) {
+		sd_warn("etcd node '%s' already present", joining->node_id);
+	}
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
