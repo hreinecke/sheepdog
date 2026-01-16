@@ -461,26 +461,13 @@ void queue_request(struct request *req)
 
 	sd_debug("%s, %d", op_name(req->op), status);
 
-	switch (status) {
-#if 0
-	case SD_STATUS_KILLED:
-		rsp->result = SD_RES_KILLED;
+	if ((status == SD_STATUS_WAIT) &&
+	    !is_force_op(req->op)) {
+		if (sys_get_ctime() == 0)
+			rsp->result = SD_RES_WAIT_FOR_FORMAT;
+		else
+			rsp->result = SD_RES_WAIT_FOR_JOIN;
 		goto done;
-	case SD_STATUS_SHUTDOWN:
-		rsp->result = SD_RES_SHUTDOWN;
-		goto done;
-#endif
-	case SD_STATUS_WAIT:
-		if (!is_force_op(req->op)) {
-			if (sys_get_ctime() == 0)
-				rsp->result = SD_RES_WAIT_FOR_FORMAT;
-			else
-				rsp->result = SD_RES_WAIT_FOR_JOIN;
-			goto done;
-		}
-		break;
-	default:
-		break;
 	}
 
 	req->vinfo = get_vnode_info();
