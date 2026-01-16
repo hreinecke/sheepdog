@@ -1170,12 +1170,6 @@ int main(int argc, char **argv)
 	if (ret)
 		goto cleanup_log;
 
-	ret = create_cluster(port, zone, nr_vnodes, explicit_addr);
-	if (ret) {
-		sd_err("failed to create sheepdog cluster");
-		goto cleanup_log;
-	}
-
 	ret = start_node_connectivity_monitor();
 	if (ret)
 		goto cleanup_journal;
@@ -1214,6 +1208,12 @@ int main(int argc, char **argv)
 	ret = sockfd_init();
 	if (ret)
 		goto cleanup_journal;
+
+	ret = create_cluster(port, zone, nr_vnodes, explicit_addr);
+	if (ret) {
+		sd_err("failed to create sheepdog cluster");
+		goto cleanup_journal;
+	}
 
 	ret = init_store_driver(sys->gateway_only);
 	if (ret)

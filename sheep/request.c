@@ -997,7 +997,8 @@ static void client_handler(int fd, int events, void *data)
 {
 	struct client_info *ci = (struct client_info *)data;
 
-	sd_debug("%x, %d", events, ci->conn.dead);
+	sd_debug("events %x, %s",
+		 events, ci->conn.dead ? "dead" : "alive");
 
 	if (events & (EPOLLERR | EPOLLHUP)) {
 		sd_debug("unhandled event %d, connection dead", events);
