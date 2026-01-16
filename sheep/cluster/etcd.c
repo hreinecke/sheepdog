@@ -122,9 +122,23 @@ struct etcd_node {
 	bool callbacked;
 };
 
+struct etcd_cluster_info {
+	uint8_t proto_ver;
+	uint8_t disable_recovery;
+	int16_t nr_nodes;
+	uint32_t epoch;
+	uint64_t ctime;
+	uint16_t flags;
+	uint8_t nr_copies;
+	uint8_t copy_policy;
+	enum sd_status status : 8;
+	uint8_t block_size_shift;
+	uint8_t default_store[STORE_LEN];
+};
+
 static LIST_HEAD(etcd_block_list);
 static struct rb_root etcd_node_root = RB_ROOT;
-static struct cluster_info etcd_cinfo = {};
+static struct etcd_cluster_info etcd_cinfo = {};
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
@@ -435,6 +449,8 @@ static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 	if (etcd_cinfo.v != (n)->v) {			\
 		rc = etcd_set_cinfo_attr(c, #v, etcd_cinfo.v,	\
 					 (n)->v);		\
+		if (rc == 0)					\
+			etcd_cinfo.v = (n)->v;			\
 	}
 
 static int etcd_cinfo_upload(struct etcd_ctx *ctx,
@@ -467,6 +483,9 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 	for (i = 0; i < num_kvs; i++) {
 		size_t elems = ARRAY_SIZE(etcd_cinfo_attr_names);
 		const char *attr;
+		enum cinfo_attr_type attr_type = 0;
+		enum sd_status status;
+		unsigned long val;
 
 		attr = strrchr(kvs[i].key, '/');
 		for (j = 0; j < elems; j++) {
@@ -474,8 +493,63 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 
 			if (!n)
 				continue;
-			if (!strcmp(n, attr + 1))
-				attr_mask &= ~j;
+			if (!strcmp(n, attr + 1)) {
+				attr_type = j;
+				break;
+			}
+		}
+		if (!attr_type)
+			continue;
+		attr_mask &= ~attr_type;
+		switch (attr_type) {
+		case CINFO_ATTR_PROTO_VER:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.proto_ver = val;
+			break;
+		case CINFO_ATTR_DISABLE_RECOVERY:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.proto_ver = val;
+			break;
+		case CINFO_ATTR_NR_NODES:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.nr_nodes = val;
+			break;
+		case CINFO_ATTR_EPOCH:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.epoch = val;
+			break;
+		case CINFO_ATTR_CTIME:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.ctime = val;
+			break;
+		case CINFO_ATTR_FLAGS:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.flags = val;
+			break;
+		case CINFO_ATTR_NR_COPIES:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.nr_copies = val;
+			break;
+		case CINFO_ATTR_COPY_POLICY:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.copy_policy = val;
+			break;
+		case CINFO_ATTR_BSS:
+			val = strtoul(kvs[i].value, NULL, 10);
+			etcd_cinfo.block_size_shift = val;
+			break;
+		case CINFO_ATTR_DEFAULT_STORE:
+			if (kvs[i].value_len)
+				strcpy((char *)etcd_cinfo.default_store,
+				       kvs[i].value);
+			break;
+		case CINFO_ATTR_STATUS:
+			status = etcd_cinfo_status_to_type(kvs[i].value);
+			if (status)
+				etcd_cinfo.status = status;
+			break;
+		default:
+			break;
 		}
 	}
 
@@ -541,70 +615,30 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
 {
 	const char *attr = "status";
-	const char *status_str;
-	char key[1024];
-	size_t len;
+	const char *old_val, *new_val;
+	char key[1024], cur_val[32];
+	int rc;
 
-	status_str = etcd_cinfo_status_to_string(status);
-	if (!status_str)
-		status_str = "unknown";
-	len = strlen(status_str);
-	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
-	return etcd_kv_store(ctx, key, status_str, len);
-}
-
-#if 0
-static int etcd_cinfo_download(struct etcd_ctx *ctx, struct cluster_info *cinfo)
-{
-	char key[1024];
-	struct etcd_kv *kvs;
-	int num_kvs, num_val = 0, i;
-
-	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
-	num_kvs = etcd_kv_range(ctx, key, &kvs);
-	if (num_kvs < 0)
-		return num_kvs;
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		unsigned long val;
-		char *name;
-
-		name = strrchr(kv->key, '/');
-		name++;
-		num_val++;
-		if (!strcmp(name, "status")) {
-			cinfo->status = etcd_cinfo_status_to_type(kv->value);
-			continue;
-		}
-		val = strtoul(kv->value, NULL, 10);
-		if (!strcmp(name, "proto_ver"))
-			cinfo->proto_ver = val;
-		else if (!strcmp(name, "disable_recovery"))
-			cinfo->disable_recovery = val;
-		else if (!strcmp(name, "nr_nodes"))
-			cinfo->nr_nodes = val;
-		else if (!strcmp(name, "epoch"))
-			cinfo->epoch = val;
-		else if (!strcmp(name, "ctime"))
-			cinfo->ctime = val;
-		else if (!strcmp(name, "flags"))
-			cinfo->flags = val;
-		else if (!strcmp(name, "nr_copies"))
-			cinfo->flags = val;
-		else if (!strcmp(name, "copy_policy"))
-			cinfo->copy_policy = val;
-		else if (!strcmp(name, "block_size_shift"))
-			cinfo->block_size_shift = val;
-		else {
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, kv->key);
-			num_val--;
-		}
+	new_val = etcd_cinfo_status_to_string(status);
+	if (!new_val) {
+		sd_warn("invalid status '%d'", status);
+		return -EINVAL;
 	}
-	etcd_kv_free(kvs, num_kvs);
-	return num_val;
+	old_val = etcd_cinfo_status_to_string(etcd_cinfo.status);
+	memset(cur_val, 0, sizeof(cur_val));
+	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
+	rc = etcd_kv_txn_update(ctx, key, old_val, new_val, cur_val);
+	if (rc < 0) {
+		sd_debug("failed to update '%s' from '%s' to '%s', error %d",
+			 attr, old_val, new_val, -rc);
+	} else if (!strlen(cur_val)) {
+		sd_warn("update '%s' to '%s' failed, no value returned",
+			attr, new_val);
+		rc = -EINVAL;
+	}
+	return rc;
 }
-#endif
+
 static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 {
 	const char *status_str = etcd_cinfo_status_to_string(status);
@@ -653,15 +687,12 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 		nodes_obj = json_object_new_array();
 		for (int i = 0; i < cinfo->nr_nodes; i++) {
 			struct sd_node *s = &cinfo->nodes[i];
-			struct etcd_node *enode =  NULL, *e;
+			struct etcd_node *enode =  NULL, e;
 			const char *node_id = node_to_str(s);
 
-			rb_for_each_entry(e, &etcd_node_root, rb) {
-				if (!strcmp(node_id, node_to_str(&e->node))) {
-					enode = e;
-					break;
-				}
-			}
+			strcpy(e.node_id, node_id);
+			enode = rb_search(&etcd_node_root, &e, rb,
+					  etcd_node_cmp);
 			if (!enode) {
 				sd_warn("cannot find node '%s'", node_id);
 				continue;
