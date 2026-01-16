@@ -1933,7 +1933,8 @@ static void *etcd_lease_refresh(void *arg)
 	}
 	pthread_cleanup_push(delete_conn, conn);
 
-	for (;;) {
+	while (etcd_cinfo.status != SD_STATUS_SHUTDOWN ||
+	       etcd_cinfo.status != SD_STATUS_KILLED) {
 		ret = etcd_lease_keepalive(ctx);
 		if (ret < 0) {
 			sd_err("%s: failed to refresh lease, error %d",
