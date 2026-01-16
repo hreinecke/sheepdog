@@ -127,7 +127,7 @@ int register_event_prio(int fd, event_handler_t h, void *data, int prio)
 		free(ei);
 	} else {
 		pthread_mutex_lock(&events_mutex);
-		if (!rb_insert(&events_tree, ei, rb, event_cmp)) {
+		if (rb_insert(&events_tree, ei, rb, event_cmp)) {
 			sd_err("failed to insert epoll event for fd %d", fd);
 			ret = -1;
 		}
