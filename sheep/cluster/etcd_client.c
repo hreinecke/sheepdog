@@ -578,7 +578,7 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
 	}
-	if (ret == -EPERM && ev.num_kvs) {
+	if (ev.num_kvs) {
 		int i;
 
 		for (i = 0; i < ev.num_kvs; i++) {
@@ -588,7 +588,7 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 			}
 		}
 		etcd_kv_free(ev.kvs, ev.num_kvs);
-		if (!strcmp(cur_value, new_value))
+		if (strlen(cur_value))
 			ret = 0;
 	} else if (ret == 0)
 		strcpy(cur_value, new_value);

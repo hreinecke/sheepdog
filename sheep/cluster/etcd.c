@@ -408,6 +408,72 @@ static const char *etcd_cinfo_status_to_string(enum sd_status status)
 	return status_str;
 }
 
+static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
+{
+	const char *attr = "status";
+	const char *old_val, *new_val;
+	char key[1024], cur_val[32];
+	int rc;
+
+	new_val = etcd_cinfo_status_to_string(status);
+	if (!new_val) {
+		sd_warn("invalid status '%d'", status);
+		return -EINVAL;
+	}
+	old_val = etcd_cinfo_status_to_string(etcd_cinfo.status);
+	if (!old_val) {
+		sd_warn("invalid status '%d', setting to 'init'", status);
+		old_val = "init";
+	}
+	switch(status) {
+	case SD_STATUS_INIT:
+		if (etcd_cinfo.status != status) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	case SD_STATUS_WAIT:
+		if (etcd_cinfo.status != SD_STATUS_INIT &&
+		    etcd_cinfo.status != status) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	case SD_STATUS_SHUTDOWN:
+		if (etcd_cinfo.status == SD_STATUS_KILLED) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	case SD_STATUS_KILLED:
+		if (etcd_cinfo.status == SD_STATUS_SHUTDOWN) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	default:
+		break;
+	}
+	memset(cur_val, 0, sizeof(cur_val));
+	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
+	rc = etcd_kv_txn_update(ctx, key, old_val, new_val, cur_val);
+	if (rc < 0) {
+		sd_debug("failed to update '%s' from '%s' to '%s', error %d",
+			 attr, old_val, new_val, -rc);
+	} else if (!strlen(cur_val)) {
+		sd_warn("update '%s' to '%s' failed, no value returned",
+			attr, new_val);
+		rc = -EINVAL;
+	} else {
+		etcd_cinfo.status = status;
+	}
+	return rc;
+}
+
 static int etcd_set_cinfo_attr(struct etcd_ctx *ctx, const char *attr,
 			       unsigned long old_num, unsigned long new_num)
 {
@@ -468,7 +534,7 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 	_UPDATE_CINFO(ctx, cinfo, nr_copies);
 	_UPDATE_CINFO(ctx, cinfo, copy_policy);
 	_UPDATE_CINFO(ctx, cinfo, block_size_shift);
-	_UPDATE_CINFO(ctx, cinfo, status);
+	etcd_set_cinfo_status(ctx, cinfo->status);
 	return rc;
 }
 
@@ -610,70 +676,6 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 			rc = etcd_kv_store(ctx, key, val, strlen(val));
 	}
 	etcd_kv_free(kvs, num_kvs);
-	return rc;
-}
-
-static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
-{
-	const char *attr = "status";
-	const char *old_val, *new_val;
-	char key[1024], cur_val[32];
-	int rc;
-
-	new_val = etcd_cinfo_status_to_string(status);
-	if (!new_val) {
-		sd_warn("invalid status '%d'", status);
-		return -EINVAL;
-	}
-	old_val = etcd_cinfo_status_to_string(etcd_cinfo.status);
-	if (!old_val) {
-		sd_warn("invalid status '%d', setting to 'init'", status);
-		old_val = "init";
-	}
-	switch(status) {
-	case SD_STATUS_INIT:
-		if (etcd_cinfo.status != status) {
-			sd_warn("cannot move status from '%s' to '%s'",
-				old_val, new_val);
-			return -EINVAL;
-		}
-		break;
-	case SD_STATUS_WAIT:
-		if (etcd_cinfo.status != SD_STATUS_INIT &&
-		    etcd_cinfo.status != status) {
-			sd_warn("cannot move status from '%s' to '%s'",
-				old_val, new_val);
-			return -EINVAL;
-		}
-		break;
-	case SD_STATUS_SHUTDOWN:
-		if (etcd_cinfo.status == SD_STATUS_KILLED) {
-			sd_warn("cannot move status from '%s' to '%s'",
-				old_val, new_val);
-			return -EINVAL;
-		}
-		break;
-	case SD_STATUS_KILLED:
-		if (etcd_cinfo.status == SD_STATUS_SHUTDOWN) {
-			sd_warn("cannot move status from '%s' to '%s'",
-				old_val, new_val);
-			return -EINVAL;
-		}
-		break;
-	default:
-		break;
-	}
-	memset(cur_val, 0, sizeof(cur_val));
-	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
-	rc = etcd_kv_txn_update(ctx, key, old_val, new_val, cur_val);
-	if (rc < 0) {
-		sd_debug("failed to update '%s' from '%s' to '%s', error %d",
-			 attr, old_val, new_val, -rc);
-	} else if (!strlen(cur_val)) {
-		sd_warn("update '%s' to '%s' failed, no value returned",
-			attr, new_val);
-		rc = -EINVAL;
-	}
 	return rc;
 }
 
