@@ -115,6 +115,7 @@ int register_event_prio(int fd, event_handler_t h, void *data, int prio)
 	ei->handler = h;
 	ei->data = data;
 	ei->prio = prio;
+	rb_init_node(&ei->rb);
 
 	memset(&ev, 0, sizeof(ev));
 	ev.events = EPOLLIN;

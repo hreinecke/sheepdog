@@ -234,6 +234,7 @@ node_disk_to_vnodes(const struct sd_node *n, struct rb_root *vroot)
 			struct sd_vnode *v = xmalloc(sizeof(*v));
 			v->hash = hval;
 			v->node = n;
+			rb_init_node(&v->rb);
 			if (unlikely(rb_insert(vroot, v, rb, vnode_cmp)))
 				panic("vdisk hash collison");
 		}
