@@ -1034,8 +1034,8 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 	int ret = msg? msg->rsp.result : 0;
 	struct request *req = NULL;
 
-	sd_debug("op %s, size: %zu, from: %s", op_name(op), data_len,
-		 node_to_str(sender));
+	sd_debug("op %s, size: %zu, from: %s, ret: %d", op_name(op), data_len,
+		 node_to_str(sender), ret);
 
 	if (!op)
 		return;
