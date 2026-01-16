@@ -267,6 +267,7 @@ reload:
 
 	ret = 0;
 	get_cluster_config(&sys->cinfo);
+	cluster_flags = sys_get_flags();
 	if ((config.flags & SD_CLUSTER_FLAG_DISKMODE) !=
 	    (cluster_flags & SD_CLUSTER_FLAG_DISKMODE)) {
 		sd_err("This sheep can't run because "
