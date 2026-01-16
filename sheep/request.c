@@ -1089,6 +1089,7 @@ static void listen_handler(int listen_fd, int events, void *data)
 }
 
 static LIST_HEAD(listening_fd_list);
+static pthread_mutex_t listening_fd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 struct listening_fd {
 	int fd;
@@ -1101,7 +1102,9 @@ static int create_listen_port_fn(int fd, void *data)
 
 	new_fd = xzalloc(sizeof(*new_fd));
 	new_fd->fd = fd;
+	pthread_mutex_lock(&listening_fd_mutex);
 	list_add_tail(&new_fd->list, &listening_fd_list);
+	pthread_mutex_unlock(&listening_fd_mutex);
 
 	return register_event(fd, listen_handler, data);
 }
@@ -1110,11 +1113,13 @@ void unregister_listening_fds(void)
 {
 	struct listening_fd *fd;
 
+	pthread_mutex_lock(&listening_fd_mutex);
 	list_for_each_entry(fd, &listening_fd_list, list) {
 		sd_debug("unregistering fd: %d", fd->fd);
 		unregister_event(fd->fd);
 		free(fd);
 	}
+	pthread_mutex_unlock(&listening_fd_mutex);
 }
 
 int create_listen_port(const char *bindaddr, int port)
