@@ -78,6 +78,7 @@ const char *etcd_node_attr_names[] = {
 };
 
 const char *etcd_cinfo_status_names[] = {
+	[SD_STATUS_INIT] = "init",
 	[SD_STATUS_OK] = "ok",
 	[SD_STATUS_WAIT] = "wait",
 	[SD_STATUS_SHUTDOWN] = "shutdown",
@@ -625,6 +626,10 @@ static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
 		return -EINVAL;
 	}
 	old_val = etcd_cinfo_status_to_string(etcd_cinfo.status);
+	if (!old_val) {
+		sd_warn("invalid status '%d', setting to 'init'", status);
+		old_val = "init";
+	}
 	memset(cur_val, 0, sizeof(cur_val));
 	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
 	rc = etcd_kv_txn_update(ctx, key, old_val, new_val, cur_val);
