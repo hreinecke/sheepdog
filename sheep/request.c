@@ -715,6 +715,10 @@ main_fn void put_request(struct request *req)
 			 * be decreased in free_request. Otherwise, ci
 			 * cannot be freed in clear_client_info.
 			 */
+			sd_debug("free req=%p, fd=%d, client=%s:%d op=%s", req,
+				 ci->conn.fd, ci->conn.ipstr,
+				 ci->conn.port,
+				 op_name(get_sd_op(req->rq.opcode)));
 			free_request(req);
 			clear_client_info(ci);
 		} else {
@@ -783,6 +787,8 @@ static void rx_work(struct work *work)
 
 	/* use le_to_cpu */
 	memcpy(&req->rq, &hdr, sizeof(req->rq));
+	sd_debug("recv req=%p op=%s",
+		 req, op_name(get_sd_op(req->rq.opcode)));
 
 	if (hdr.data_length && hdr.flags & SD_FLAG_CMD_WRITE) {
 		ret = do_read(conn->fd, req->data, hdr.data_length, NULL, 0,
@@ -807,8 +813,13 @@ static void rx_main(struct work *work)
 	refcount_dec(&ci->refcnt);
 
 	if (ci->conn.dead) {
-		if (req)
+		if (req) {
+			sd_debug("free req=%p, fd=%d, client=%s:%d op=%s", req,
+				 ci->conn.fd, ci->conn.ipstr,
+				 ci->conn.port,
+				 op_name(get_sd_op(req->rq.opcode)));
 			free_request(req);
+		}
 
 		clear_client_info(ci);
 		return;
@@ -819,17 +830,16 @@ static void rx_main(struct work *work)
 				"connection maybe closed");
 
 	if (is_logging_op(get_sd_op(req->rq.opcode))) {
-		sd_info("req=%p, fd=%d, client=%s:%d, op=%s, data=%s",
+		sd_info("queue req=%p, fd=%d, client=%s:%d, op=%s, data=%s",
 			req,
 			ci->conn.fd,
 			ci->conn.ipstr, ci->conn.port,
 			op_name(get_sd_op(req->rq.opcode)),
 			data_to_str(req->data, req->rq.data_length));
 	} else {
-		sd_debug("%d, %s:%d",
-			 ci->conn.fd,
-			 ci->conn.ipstr,
-			 ci->conn.port);
+		sd_debug("queue req=%p, fd=%d, client=%s:%d op=%s", req,
+			 ci->conn.fd, ci->conn.ipstr,
+			 ci->conn.port, op_name(get_sd_op(req->rq.opcode)));
 	}
 
 	tracepoint(request, rx_main, ci->conn.fd, work, req);
@@ -876,7 +886,7 @@ static void tx_main(struct work *work)
 	refcount_dec(&ci->refcnt);
 
 	if (is_logging_op(ci->tx_req->op)) {
-		sd_info("req=%p, fd=%d, client=%s:%d, op=%s, result=%02X",
+		sd_info("free req=%p, fd=%d, client=%s:%d, op=%s, result=%02X",
 			ci->tx_req,
 			ci->conn.fd,
 			ci->conn.ipstr,
@@ -884,10 +894,11 @@ static void tx_main(struct work *work)
 			op_name(ci->tx_req->op),
 			ci->tx_req->rp.result);
 	} else {
-		sd_debug("%d, %s:%d",
-			 ci->conn.fd,
-			 ci->conn.ipstr,
-			 ci->conn.port);
+		sd_debug("free req=%p, fd=%d, client=%s:%d op=%s",
+			 ci->tx_req,
+			 ci->conn.fd, ci->conn.ipstr,
+			 ci->conn.port,
+			 op_name(ci->tx_req->op));
 	}
 
 	free_request(ci->tx_req);
@@ -924,6 +935,9 @@ static void clear_client_info(struct client_info *ci)
 	list_splice_init(&ci->done_reqs, &done);
 	list_for_each_entry(req, &done, request_list) {
 		list_del(&req->request_list);
+		sd_debug("free req=%p, fd=%d, client=%s:%d op=%s", req,
+			 ci->conn.fd, ci->conn.ipstr,
+			 ci->conn.port, op_name(get_sd_op(req->rq.opcode)));
 		free_request(req);
 	}
 
