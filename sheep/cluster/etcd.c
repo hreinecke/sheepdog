@@ -630,6 +630,39 @@ static int etcd_set_cinfo_status(struct etcd_ctx *ctx, enum sd_status status)
 		sd_warn("invalid status '%d', setting to 'init'", status);
 		old_val = "init";
 	}
+	switch(status) {
+	case SD_STATUS_INIT:
+		if (etcd_cinfo.status != status) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	case SD_STATUS_WAIT:
+		if (etcd_cinfo.status != SD_STATUS_INIT &&
+		    etcd_cinfo.status != status) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	case SD_STATUS_SHUTDOWN:
+		if (etcd_cinfo.status == SD_STATUS_KILLED) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	case SD_STATUS_KILLED:
+		if (etcd_cinfo.status == SD_STATUS_SHUTDOWN) {
+			sd_warn("cannot move status from '%s' to '%s'",
+				old_val, new_val);
+			return -EINVAL;
+		}
+		break;
+	default:
+		break;
+	}
 	memset(cur_val, 0, sizeof(cur_val));
 	snprintf(key, sizeof(key), DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
 	rc = etcd_kv_txn_update(ctx, key, old_val, new_val, cur_val);
