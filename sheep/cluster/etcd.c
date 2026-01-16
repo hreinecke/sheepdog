@@ -1865,7 +1865,8 @@ static void *etcd_event_watcher(void *arg)
 	ev.watch_cb = etcd_event_watch_cb;
 	ev.watch_arg = conn->ctx;
 
-	for (;;) {
+	while (etcd_cinfo.status != SD_STATUS_SHUTDOWN ||
+	       etcd_cinfo.status != SD_STATUS_KILLED) {
 		ret = etcd_kv_watch(conn, DEFAULT_BASE CLUSTER_ZNODE,
 				    &ev, pthread_self());
 		if (ret && ret != -ETIME)
