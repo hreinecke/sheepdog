@@ -1479,7 +1479,9 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 	pthread_mutex_init(&current_vnode_mutex, NULL);
 
 	INIT_LIST_HEAD(&sys->local_req_queue);
+	sd_init_mutex(&sys->local_req_lock);
 	INIT_LIST_HEAD(&sys->req_wait_queue);
+	sd_init_mutex(&sys->req_wait_lock);
 
 	ret = send_join_request();
 	if (ret != 0)

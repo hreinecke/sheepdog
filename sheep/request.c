@@ -89,7 +89,9 @@ static void io_op_done(struct work *work)
  */
 static inline void sleep_on_wait_queue(struct request *req)
 {
+	sd_mutex_lock(&sys->req_wait_lock);
 	list_add_tail(&req->request_list, &sys->req_wait_queue);
+	sd_mutex_unlock(&sys->req_wait_lock);
 }
 
 static void gateway_op_done(struct work *work)
@@ -214,7 +216,9 @@ void wakeup_requests_on_epoch(void)
 	struct request *req;
 	LIST_HEAD(pending_list);
 
+	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&sys->req_wait_queue, &pending_list);
+	sd_mutex_unlock(&sys->req_wait_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		switch (req->rp.result) {
@@ -242,7 +246,9 @@ void wakeup_requests_on_epoch(void)
 		}
 	}
 
+	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&pending_list, &sys->req_wait_queue);
+	sd_mutex_unlock(&sys->req_wait_lock);
 }
 
 /* Wakeup the requests on the oid that was previously being recovered */
@@ -251,7 +257,9 @@ void wakeup_requests_on_oid(uint64_t oid)
 	struct request *req;
 	LIST_HEAD(pending_list);
 
+	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&sys->req_wait_queue, &pending_list);
+	sd_mutex_unlock(&sys->req_wait_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		if (req->local_oid != oid)
@@ -259,7 +267,9 @@ void wakeup_requests_on_oid(uint64_t oid)
 		sd_debug("retry %016" PRIx64, req->local_oid);
 		del_requeue_request(req);
 	}
+	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&pending_list, &sys->req_wait_queue);
+	sd_mutex_unlock(&sys->req_wait_lock);
 }
 
 void wakeup_all_requests(void)
@@ -267,7 +277,9 @@ void wakeup_all_requests(void)
 	struct request *req;
 	LIST_HEAD(pending_list);
 
+	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&sys->req_wait_queue, &pending_list);
+	sd_mutex_unlock(&sys->req_wait_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		sd_debug("%016"PRIx64, req->rq.obj.oid);
@@ -1172,7 +1184,6 @@ static void local_req_handler(int listen_fd, int events, void *data)
 
 void local_request_init(void)
 {
-	sd_init_mutex(&sys->local_req_lock);
 	sys->local_req_efd = eventfd(0, EFD_NONBLOCK);
 	if (sys->local_req_efd < 0)
 		panic("failed to init local req efd");
