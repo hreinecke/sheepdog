@@ -1601,7 +1601,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_debug("JOIN %s", joining.node_id);
 	if (!etcd_node_is_master(&this_node) &&
-	    !strcmp(this_node.node_id, joining.node_id)) {
+	    strcmp(this_node.node_id, joining.node_id)) {
 		/* Let's await master acking the join-request */
 		sd_debug("node '%s' is not master", this_node.node_id);
 		return;
