@@ -296,12 +296,16 @@ static int cluster_make_fs(const struct sd_req *req, struct sd_rsp *rsp,
 	latest_epoch = get_latest_epoch();
 
 	ret = sd_store->format();
-	if (ret != SD_RES_SUCCESS)
+	if (ret != SD_RES_SUCCESS) {
+		sd_warn("failed to format store");
 		goto out;
+	}
 
 	ret = sd_store->init();
-	if (ret != SD_RES_SUCCESS)
+	if (ret != SD_RES_SUCCESS) {
+		sd_warn("failed to init store");
 		goto out;
+	}
 
 	if (sys->gateway_only) {
 		ret = get_vnodes(vinfo, &nr_vnodes);
@@ -318,6 +322,7 @@ static int cluster_make_fs(const struct sd_req *req, struct sd_rsp *rsp,
 	if (!sys->cinfo.block_size_shift)
 		sys->cinfo.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;
 	sys->cinfo.ctime = req->cluster.ctime;
+	sd_debug("update cluster info");
 	set_cluster_config(&sys->cinfo);
 
 	for (i = 1; i <= latest_epoch; i++)
@@ -328,6 +333,7 @@ static int cluster_make_fs(const struct sd_req *req, struct sd_rsp *rsp,
 	clean_vdi_state();
 	objlist_cache_format();
 
+	sd_debug("reset epoch");
 	sys_set_epoch(0);
 
 	ret = inc_and_log_epoch();
@@ -336,6 +342,7 @@ static int cluster_make_fs(const struct sd_req *req, struct sd_rsp *rsp,
 		goto out;
 	}
 
+	sd_debug("set status to OK");
 	sys_update_status(SD_STATUS_OK);
 out:
 	put_vnode_info(vinfo);
