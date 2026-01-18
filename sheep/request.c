@@ -701,8 +701,14 @@ main_fn void put_request(struct request *req)
 {
 	struct client_info *ci = req->ci;
 
-	if (refcount_dec(&req->refcnt) > 0)
+	sd_warn("complete req=%p, fd=%d, client=%s:%d op=%s",
+		req, ci->conn.fd, ci->conn.ipstr, ci->conn.port,
+		op_name(get_sd_op(req->rq.opcode)));
+
+	if (refcount_dec(&req->refcnt) > 0) {
+		sd_debug("req=%p busy", req);
 		return;
+	}
 
 	stat_request_end(req);
 
@@ -724,6 +730,8 @@ main_fn void put_request(struct request *req)
 			clear_client_info(ci);
 		} else {
 			list_add_tail(&req->request_list, &ci->done_reqs);
+			sd_debug("rq=%p queue done, tx %s",
+				 req, ci->tx_req ? "req" : "none");
 
 			switch (ci->type) {
 			case CLIENT_INFO_TYPE_DEFAULT:
