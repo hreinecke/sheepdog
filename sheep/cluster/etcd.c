@@ -1080,7 +1080,7 @@ static void etcd_vdi_state_to_json(struct sd_req *req, struct json_object *obj)
 			       json_object_new_int(req->vdi_state.copy_policy));
 }
 
-static void etcd_msg_to_json(struct vdi_op_message *msg,
+static int etcd_msg_to_json(struct vdi_op_message *msg,
 			     struct json_object *obj,
 			     void *data, size_t data_len)
 {
@@ -1188,6 +1188,8 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 				       vdi_obj);
 		break;
 	default:
+		sd_warn("unhandled opcode %d", req->opcode);
+		return SD_RES_INVALID_PARMS;
 		break;
 	}
 	json_object_object_add(obj, "req", req_obj);
@@ -1204,6 +1206,7 @@ static void etcd_msg_to_json(struct vdi_op_message *msg,
 					       json_object_new_int(rsp->result));
 		json_object_object_add(obj, "rsp", rsp_obj);
 	}
+	return SD_RES_SUCCESS;
 }
 
 static void etcd_json_to_vdi(struct json_object *obj,
@@ -1548,10 +1551,11 @@ static int etcd_notify(void *msg, size_t msg_len)
 	int rc;
 
 	obj = json_object_new_object();
-	etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
+	rc = etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_object_object_add(obj, "node",
 			       json_object_new_string(this_node.node_id));
-	rc = etcd_update_event(this_ctx, EVENT_NOTIFY, obj);
+	if (rc == SD_RES_SUCCESS)
+		rc = etcd_update_event(this_ctx, EVENT_NOTIFY, obj);
 	json_object_put(obj);
 	return rc;
 }
@@ -1576,8 +1580,9 @@ static int etcd_unblock(void *msg, size_t msg_len)
 	int rc;
 
 	obj = json_object_new_object();
-	etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
-	rc = etcd_update_event(this_ctx, EVENT_UNBLOCK, obj);
+	rc = etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
+	if (rc == SD_RES_SUCCESS)
+		rc = etcd_update_event(this_ctx, EVENT_UNBLOCK, obj);
 	json_object_put(obj);
 	return rc;
 }
