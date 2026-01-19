@@ -691,7 +691,8 @@ void free_request(struct request *req)
 {
 	uatomic_dec(&sys->nr_outstanding_reqs);
 
-	refcount_dec(&req->ci->refcnt);
+	if (refcount_dec(&req->ci->refcnt) > 0)
+		sd_warn("req=%p busy", req);
 	put_vnode_info(req->vinfo);
 	free(req->data);
 	free(req);
@@ -905,6 +906,7 @@ static void tx_main(struct work *work)
 	req = ci->rx_req;
 	ci->tx_req = NULL;
 	sd_mutex_unlock(&ci->tx_lock);
+	sd_assert(req != NULL);
 
 	tracepoint(request, tx_main, ci->conn.fd, work, req);
 
