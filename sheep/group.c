@@ -1184,9 +1184,7 @@ retry:
 			 */
 			sd_debug("finish pending block request, op: %s",
 				 op_name(req->op));
-			msg = prepare_cluster_msg(req, &size);
-			sd_notify_handler(&sys->this_node, msg, size);
-			free(msg);
+			found = req;
 			break;
 		default:
 			break;
@@ -1194,11 +1192,17 @@ retry:
 		if (found)
 			break;
 	}
-	if (found)
+	if (found && found->status == REQUEST_INIT)
 		list_del(&found->pending_list);
 	pthread_mutex_unlock(&pending_block_mutex);
 	if (found) {
-		queue_cluster_request(found);
+		if (found->status == REQUEST_DONE) {
+			msg = prepare_cluster_msg(req, &size);
+			sd_notify_handler(&sys->this_node, msg, size);
+			free(msg);
+		} else {
+			queue_cluster_request(found);
+		}
 		goto retry;
 	}
 }
