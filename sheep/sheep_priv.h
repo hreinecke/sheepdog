@@ -78,11 +78,14 @@ struct client_info {
 
 	struct request *rx_req;
 	struct work rx_work;
+	struct sd_mutex rx_lock;
 
 	struct request *tx_req;
 	struct work tx_work;
+	struct sd_mutex tx_lock;
 
 	struct list_head done_reqs;
+	struct sd_mutex done_lock;
 
 	refcnt_t refcnt;
 

@@ -1041,6 +1041,7 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 	if (!op)
 		return;
 	if (node_is_local(sender)) {
+		sd_debug("executing on local node");
 		if (has_process_work(op)) {
 			pthread_mutex_lock(&pending_block_mutex);
 			req = list_first_entry(&pending_block_list,

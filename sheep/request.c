@@ -729,10 +729,11 @@ main_fn void put_request(struct request *req)
 			free_request(req);
 			clear_client_info(ci);
 		} else {
+			sd_mutex_lock(&ci->done_lock);
 			list_add_tail(&req->request_list, &ci->done_reqs);
 			sd_debug("rq=%p queue done, tx %s",
 				 req, ci->tx_req ? "req" : "none");
-
+			sd_mutex_unlock(&ci->done_lock);
 			switch (ci->type) {
 			case CLIENT_INFO_TYPE_DEFAULT:
 				if (ci->tx_req == NULL)
@@ -792,7 +793,9 @@ static void rx_work(struct work *work)
 		conn->dead = true;
 		return;
 	}
+	sd_mutex_lock(&ci->rx_lock);
 	ci->rx_req = req;
+	sd_mutex_unlock(&ci->rx_lock);
 
 	/* use le_to_cpu */
 	memcpy(&req->rq, &hdr, sizeof(req->rq));
@@ -815,9 +818,12 @@ static void rx_main(struct work *work)
 {
 	struct client_info *ci = container_of(work, struct client_info,
 					      rx_work);
-	struct request *req = ci->rx_req;
+	struct request *req;
 
+	sd_mutex_lock(&ci->rx_lock);
+	req = ci->rx_req;
 	ci->rx_req = NULL;
+	sd_mutex_unlock(&ci->rx_lock);
 
 	refcount_dec(&ci->refcnt);
 
@@ -862,9 +868,13 @@ static void tx_work(struct work *work)
 	int ret;
 	struct connection *conn = &ci->conn;
 	struct sd_rsp rsp;
-	struct request *req = ci->tx_req;
+	struct request *req;
 	void *data = NULL;
 
+	sd_mutex_lock(&ci->tx_lock);
+	req = ci->tx_req;
+	sd_mutex_unlock(&ci->tx_lock);
+	sd_assert(req == NULL);
 	/* use cpu_to_le */
 	memcpy(&rsp, &req->rp, sizeof(rsp));
 
@@ -889,29 +899,30 @@ static void tx_main(struct work *work)
 {
 	struct client_info *ci = container_of(work, struct client_info,
 					      tx_work);
+	struct request *req;
 
-	tracepoint(request, tx_main, ci->conn.fd, work, ci->tx_req);
+	sd_mutex_lock(&ci->tx_lock);
+	req = ci->rx_req;
+	ci->tx_req = NULL;
+	sd_mutex_unlock(&ci->tx_lock);
+
+	tracepoint(request, tx_main, ci->conn.fd, work, req);
 
 	refcount_dec(&ci->refcnt);
 
-	if (is_logging_op(ci->tx_req->op)) {
+	if (is_logging_op(req->op)) {
 		sd_info("free req=%p, fd=%d, client=%s:%d, op=%s, result=%02X",
-			ci->tx_req,
-			ci->conn.fd,
-			ci->conn.ipstr,
-			ci->conn.port,
-			op_name(ci->tx_req->op),
-			ci->tx_req->rp.result);
+			req, ci->conn.fd,
+			ci->conn.ipstr, ci->conn.port,
+			op_name(req->op), req->rp.result);
 	} else {
 		sd_debug("free req=%p, fd=%d, client=%s:%d op=%s",
-			 ci->tx_req,
-			 ci->conn.fd, ci->conn.ipstr,
-			 ci->conn.port,
-			 op_name(ci->tx_req->op));
+			 req, ci->conn.fd,
+			 ci->conn.ipstr, ci->conn.port,
+			 op_name(req->op));
 	}
 
-	free_request(ci->tx_req);
-	ci->tx_req = NULL;
+	free_request(req);
 
 	if (ci->conn.dead) {
 		clear_client_info(ci);
@@ -1034,31 +1045,40 @@ static void client_handler(int fd, int events, void *data)
 		 * rx_work uses it.
 		 */
 		refcount_inc(&ci->refcnt);
+		sd_mutex_lock(&ci->rx_lock);
 		ci->rx_work.fn = rx_work;
 		ci->rx_work.done = rx_main;
+		sd_mutex_unlock(&ci->rx_lock);
 		tracepoint(request, queue_request, fd, &ci->rx_work, 1);
 		queue_work(sys->net_wqueue, &ci->rx_work);
 	}
 
 	if (events & EPOLLOUT) {
+		struct request *req;
+
 		if (conn_tx_off(&ci->conn) != 0) {
 			sd_err("switch off sending flag failure, "
 					"connection maybe closed");
 			return;
 		}
 
-		sd_assert(ci->tx_req == NULL);
-		ci->tx_req = list_first_entry(&ci->done_reqs, struct request,
-					      request_list);
-		list_del(&ci->tx_req->request_list);
+		sd_mutex_lock(&ci->done_lock);
+		req = list_first_entry(&ci->done_reqs, struct request,
+				       request_list);
+		list_del(&req->request_list);
+		sd_assert(req == NULL);
+		sd_mutex_unlock(&ci->done_lock);
 
 		/*
 		 * Increment refcnt so that the client_info isn't freed while
 		 * tx_work uses it.
 		 */
 		refcount_inc(&ci->refcnt);
+		sd_mutex_lock(&ci->tx_lock);
+		ci->tx_req = req;
 		ci->tx_work.fn = tx_work;
 		ci->tx_work.done = tx_main;
+		sd_mutex_unlock(&ci->tx_lock);
 		tracepoint(request, queue_request, fd, &ci->tx_work, 0);
 		queue_work(sys->net_wqueue, &ci->tx_work);
 	}
