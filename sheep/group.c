@@ -441,12 +441,15 @@ static bool enough_nodes_gathered(struct cluster_info *cinfo,
 				  const struct rb_root *nroot,
 				  size_t nr_nodes)
 {
+	sd_debug("sender %s, %lu nodes present",
+		 node_to_str(joining), nr_nodes);
 	for (int i = 0; i < cinfo->nr_nodes; i++) {
 		const struct sd_node *key = cinfo->nodes + i, *n;
 
 		n = rb_search(nroot, key, rb, node_cmp);
 		if (n == NULL && !node_eq(key, joining)) {
-			sd_debug("%s doesn't join yet", node_to_str(key));
+			sd_debug("node %d (%s) doesn't join yet",
+				 i, node_to_str(key));
 			return false;
 		}
 	}
