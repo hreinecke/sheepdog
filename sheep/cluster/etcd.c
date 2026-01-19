@@ -690,6 +690,53 @@ static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 			       json_object_new_string(status_str));
 }
 
+static void etcd_nodes_to_json(struct sd_node *nodes, int nr_nodes,
+			       json_object *obj)
+{
+	struct json_object *nodes_obj;
+
+	if (!nodes)
+		return;
+
+	nodes_obj = json_object_new_array();
+	for (int i = 0; i < nr_nodes; i++) {
+		struct json_object *node_obj;
+#ifdef HAVE_DISKVNODES
+		struct json_object *disks_obj;
+		int j;
+#endif
+		struct sd_node *s = &nodes[i];
+		const char *node_id = node_to_str(s);
+
+		node_obj = json_object_new_object();
+		json_object_object_add(node_obj, "nid",
+				       json_object_new_string(node_id));
+		json_object_object_add(node_obj, "zone",
+				       json_object_new_int64(s->zone));
+		json_object_object_add(node_obj, "space",
+				       json_object_new_int64(s->space));
+#ifdef HAVE_DISKVNODES
+		disks_obj = json_object_new_array();
+		for (j = 0; j < DISK_MAX; j++) {
+			struct json_object *disk_obj;
+			struct disk_info *d = &nodes->disks[j];
+
+			if (!d->disk_id)
+				continue;
+			disk_obj = json_object_new_object();
+			json_object_object_add(disk_obj, "id",
+					       json_object_new_int64(d->disk_id));
+			json_object_object_add(disk_obj, "space",
+					       json_object_new_int64(d->disk_space));
+			json_object_array_add(disks_obj, disk_obj);
+		}
+		json_object_object_add(node_obj, "disks", disks_obj);
+#endif
+		json_object_array_add(nodes_obj, node_obj);
+	}
+	json_object_object_add(obj, "nodes", nodes_obj);
+}
+
 #define _SET_CINFO_VAL(o, c, n) \
 	if ((c)->n) \
 		json_object_object_add(o, #n,		\
@@ -721,26 +768,8 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 		json_object_object_add(cinfo_obj, "default_store",
 				       json_object_new_string(default_store));
 
-	if (cinfo->nr_nodes) {
-		struct json_object *nodes_obj;
+	etcd_nodes_to_json(cinfo->nodes, cinfo->nr_nodes, cinfo_obj);
 
-		nodes_obj = json_object_new_array();
-		for (int i = 0; i < cinfo->nr_nodes; i++) {
-			struct json_object *node_obj;
-			struct sd_node *s = &cinfo->nodes[i];
-			const char *node_id = node_to_str(s);
-
-			node_obj = json_object_new_object();
-			json_object_object_add(node_obj, "nid",
-					       json_object_new_string(node_id));
-			json_object_object_add(node_obj, "zone",
-					       json_object_new_int64(s->zone));
-			json_object_object_add(node_obj, "space",
-					       json_object_new_int64(s->space));
-			json_object_array_add(nodes_obj, node_obj);
-		}
-		json_object_object_add(cinfo_obj, "nodes", nodes_obj);
-	}
 	json_object_object_add(obj, "cluster", cinfo_obj);
 	if (node)
 		json_object_object_add(obj, "node",
