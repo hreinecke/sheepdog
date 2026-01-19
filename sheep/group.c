@@ -30,11 +30,10 @@ static refcnt_t nr_get_vdis_works;
 
 static pthread_mutex_t pending_block_mutex;
 static pthread_mutex_t pending_notify_mutex;
-static pthread_mutex_t current_vnode_mutex;
 
-static struct vnode_info *current_vnode_info;
-static struct list_head pending_block_list;
-static struct list_head pending_notify_list;
+static main_thread(struct vnode_info *) current_vnode_info;
+static main_thread(struct list_head *) pending_block_list;
+static main_thread(struct list_head *) pending_notify_list;
 
 bool wildcard_recovery;
 
@@ -81,20 +80,18 @@ struct vnode_info *grab_vnode_info(struct vnode_info *vnode_info)
 }
 
 /*
- * Get a reference to the currently active vnode information structure.
+ * Get a reference to the currently active vnode information structure,
+ * this must only be called from the main thread.
  * This can return NULL if cluster is not started yet.
  */
 main_fn struct vnode_info *get_vnode_info(void)
 {
-	struct vnode_info *cur_vinfo;
+	struct vnode_info *cur_vinfo = main_thread_get(current_vnode_info);
 
-	pthread_mutex_lock(&current_vnode_mutex);
-	cur_vinfo = current_vnode_info;
-	if (cur_vinfo)
-		grab_vnode_info(cur_vinfo);
-	pthread_mutex_unlock(&current_vnode_mutex);
+	if (cur_vinfo == NULL)
+		return NULL;
 
-	return cur_vinfo;
+	return grab_vnode_info(cur_vinfo);
 }
 
 /* Release a reference to the current vnode information. */
@@ -305,15 +302,9 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 	cluster_op_running = true;
 
 	pthread_mutex_lock(&pending_block_mutex);
-	if (!list_empty(&pending_block_list)) {
-		req = list_first_entry(&pending_block_list,
-				       struct request, pending_list);
-	}
+	req = list_first_entry(main_thread_get(pending_block_list),
+				struct request, pending_list);
 	pthread_mutex_unlock(&pending_block_mutex);
-	if (!req) {
-		sd_warn("no request found");
-		return false;
-	}
 	req->work.fn = do_process_work;
 	req->work.done = cluster_op_done;
 
@@ -342,9 +333,8 @@ main_fn void queue_cluster_request(struct request *req)
 			goto error;
 		}
 		pthread_mutex_lock(&pending_block_mutex);
-		if (list_linked(&req->pending_list))
-			sd_warn("req=%p still queued", req);
-		list_add_tail(&req->pending_list, &pending_block_list);
+		list_add_tail(&req->pending_list,
+			      main_thread_get(pending_block_list));
 		pthread_mutex_unlock(&pending_block_mutex);
 	} else {
 		struct vdi_op_message *msg;
@@ -359,10 +349,10 @@ main_fn void queue_cluster_request(struct request *req)
 			       sd_strerror(ret));
 			goto error;
 		}
+		INIT_LIST_NODE(&req->pending_list);
 		pthread_mutex_lock(&pending_notify_mutex);
-		if (list_linked(&req->pending_list))
-			sd_warn("req=%p still queued", req);
-		list_add_tail(&req->pending_list, &pending_notify_list);
+		list_add_tail(&req->pending_list,
+			      main_thread_get(pending_notify_list));
 		pthread_mutex_unlock(&pending_notify_mutex);
 		free(msg);
 	}
@@ -956,20 +946,22 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 	if (!sys->gateway_only)
 		setup_backend_store(cinfo);
 
-	pthread_mutex_lock(&current_vnode_mutex);
-	old_vnode_info = current_vnode_info;
-	current_vnode_info = alloc_vnode_info(nroot);
-	pthread_mutex_unlock(&current_vnode_mutex);
+	/*
+	 * We need use main_thread_get() to obtain current_vnode_info. The
+	 * reference count of old_vnode_info is decremented at the last of this
+	 * function in order to release old_vnode_info. The counter part
+	 * of this dereference is alloc_vnode_info().
+	 */
+	old_vnode_info = main_thread_get(current_vnode_info);
+	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
 
 	if (node_is_local(joined)) {
 		sockfd_cache_add_group(nroot);
 
 		if (0 < cinfo->epoch && cinfo->status == SD_STATUS_OK) {
-			struct vnode_info *members;
+			struct vnode_info *members = grab_vnode_info(
+				main_thread_get(current_vnode_info));
 
-			pthread_mutex_lock(&current_vnode_mutex);
-			members = grab_vnode_info(current_vnode_info);
-			pthread_mutex_unlock(&current_vnode_mutex);
 			if (members->nr_nodes == 1) {
 				sd_debug("Currently, there are no other"
 					 " members. I don't have to collect"
@@ -1009,16 +1001,13 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 				panic("cannot log current epoch %d",
 				      sys_epoch());
 
-			pthread_mutex_lock(&current_vnode_mutex);
-			start_recovery(current_vnode_info,
+			start_recovery(main_thread_get(current_vnode_info),
 				       old_vnode_info, true, false);
-			pthread_mutex_unlock(&current_vnode_mutex);
 		} else if (!was_cluster_shutdowned() || wildcard_recovery) {
-			pthread_mutex_lock(&current_vnode_mutex);
-			start_recovery(current_vnode_info,
-				       current_vnode_info,
+			start_recovery(main_thread_get(current_vnode_info),
+				       main_thread_get(current_vnode_info),
 				       false, wildcard_recovery);
-			pthread_mutex_unlock(&current_vnode_mutex);
+
 			/*
 			 * wildcard recovery is invoked only at first time of
 			 * sheep process launch
@@ -1046,32 +1035,27 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 	int ret = msg? msg->rsp.result : 0;
 	struct request *req = NULL;
 
-	sd_debug("op %s, size: %zu, from: %s, ret: %d", op_name(op), data_len,
-		 node_to_str(sender), ret);
+	sd_debug("op %s, size: %zu, from: %s", op_name(op), data_len,
+		 node_to_str(sender));
 
 	if (!op)
 		return;
 	if (node_is_local(sender)) {
 		if (has_process_work(op)) {
 			pthread_mutex_lock(&pending_block_mutex);
-			if (!list_empty(&pending_block_list)) {
-				req = list_first_entry(&pending_block_list,
-						       struct request,
-						       pending_list);
-				list_del(&req->pending_list);
-			}
+			req = list_first_entry(
+				main_thread_get(pending_block_list),
+				struct request, pending_list);
+			list_del(&req->pending_list);
 			pthread_mutex_unlock(&pending_block_mutex);
 		} else {
 			pthread_mutex_lock(&pending_notify_mutex);
-			if (!list_empty(&pending_notify_list)) {
-				req = list_first_entry(&pending_notify_list,
-						       struct request,
-						       pending_list);
-				list_del(&req->pending_list);
-			}
+			req = list_first_entry(
+				main_thread_get(pending_notify_list),
+				struct request, pending_list);
+			list_del(&req->pending_list);
 			pthread_mutex_unlock(&pending_notify_mutex);
 		}
-		sd_debug("executing on local node, req=%p", req);
 	}
 
 	if (ret == SD_RES_SUCCESS && has_process_main(op))
@@ -1145,17 +1129,13 @@ static int send_join_request(void)
 
 static void requeue_cluster_request(void)
 {
-	struct request *req = NULL, *found = NULL;
+	struct request *req, *found = NULL;
 	struct vdi_op_message *msg;
 	size_t size;
 
-retry_pending:
 	pthread_mutex_lock(&pending_notify_mutex);
-	if (!list_empty(&pending_notify_list))
-		req = list_first_entry(&pending_notify_list,
-				       struct request, pending_list);
-	pthread_mutex_unlock(&pending_notify_mutex);
-	if (req) {
+	list_for_each_entry(req, main_thread_get(pending_notify_list),
+			    pending_list) {
 		/*
 		 * ->notify() was called and succeeded but after that
 		 * this node session-timeouted and sd_notify_handler
@@ -1168,12 +1148,12 @@ retry_pending:
 		msg = prepare_cluster_msg(req, &size);
 		sd_notify_handler(&sys->this_node, msg, size);
 		free(msg);
-		goto retry_pending;
 	}
+	pthread_mutex_unlock(&pending_notify_mutex);
 
 retry:
 	pthread_mutex_lock(&pending_block_mutex);
-	list_for_each_entry(req, &pending_block_list,
+	list_for_each_entry(req, main_thread_get(pending_block_list),
 			    pending_list) {
 		switch (req->status) {
 		case REQUEST_INIT:
@@ -1205,7 +1185,9 @@ retry:
 			 */
 			sd_debug("finish pending block request, op: %s",
 				 op_name(req->op));
-			found = req;
+			msg = prepare_cluster_msg(req, &size);
+			sd_notify_handler(&sys->this_node, msg, size);
+			free(msg);
 			break;
 		default:
 			break;
@@ -1213,17 +1195,11 @@ retry:
 		if (found)
 			break;
 	}
-	if (found && found->status == REQUEST_INIT)
+	if (found)
 		list_del(&found->pending_list);
 	pthread_mutex_unlock(&pending_block_mutex);
 	if (found) {
-		if (found->status == REQUEST_DONE) {
-			msg = prepare_cluster_msg(req, &size);
-			sd_notify_handler(&sys->this_node, msg, size);
-			free(msg);
-		} else {
-			queue_cluster_request(found);
-		}
+		queue_cluster_request(found);
 		goto retry;
 	}
 }
@@ -1358,10 +1334,12 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 		/* Mark leave node as gateway only node */
 		sys->this_node.nr_vnodes = 0;
 
-	pthread_mutex_lock(&current_vnode_mutex);
-	old_vnode_info = current_vnode_info;
-	current_vnode_info = alloc_vnode_info(nroot);
-	pthread_mutex_unlock(&current_vnode_mutex);
+	/*
+	 * Using main_thread_get() instead of get_vnode_info() is allowed
+	 * because of the same reason of update_cluster_info()
+	 */
+	old_vnode_info = main_thread_get(current_vnode_info);
+	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
 	if (status == SD_STATUS_OK) {
 		if (is_gateway_only_cluster(nroot)) {
 			sd_info("only gateway nodes are remaining, exiting");
@@ -1371,10 +1349,8 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 		ret = inc_and_log_epoch();
 		if (ret != 0)
 			panic("cannot log current epoch %d", sys_epoch());
-		pthread_mutex_lock(&current_vnode_mutex);
-		start_recovery(current_vnode_info,
+		start_recovery(main_thread_get(current_vnode_info),
 			       old_vnode_info, true, false);
-		pthread_mutex_unlock(&current_vnode_mutex);
 	}
 
 	put_vnode_info(old_vnode_info);
@@ -1411,19 +1387,14 @@ static void kick_node_recover(void)
 	 * Using main_thread_get() instead of get_vnode_info() is allowed
 	 * because of the same reason of update_cluster_info()
 	 */
-	struct vnode_info *old;
+	struct vnode_info *old = main_thread_get(current_vnode_info);
 	int ret;
 
-	pthread_mutex_lock(&current_vnode_mutex);
-	old = current_vnode_info;
-	current_vnode_info = alloc_vnode_info(&old->nroot);
-	pthread_mutex_unlock(&current_vnode_mutex);
+	main_thread_set(current_vnode_info, alloc_vnode_info(&old->nroot));
 	ret = inc_and_log_epoch();
 	if (ret != 0)
 		panic("cannot log current epoch %d", sys_epoch());
-	pthread_mutex_lock(&current_vnode_mutex);
-	start_recovery(current_vnode_info, old, true, false);
-	pthread_mutex_unlock(&current_vnode_mutex);
+	start_recovery(main_thread_get(current_vnode_info), old, true, false);
 	put_vnode_info(old);
 }
 
@@ -1500,15 +1471,16 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 	sys->cinfo.status = SD_STATUS_WAIT;
 
 	pthread_mutex_init(&pending_block_mutex, NULL);
-	INIT_LIST_HEAD(&pending_block_list);
+	main_thread_set(pending_block_list,
+			  xzalloc(sizeof(struct list_head)));
+	INIT_LIST_HEAD(main_thread_get(pending_block_list));
 	pthread_mutex_init(&pending_notify_mutex, NULL);
-	INIT_LIST_HEAD(&pending_notify_list);
-	pthread_mutex_init(&current_vnode_mutex, NULL);
+	main_thread_set(pending_notify_list,
+			  xzalloc(sizeof(struct list_head)));
+	INIT_LIST_HEAD(main_thread_get(pending_notify_list));
 
 	INIT_LIST_HEAD(&sys->local_req_queue);
-	sd_init_mutex(&sys->local_req_lock);
 	INIT_LIST_HEAD(&sys->req_wait_queue);
-	sd_init_mutex(&sys->req_wait_lock);
 
 	ret = send_join_request();
 	if (ret != 0)
