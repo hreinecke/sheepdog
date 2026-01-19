@@ -1973,7 +1973,6 @@ const struct sd_op_template *get_sd_op(uint8_t opcode)
 		sd_warn("disabled opcode %d", opcode);
 		return NULL;
 	}
-			
 	return sd_ops + opcode;
 }
 
