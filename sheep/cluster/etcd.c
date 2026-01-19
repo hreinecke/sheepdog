@@ -1697,7 +1697,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		sd_debug("I'm the master now, %d nodes, status %d",
 			 nr_nodes, cinfo.status);
 		cinfo_obj = json_object_new_object();
-		etcd_cinfo_to_json(&cinfo, cinfo_obj, &joining);
+		etcd_cinfo_to_json(&cinfo, cinfo_obj, &this_node);
 		etcd_update_event(ctx, EVENT_ACCEPT, obj);
 		json_object_put(cinfo_obj);
 	}
