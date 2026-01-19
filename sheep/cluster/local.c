@@ -423,6 +423,7 @@ static bool local_process_event(void)
 {
 	struct local_event *ev;
 	int i;
+	struct cluster_info *cinfo;
 	struct rb_root root = RB_ROOT;
 	size_t nr_nodes = 0;
 
@@ -470,8 +471,9 @@ static bool local_process_event(void)
 				rb_erase(&ev->lnodes[i].node.rb, &root);
 				nr_nodes--;
 			}
+		cinfo = (struct cluster_info *)ev->buf;
 		if (sd_join_handler(&ev->sender.node, &root, nr_nodes,
-				    ev->buf)) {
+				    cinfo)) {
 			ev->type = EVENT_ACCEPT;
 			msync(ev, sizeof(*ev), MS_SYNC);
 

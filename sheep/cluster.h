@@ -219,6 +219,6 @@ int sd_reconnect_handler(void);
 void sd_update_node_handler(struct sd_node *);
 bool sd_join_handler(const struct sd_node *joining,
 		     const struct rb_root *nroot, size_t nr_nodes,
-		     void *opaque);
+		     struct cluster_info *cinfo);
 
 #endif

@@ -1102,9 +1102,8 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
  */
 main_fn bool sd_join_handler(const struct sd_node *joining,
 			     const struct rb_root *nroot, size_t nr_nodes,
-			     void *opaque)
+			     struct cluster_info *cinfo)
 {
-	struct cluster_info *cinfo = opaque;
 	enum sd_status status;
 
 	/*
