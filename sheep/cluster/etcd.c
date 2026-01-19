@@ -1187,6 +1187,15 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		json_object_object_add(req_obj, "inode_coherence",
 				       vdi_obj);
 		break;
+	case SD_OP_SHUTDOWN:
+		break;
+	case SD_OP_FORCE_RECOVER:
+		break;
+	case SD_OP_REWEIGHT:
+		break;
+	case SD_OP_ENABLE_RECOVER:
+		break;
+	case SD_OP_DISABLE_RECOVER:
 	default:
 		sd_warn("unhandled opcode %d", req->opcode);
 		return SD_RES_INVALID_PARMS;
