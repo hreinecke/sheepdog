@@ -874,7 +874,7 @@ static void tx_work(struct work *work)
 	sd_mutex_lock(&ci->tx_lock);
 	req = ci->tx_req;
 	sd_mutex_unlock(&ci->tx_lock);
-	sd_assert(req == NULL);
+	sd_assert(req != NULL);
 	/* use cpu_to_le */
 	memcpy(&rsp, &req->rp, sizeof(rsp));
 
@@ -1065,8 +1065,8 @@ static void client_handler(int fd, int events, void *data)
 		sd_mutex_lock(&ci->done_lock);
 		req = list_first_entry(&ci->done_reqs, struct request,
 				       request_list);
+		sd_assert(req != NULL);
 		list_del(&req->request_list);
-		sd_assert(req == NULL);
 		sd_mutex_unlock(&ci->done_lock);
 
 		/*
@@ -1075,6 +1075,7 @@ static void client_handler(int fd, int events, void *data)
 		 */
 		refcount_inc(&ci->refcnt);
 		sd_mutex_lock(&ci->tx_lock);
+		sd_assert(ci->tx_req == NULL);
 		ci->tx_req = req;
 		ci->tx_work.fn = tx_work;
 		ci->tx_work.done = tx_main;
