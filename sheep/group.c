@@ -276,6 +276,7 @@ static void cluster_op_done(struct work *work)
 	req->status = REQUEST_DONE;
 	return;
 drop:
+	sd_warn("%s (%p) dropped", op_name(req->op), req);
 	list_del(&req->pending_list);
 	req->rp.result = SD_RES_CLUSTER_ERROR;
 	put_request(req);
@@ -335,6 +336,8 @@ main_fn void queue_cluster_request(struct request *req)
 			goto error;
 		}
 		pthread_mutex_lock(&pending_block_mutex);
+		if (list_linked(&req->pending_list))
+			sd_warn("req=%p still queued", req);
 		list_add_tail(&req->pending_list, &pending_block_list);
 		pthread_mutex_unlock(&pending_block_mutex);
 	} else {
@@ -351,6 +354,8 @@ main_fn void queue_cluster_request(struct request *req)
 			goto error;
 		}
 		pthread_mutex_lock(&pending_notify_mutex);
+		if (list_linked(&req->pending_list))
+			sd_warn("req=%p still queued", req);
 		list_add_tail(&req->pending_list, &pending_notify_list);
 		pthread_mutex_unlock(&pending_notify_mutex);
 		free(msg);

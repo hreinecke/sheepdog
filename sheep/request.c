@@ -700,8 +700,12 @@ main_fn void put_request(struct request *req)
 	const struct sd_op_template *op_tmpl = get_sd_op(req->rq.opcode);
 	const char *op = op_tmpl ? op_name(op_tmpl) : "<unknown>";
 
-	sd_warn("complete req=%p, fd=%d, client=%s:%d op=%s",
-		req, ci->conn.fd, ci->conn.ipstr, ci->conn.port, op);
+	if (!ci) {
+		sd_warn("complete req=%p op=%s", req, op);
+	} else {
+		sd_warn("complete req=%p, fd=%d, client=%s:%d op=%s",
+			req, ci->conn.fd, ci->conn.ipstr, ci->conn.port, op);
+	}
 
 	if (refcount_dec(&req->refcnt) > 0) {
 		sd_debug("req=%p busy", req);
@@ -712,7 +716,7 @@ main_fn void put_request(struct request *req)
 
 	if (req->local)
 		eventfd_xwrite(req->local_req_efd, 1);
-	else {
+	else if (ci) {
 		if (ci->conn.dead) {
 			/*
 			 * free_request should be called prior to
