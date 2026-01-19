@@ -720,29 +720,27 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 	if (strlen(default_store))
 		json_object_object_add(cinfo_obj, "default_store",
 				       json_object_new_string(default_store));
-#if 0
+
 	if (cinfo->nr_nodes) {
 		struct json_object *nodes_obj;
 
 		nodes_obj = json_object_new_array();
 		for (int i = 0; i < cinfo->nr_nodes; i++) {
+			struct json_object *node_obj;
 			struct sd_node *s = &cinfo->nodes[i];
-			struct etcd_node *enode =  NULL, e;
 			const char *node_id = node_to_str(s);
 
-			strcpy(e.node_id, node_id);
-			enode = rb_search(&etcd_node_root, &e, rb,
-					  etcd_node_cmp);
-			if (!enode) {
-				sd_warn("cannot find node '%s'", node_id);
-				continue;
-			}
-			json_object_array_add(nodes_obj,
-					      json_object_new_string(enode->node_id));
+			node_obj = json_object_new_object();
+			json_object_object_add(node_obj, "nid",
+					       json_object_new_string(node_id));
+			json_object_object_add(node_obj, "zone",
+					       json_object_new_int64(s->zone));
+			json_object_object_add(node_obj, "space",
+					       json_object_new_int64(s->space));
+			json_object_array_add(nodes_obj, node_obj);
 		}
 		json_object_object_add(cinfo_obj, "nodes", nodes_obj);
 	}
-#endif
 	json_object_object_add(obj, "cluster", cinfo_obj);
 	if (node)
 		json_object_object_add(obj, "node",
