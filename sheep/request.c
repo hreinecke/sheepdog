@@ -701,10 +701,11 @@ void free_request(struct request *req)
 main_fn void put_request(struct request *req)
 {
 	struct client_info *ci = req->ci;
+	const struct sd_op_template *op_tmpl = get_sd_op(req->rq.opcode);
 
 	sd_warn("complete req=%p, fd=%d, client=%s:%d op=%s",
 		req, ci->conn.fd, ci->conn.ipstr, ci->conn.port,
-		op_name(get_sd_op(req->rq.opcode)));
+		op_tmpl ? op_name(op_tmpl) : "<unknown>");
 
 	if (refcount_dec(&req->refcnt) > 0) {
 		sd_debug("req=%p busy", req);
