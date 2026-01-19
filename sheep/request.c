@@ -149,7 +149,7 @@ static void local_op_done(struct work *work)
 						 &req->rp, req->data,
 						 &sys->this_node);
 	}
-
+	sd_debug("put req=%p", req);
 	put_request(req);
 }
 
@@ -1072,6 +1072,7 @@ static void client_handler(int fd, int events, void *data)
 		}
 
 		sd_mutex_lock(&ci->done_lock);
+		sd_assert(!list_empty(&ci->done_reqs));
 		req = list_first_entry(&ci->done_reqs, struct request,
 				       request_list);
 		sd_assert(req != NULL);

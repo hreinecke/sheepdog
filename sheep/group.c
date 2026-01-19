@@ -295,7 +295,7 @@ drop:
  */
 main_fn bool sd_block_handler(const struct sd_node *sender)
 {
-	struct request *req;
+	struct request *req = NULL;
 
 	if (!node_is_local(sender))
 		return false;
@@ -305,9 +305,15 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 	cluster_op_running = true;
 
 	pthread_mutex_lock(&pending_block_mutex);
-	req = list_first_entry(&pending_block_list,
-				struct request, pending_list);
+	if (!list_empty(&pending_block_list)) {
+		req = list_first_entry(&pending_block_list,
+				       struct request, pending_list);
+	}
 	pthread_mutex_unlock(&pending_block_mutex);
+	if (!req) {
+		sd_warn("no request found");
+		return false;
+	}
 	req->work.fn = do_process_work;
 	req->work.done = cluster_op_done;
 
@@ -1049,15 +1055,21 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 		sd_debug("executing on local node");
 		if (has_process_work(op)) {
 			pthread_mutex_lock(&pending_block_mutex);
-			req = list_first_entry(&pending_block_list,
-				struct request, pending_list);
-			list_del(&req->pending_list);
+			if (!list_empty(&pending_block_list)) {
+				req = list_first_entry(&pending_block_list,
+						       struct request,
+						       pending_list);
+				list_del(&req->pending_list);
+			}
 			pthread_mutex_unlock(&pending_block_mutex);
 		} else {
 			pthread_mutex_lock(&pending_notify_mutex);
-			req = list_first_entry(&pending_notify_list,
-				struct request, pending_list);
-			list_del(&req->pending_list);
+			if (!list_empty(&pending_notify_list)) {
+				req = list_first_entry(&pending_notify_list,
+						       struct request,
+						       pending_list);
+				list_del(&req->pending_list);
+			}
 			pthread_mutex_unlock(&pending_notify_mutex);
 		}
 	}
@@ -1133,14 +1145,15 @@ static int send_join_request(void)
 
 static void requeue_cluster_request(void)
 {
-	struct request *req, *found = NULL;
+	struct request *req = NULL, *found = NULL;
 	struct vdi_op_message *msg;
 	size_t size;
 
 retry_pending:
 	pthread_mutex_lock(&pending_notify_mutex);
-	req = list_first_entry(&pending_notify_list,
-			       struct request, pending_list);
+	if (!list_empty(&pending_notify_list))
+		req = list_first_entry(&pending_notify_list,
+				       struct request, pending_list);
 	pthread_mutex_unlock(&pending_notify_mutex);
 	if (req) {
 		/*
