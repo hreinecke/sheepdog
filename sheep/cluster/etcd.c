@@ -724,6 +724,8 @@ static void etcd_nodes_to_json(struct sd_node *nodes, int nr_nodes,
 			if (!d->disk_id)
 				continue;
 			disk_obj = json_object_new_object();
+			json_object_object_add(disk_obj, "num",
+					       json_object_new_int(j));
 			json_object_object_add(disk_obj, "id",
 					       json_object_new_int64(d->disk_id));
 			json_object_object_add(disk_obj, "space",
@@ -776,25 +778,60 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 				       json_object_new_string(node->node_id));
 }
 
-static void etcd_json_nodes_to_cinfo(struct json_object *obj,
-				     struct cluster_info *cinfo)
+static void etcd_json_to_nodes(struct json_object *obj,
+			       struct cluster_info *cinfo)
 {
 	int i, nr_nodes = json_object_array_length(obj);
 
+	cinfo->nr_nodes = nr_nodes;
 	for (i = 0; i < nr_nodes; i++) {
-		struct json_object *node_obj;
-		struct etcd_node *node;
-		const char *node_name;
+		struct json_object *node_obj, *attr_obj;
+		const char *nid_str;
+		struct sd_node node;
+#ifdef HAVE_DISKVNODES
+		struct json_object *disks_obj;
+		int j, nr_disks;
+#endif
 
 		node_obj = json_object_array_get_idx(obj, i);
-		node_name = json_object_get_string(node_obj);
-		rb_for_each_entry(node, &etcd_node_root, rb) {
-			if (!strcmp(node->node_id, node_name)) {
-				memcpy(&cinfo->nodes[i], &node->node,
-				       sizeof(struct sd_node));
-				break;
-			}
+		attr_obj = json_object_object_get(node_obj, "nid");
+		nid_str = json_object_get_string(attr_obj);
+		if (!str_to_node(nid_str, &node)) {
+			sd_warn("failed to parse '%s'", nid_str);
+			continue;
 		}
+		attr_obj = json_object_object_get(node_obj, "zone");
+		if (attr_obj)
+			node.zone = json_object_get_int64(attr_obj);
+		attr_obj = json_object_object_get(node_obj, "space");
+		if (attr_obj)
+			node.space = json_object_get_int64(attr_obj);
+#ifdef HAVE_DISKVNODES
+		disks_obj = json_object_object_get(node_obj, "disks");
+		nr_disks = json_object_array_length(disks_obj);
+		for (j = 0; j < nr_disks; j++) {
+			struct json_object *disk_obj, *num_obj;
+			struct json_object *id_obj, *space_obj;
+			struct disk_info *disk;
+			int disk_num;
+
+			disk_obj = json_object_array_get_idx(disks_obj, j);
+			num_obj = json_object_object_get(disk_obj, "num");
+			if (!num_obj)
+				continue;
+			disk_num = json_object_get_int(num_obj);
+			disk = &node.disks[disk_num];
+			id_obj = json_object_object_get(disk_obj, "id");
+			if (id_obj)
+				disk->disk_id =
+					json_object_get_int64(id_obj);
+			space_obj = json_object_object_get(disk_obj, "space");
+			if (space_obj)
+				disk->disk_id =
+					json_object_get_int64(space_obj);
+		}
+#endif
+		memcpy(&cinfo->nodes[i], &node, sizeof(node));
 	}
 }
 
@@ -846,7 +883,7 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			strcpy((char *)cinfo->default_store,
 			       json_object_get_string(val_obj));
 		} else if (!strcmp(key, "nodes")) {
-			etcd_json_nodes_to_cinfo(val_obj, cinfo);
+			etcd_json_to_nodes(val_obj, cinfo);
 		} else {
 			sd_warn("%s: unhandled key '%s'", __func__, key);
 			num_val--;
