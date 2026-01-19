@@ -962,7 +962,7 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 	strcpy(key, DEFAULT_BASE MEMBER_ZNODE);
 	num_kvs = etcd_kv_range(node->ctx, key, &kvs);
 	if (num_kvs < 0)
-		return num_kvs;
+		return is_master;
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
 		char *id = kv->key + strlen(key), *attr;
