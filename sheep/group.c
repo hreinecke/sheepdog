@@ -1132,9 +1132,12 @@ static void requeue_cluster_request(void)
 	struct vdi_op_message *msg;
 	size_t size;
 
+retry_pending:
 	pthread_mutex_lock(&pending_notify_mutex);
-	list_for_each_entry(req, &pending_notify_list,
-			    pending_list) {
+	req = list_first_entry(&pending_notify_list,
+			       struct request, pending_list);
+	pthread_mutex_unlock(&pending_notify_mutex);
+	if (req) {
 		/*
 		 * ->notify() was called and succeeded but after that
 		 * this node session-timeouted and sd_notify_handler
@@ -1147,8 +1150,8 @@ static void requeue_cluster_request(void)
 		msg = prepare_cluster_msg(req, &size);
 		sd_notify_handler(&sys->this_node, msg, size);
 		free(msg);
+		goto retry_pending;
 	}
-	pthread_mutex_unlock(&pending_notify_mutex);
 
 retry:
 	pthread_mutex_lock(&pending_block_mutex);
