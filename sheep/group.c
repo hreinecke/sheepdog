@@ -436,13 +436,14 @@ static bool cluster_ctime_check(const struct cluster_info *cinfo)
  * Sheepdog can start automatically if and only if all the members in the latest
  * epoch are gathered.
  */
-static bool enough_nodes_gathered(struct cluster_info *cinfo,
-				  const struct sd_node *joining,
+static bool enough_nodes_gathered(const struct sd_node *joining,
 				  const struct rb_root *nroot,
 				  size_t nr_nodes)
 {
-	sd_debug("sender %s, %lu nodes present",
-		 node_to_str(joining), nr_nodes);
+	struct cluster_info *cinfo = &sys->cinfo;
+
+	sd_debug("sender %s, %u nodes found, %lu nodes present",
+		 node_to_str(joining), cinfo->nr_nodes, nr_nodes);
 	for (int i = 0; i < cinfo->nr_nodes; i++) {
 		const struct sd_node *key = cinfo->nodes + i, *n;
 
@@ -498,7 +499,7 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 		sd_debug("no epoch set, wait for initialisation");
 		return status;
 	}
-	if (enough_nodes_gathered(&sys->cinfo, joining, nroot, nr_nodes))
+	if (enough_nodes_gathered(joining, nroot, nr_nodes))
 		return SD_STATUS_OK;
 
 	return status;
@@ -1464,6 +1465,11 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 			sizeof(sys->cinfo.nodes), &nr_nodes);
 		if (ret != SD_RES_SUCCESS)
 			return -1;
+		sd_debug("read %u nodes", nr_nodes);
+		for (i = 0; i < nr_nodes; i++) {
+			sd_debug("node %d: %s", i,
+				 node_to_str(&sys->cinfo.nodes[i]));
+		}
 		sys->cinfo.nr_nodes = nr_nodes;
 	}
 
