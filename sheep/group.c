@@ -293,6 +293,7 @@ drop:
 main_fn bool sd_block_handler(const struct sd_node *sender)
 {
 	struct request *req = NULL;
+	struct list_head *l;
 
 	if (!node_is_local(sender))
 		return false;
@@ -302,9 +303,15 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 	cluster_op_running = true;
 
 	pthread_mutex_lock(&pending_block_mutex);
-	req = list_first_entry(main_thread_get(pending_block_list),
-				struct request, pending_list);
+	l = main_thread_get(pending_block_list);
+	if (!list_empty(l))
+		req = list_first_entry(l, struct request,
+				       pending_list);
 	pthread_mutex_unlock(&pending_block_mutex);
+	if (!req) {
+		sd_warn("empty block list");
+		return false;
+	}
 	req->work.fn = do_process_work;
 	req->work.done = cluster_op_done;
 
@@ -1034,6 +1041,7 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 		msg ? get_sd_op(msg->req.opcode) : NULL;
 	int ret = msg? msg->rsp.result : 0;
 	struct request *req = NULL;
+	struct list_head *l;
 
 	sd_debug("op %s, size: %zu, from: %s", op_name(op), data_len,
 		 node_to_str(sender));
@@ -1043,17 +1051,21 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 	if (node_is_local(sender)) {
 		if (has_process_work(op)) {
 			pthread_mutex_lock(&pending_block_mutex);
-			req = list_first_entry(
-				main_thread_get(pending_block_list),
-				struct request, pending_list);
-			list_del(&req->pending_list);
+			l = main_thread_get(pending_block_list);
+			if (!list_empty(l)) {
+				req = list_first_entry(l,  struct request,
+						       pending_list);
+				list_del(&req->pending_list);
+			}
 			pthread_mutex_unlock(&pending_block_mutex);
 		} else {
 			pthread_mutex_lock(&pending_notify_mutex);
-			req = list_first_entry(
-				main_thread_get(pending_notify_list),
-				struct request, pending_list);
-			list_del(&req->pending_list);
+			l = main_thread_get(pending_notify_list);
+			if (!list_empty(l)) {
+				req = list_first_entry(l, struct request,
+						       pending_list);
+				list_del(&req->pending_list);
+			}
 			pthread_mutex_unlock(&pending_notify_mutex);
 		}
 	}
