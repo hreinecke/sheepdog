@@ -732,8 +732,8 @@ main_fn void put_request(struct request *req)
 		} else {
 			sd_mutex_lock(&ci->done_lock);
 			list_add_tail(&req->request_list, &ci->done_reqs);
-			sd_debug("rq=%p queue done, tx %s",
-				 req, ci->tx_req ? "req" : "none");
+			sd_debug("rq=%p queue done, tx %s, type %d",
+				 req, ci->tx_req ? "req" : "none", ci->type);
 			sd_mutex_unlock(&ci->done_lock);
 			switch (ci->type) {
 			case CLIENT_INFO_TYPE_DEFAULT:
@@ -906,12 +906,15 @@ static void tx_main(struct work *work)
 	req = ci->rx_req;
 	ci->tx_req = NULL;
 	sd_mutex_unlock(&ci->tx_lock);
-	sd_assert(req != NULL);
 
 	tracepoint(request, tx_main, ci->conn.fd, work, req);
 
 	refcount_dec(&ci->refcnt);
 
+	if (!req) {
+		sd_warn("no request to send");
+		return;
+	}
 	if (is_logging_op(req->op)) {
 		sd_info("free req=%p, fd=%d, client=%s:%d, op=%s, result=%02X",
 			req, ci->conn.fd,
