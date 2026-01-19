@@ -1964,14 +1964,16 @@ const struct sd_op_template *get_sd_op(uint8_t opcode)
 		sd_warn("invalid opcode %x", opcode);
 		return NULL;
 	}
-	if (!strlen(sd_ops[opcode].name)) {
+	if (sd_ops[opcode].type == 0) {
+		sd_warn("empty opcode");
+		return NULL;
+	}
+
+	if (!sd_ops[opcode].name || !strlen(sd_ops[opcode].name)) {
 		sd_warn("disabled opcode %d", opcode);
 		return NULL;
 	}
 			
-	if (sd_ops[opcode].type == 0)
-		return NULL;
-
 	return sd_ops + opcode;
 }
 
