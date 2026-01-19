@@ -218,7 +218,6 @@ void wakeup_requests_on_epoch(void)
 
 	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&sys->req_wait_queue, &pending_list);
-	sd_mutex_unlock(&sys->req_wait_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		switch (req->rp.result) {
@@ -246,7 +245,6 @@ void wakeup_requests_on_epoch(void)
 		}
 	}
 
-	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&pending_list, &sys->req_wait_queue);
 	sd_mutex_unlock(&sys->req_wait_lock);
 }
@@ -259,7 +257,6 @@ void wakeup_requests_on_oid(uint64_t oid)
 
 	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&sys->req_wait_queue, &pending_list);
-	sd_mutex_unlock(&sys->req_wait_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		if (req->local_oid != oid)
@@ -267,7 +264,6 @@ void wakeup_requests_on_oid(uint64_t oid)
 		sd_debug("retry %016" PRIx64, req->local_oid);
 		del_requeue_request(req);
 	}
-	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&pending_list, &sys->req_wait_queue);
 	sd_mutex_unlock(&sys->req_wait_lock);
 }
@@ -279,12 +275,12 @@ void wakeup_all_requests(void)
 
 	sd_mutex_lock(&sys->req_wait_lock);
 	list_splice_init(&sys->req_wait_queue, &pending_list);
-	sd_mutex_unlock(&sys->req_wait_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		sd_debug("%016"PRIx64, req->rq.obj.oid);
 		del_requeue_request(req);
 	}
+	sd_mutex_unlock(&sys->req_wait_lock);
 }
 
 static void queue_peer_request(struct request *req)
@@ -702,10 +698,10 @@ main_fn void put_request(struct request *req)
 {
 	struct client_info *ci = req->ci;
 	const struct sd_op_template *op_tmpl = get_sd_op(req->rq.opcode);
+	const char *op = op_tmpl ? op_name(op_tmpl) : "<unknown>";
 
 	sd_warn("complete req=%p, fd=%d, client=%s:%d op=%s",
-		req, ci->conn.fd, ci->conn.ipstr, ci->conn.port,
-		op_tmpl ? op_name(op_tmpl) : "<unknown>");
+		req, ci->conn.fd, ci->conn.ipstr, ci->conn.port, op);
 
 	if (refcount_dec(&req->refcnt) > 0) {
 		sd_debug("req=%p busy", req);
@@ -726,8 +722,7 @@ main_fn void put_request(struct request *req)
 			 */
 			sd_debug("free req=%p, fd=%d, client=%s:%d op=%s", req,
 				 ci->conn.fd, ci->conn.ipstr,
-				 ci->conn.port,
-				 op_name(get_sd_op(req->rq.opcode)));
+				 ci->conn.port, op);
 			free_request(req);
 			clear_client_info(ci);
 		} else {
@@ -958,6 +953,7 @@ static void clear_client_info(struct client_info *ci)
 	sd_debug("connection seems to be dead");
 
 	INIT_LIST_HEAD(&done);
+	sd_mutex_lock(&ci->done_lock);
 	list_splice_init(&ci->done_reqs, &done);
 	list_for_each_entry(req, &done, request_list) {
 		list_del(&req->request_list);
@@ -966,6 +962,7 @@ static void clear_client_info(struct client_info *ci)
 			 ci->conn.port, op_name(get_sd_op(req->rq.opcode)));
 		free_request(req);
 	}
+	sd_mutex_unlock(&ci->done_lock);
 
 	unregister_event(ci->conn.fd);
 
@@ -1209,12 +1206,12 @@ static void local_req_handler(int listen_fd, int events, void *data)
 
 	sd_mutex_lock(&sys->local_req_lock);
 	list_splice_init(&sys->local_req_queue, &pending_list);
-	sd_mutex_unlock(&sys->local_req_lock);
 
 	list_for_each_entry(req, &pending_list, request_list) {
 		list_del(&req->request_list);
 		queue_request(req);
 	}
+	sd_mutex_unlock(&sys->local_req_lock);
 }
 
 void local_request_init(void)
