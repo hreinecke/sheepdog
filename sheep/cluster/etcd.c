@@ -233,14 +233,14 @@ static int etcd_node_set_disk_attr(struct etcd_node *node, int disk_num)
 	size_t len;
 	int ret;
 
-	len = snprintf(val, sizeof(val), "%lu", di->disk_id);
+	len = snprintf(val, sizeof(val), "%" PRIu64, di->disk_id);
 	snprintf(key, sizeof(key),
 		 DEFAULT_BASE MEMBER_ZNODE "%s/disks/%d/disk_id",
 		 node->node_id, disk_num);
 	ret = etcd_kv_new(node->ctx, key, val, len);
 	if (ret < 0)
 		return ret;
-	len = snprintf(val, sizeof(val), "%lu", di->disk_space);
+	len = snprintf(val, sizeof(val), "%" PRIu64, di->disk_space);
 	snprintf(key, sizeof(key),
 		 DEFAULT_BASE MEMBER_ZNODE "%s/disks/%d/disk_space",
 		 node->node_id, disk_num);
