@@ -1141,7 +1141,7 @@ static void etcd_obj_to_json(struct sd_req *req, struct json_object *obj)
 			      json_object_new_int(req->obj.copy_policy));
 	json_object_object_add(obj, "ec_index",
 			       json_object_new_int(req->obj.ec_index));
-	json_object_object_add(obj, "tgt_epochj",
+	json_object_object_add(obj, "tgt_epoch",
 			       json_object_new_int(req->obj.tgt_epoch));
 	json_object_object_add(obj, "offset",
 			       json_object_new_int(req->obj.offset));
