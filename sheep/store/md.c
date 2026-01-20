@@ -811,6 +811,9 @@ void update_node_disks(void)
 		sys->this_node.disks[i].disk_id =
 			sd_hash(disk->path, strlen(disk->path));
 		sys->this_node.disks[i].disk_space = disk->space;
+		sd_debug("add disk %d id %016" PRIx64 " space %"PRIu64,
+			 i, sys->this_node.disks[i].disk_id,
+			 sys->this_node.disks[i].disk_space);
 		i++;
 	}
 	sd_rw_unlock(&md.lock);
