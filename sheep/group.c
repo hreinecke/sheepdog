@@ -329,20 +329,32 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
  */
 main_fn void queue_cluster_request(struct request *req)
 {
+	struct request *tmp;
 	int ret;
+
 	sd_debug("%s (%p)", op_name(req->op), req);
 
 	if (has_process_work(req->op)) {
-		ret = sys->cdrv->block();
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("failed to broadcast block to cluster, %s",
-			       sd_strerror(ret));
-			goto error;
-		}
 		pthread_mutex_lock(&pending_block_mutex);
 		list_add_tail(&req->pending_list,
 			      main_thread_get(pending_block_list));
 		pthread_mutex_unlock(&pending_block_mutex);
+		ret = sys->cdrv->block();
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("failed to broadcast block to cluster, %s",
+			       sd_strerror(ret));
+			pthread_mutex_lock(&pending_block_mutex);
+			list_for_each_entry(tmp,
+					    main_thread_get(pending_block_list),
+					    pending_list) {
+				if (tmp == req) {
+					list_del(&req->pending_list);
+					break;
+				}
+			}
+			pthread_mutex_unlock(&pending_block_mutex);
+			goto error;
+		}
 	} else {
 		struct vdi_op_message *msg;
 		size_t size;
@@ -350,17 +362,26 @@ main_fn void queue_cluster_request(struct request *req)
 		msg = prepare_cluster_msg(req, &size);
 		msg->rsp.result = SD_RES_SUCCESS;
 
-		ret = sys->cdrv->notify(msg, size);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("failed to broadcast notify to cluster, %s",
-			       sd_strerror(ret));
-			goto error;
-		}
-		INIT_LIST_NODE(&req->pending_list);
 		pthread_mutex_lock(&pending_notify_mutex);
 		list_add_tail(&req->pending_list,
 			      main_thread_get(pending_notify_list));
 		pthread_mutex_unlock(&pending_notify_mutex);
+		ret = sys->cdrv->notify(msg, size);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("failed to broadcast notify to cluster, %s",
+			       sd_strerror(ret));
+			pthread_mutex_lock(&pending_notify_mutex);
+			list_for_each_entry(tmp,
+					    main_thread_get(pending_notify_list),
+					    pending_list) {
+				if (tmp == req) {
+					list_del(&req->pending_list);
+					break;
+				}
+			}
+			pthread_mutex_unlock(&pending_notify_mutex);
+			goto error;
+		}
 		free(msg);
 	}
 	req->status = REQUEST_INIT;
