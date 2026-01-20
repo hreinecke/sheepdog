@@ -690,6 +690,41 @@ static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 			       json_object_new_string(status_str));
 }
 
+static void etcd_node_to_json(struct sd_node *node, json_object *obj)
+{
+	const char *node_id = node_to_str(node);
+#ifdef HAVE_DISKVNODES
+	struct json_object *disks_obj;
+	int i;
+#endif
+
+	json_object_object_add(obj, "nid",
+			       json_object_new_string(node_id));
+	json_object_object_add(obj, "zone",
+			       json_object_new_int64(node->zone));
+	json_object_object_add(obj, "space",
+			       json_object_new_int64(node->space));
+#ifdef HAVE_DISKVNODES
+	disks_obj = json_object_new_array();
+	for (i = 0; i < DISK_MAX; i++) {
+		struct json_object *disk_obj;
+		struct disk_info *d = &node->disks[i];
+
+		if (!d->disk_id)
+			continue;
+		disk_obj = json_object_new_object();
+		json_object_object_add(disk_obj, "num",
+				       json_object_new_int(i));
+		json_object_object_add(disk_obj, "id",
+				       json_object_new_int64(d->disk_id));
+		json_object_object_add(disk_obj, "space",
+				       json_object_new_int64(d->disk_space));
+		json_object_array_add(disks_obj, disk_obj);
+	}
+	json_object_object_add(obj, "disks", disks_obj);
+#endif
+}
+
 static void etcd_nodes_to_json(struct sd_node *nodes, int nr_nodes,
 			       json_object *obj)
 {
@@ -701,39 +736,9 @@ static void etcd_nodes_to_json(struct sd_node *nodes, int nr_nodes,
 	nodes_obj = json_object_new_array();
 	for (int i = 0; i < nr_nodes; i++) {
 		struct json_object *node_obj;
-#ifdef HAVE_DISKVNODES
-		struct json_object *disks_obj;
-		int j;
-#endif
-		struct sd_node *s = &nodes[i];
-		const char *node_id = node_to_str(s);
 
 		node_obj = json_object_new_object();
-		json_object_object_add(node_obj, "nid",
-				       json_object_new_string(node_id));
-		json_object_object_add(node_obj, "zone",
-				       json_object_new_int64(s->zone));
-		json_object_object_add(node_obj, "space",
-				       json_object_new_int64(s->space));
-#ifdef HAVE_DISKVNODES
-		disks_obj = json_object_new_array();
-		for (j = 0; j < DISK_MAX; j++) {
-			struct json_object *disk_obj;
-			struct disk_info *d = &nodes->disks[j];
-
-			if (!d->disk_id)
-				continue;
-			disk_obj = json_object_new_object();
-			json_object_object_add(disk_obj, "num",
-					       json_object_new_int(j));
-			json_object_object_add(disk_obj, "id",
-					       json_object_new_int64(d->disk_id));
-			json_object_object_add(disk_obj, "space",
-					       json_object_new_int64(d->disk_space));
-			json_object_array_add(disks_obj, disk_obj);
-		}
-		json_object_object_add(node_obj, "disks", disks_obj);
-#endif
+		etcd_node_to_json(&nodes[i], node_obj);
 		json_object_array_add(nodes_obj, node_obj);
 	}
 	json_object_object_add(obj, "nodes", nodes_obj);
@@ -778,6 +783,53 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 				       json_object_new_string(node->node_id));
 }
 
+static void etcd_json_to_node(struct json_object *obj,
+			       struct sd_node *node)
+{
+	struct json_object *node_obj;
+	const char *nid_str;
+#ifdef HAVE_DISKVNODES
+	struct json_object *disks_obj;
+	int j, nr_disks;
+#endif
+
+	node_obj = json_object_object_get(obj, "nid");
+	nid_str = json_object_get_string(node_obj);
+	if (!str_to_node(nid_str, node)) {
+		sd_warn("failed to parse '%s'", nid_str);
+		return;
+	}
+	node_obj = json_object_object_get(obj, "zone");
+	if (node_obj)
+		node->zone = json_object_get_int64(node_obj);
+	node_obj = json_object_object_get(obj, "space");
+	if (node_obj)
+		node->space = json_object_get_int64(node_obj);
+#ifdef HAVE_DISKVNODES
+	disks_obj = json_object_object_get(obj, "disks");
+	nr_disks = json_object_array_length(disks_obj);
+	for (j = 0; j < nr_disks; j++) {
+		struct json_object *disk_obj, *num_obj;
+		struct json_object *id_obj, *space_obj;
+		struct disk_info *disk;
+		int disk_num;
+
+		disk_obj = json_object_array_get_idx(disks_obj, j);
+		num_obj = json_object_object_get(disk_obj, "num");
+		if (!num_obj)
+			continue;
+		disk_num = json_object_get_int(num_obj);
+		disk = &node->disks[disk_num];
+		id_obj = json_object_object_get(disk_obj, "id");
+		if (id_obj)
+			disk->disk_id = json_object_get_int64(id_obj);
+		space_obj = json_object_object_get(disk_obj, "space");
+		if (space_obj)
+			disk->disk_id = json_object_get_int64(space_obj);
+	}
+#endif
+}
+
 static void etcd_json_to_nodes(struct json_object *obj,
 			       struct cluster_info *cinfo)
 {
@@ -785,54 +837,12 @@ static void etcd_json_to_nodes(struct json_object *obj,
 
 	cinfo->nr_nodes = nr_nodes;
 	for (i = 0; i < nr_nodes; i++) {
-		struct json_object *node_obj, *attr_obj;
-		const char *nid_str;
-		struct sd_node node;
-#ifdef HAVE_DISKVNODES
-		struct json_object *disks_obj;
-		int j, nr_disks;
-#endif
+		struct json_object *node_obj;
+		struct sd_node *node = &cinfo->nodes[i];
 
-		memset(&node, 0, sizeof(node));
 		node_obj = json_object_array_get_idx(obj, i);
-		attr_obj = json_object_object_get(node_obj, "nid");
-		nid_str = json_object_get_string(attr_obj);
-		if (!str_to_node(nid_str, &node)) {
-			sd_warn("failed to parse '%s'", nid_str);
-			continue;
-		}
-		attr_obj = json_object_object_get(node_obj, "zone");
-		if (attr_obj)
-			node.zone = json_object_get_int64(attr_obj);
-		attr_obj = json_object_object_get(node_obj, "space");
-		if (attr_obj)
-			node.space = json_object_get_int64(attr_obj);
-#ifdef HAVE_DISKVNODES
-		disks_obj = json_object_object_get(node_obj, "disks");
-		nr_disks = json_object_array_length(disks_obj);
-		for (j = 0; j < nr_disks; j++) {
-			struct json_object *disk_obj, *num_obj;
-			struct json_object *id_obj, *space_obj;
-			struct disk_info *disk;
-			int disk_num;
-
-			disk_obj = json_object_array_get_idx(disks_obj, j);
-			num_obj = json_object_object_get(disk_obj, "num");
-			if (!num_obj)
-				continue;
-			disk_num = json_object_get_int(num_obj);
-			disk = &node.disks[disk_num];
-			id_obj = json_object_object_get(disk_obj, "id");
-			if (id_obj)
-				disk->disk_id =
-					json_object_get_int64(id_obj);
-			space_obj = json_object_object_get(disk_obj, "space");
-			if (space_obj)
-				disk->disk_id =
-					json_object_get_int64(space_obj);
-		}
-#endif
-		memcpy(&cinfo->nodes[i], &node, sizeof(node));
+		memset(node, 0, sizeof(*node));
+		etcd_json_to_node(node_obj, node);
 	}
 }
 
@@ -1151,7 +1161,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 {
 	struct sd_req *req = &msg->req;
 	struct sd_rsp *rsp = &msg->rsp;
-	struct json_object *req_obj, *vdi_obj, *data_obj;
+	struct json_object *req_obj, *vdi_obj, *data_obj, *node_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
 	uint32_t *vdi_id = (uint32_t *)data;
 	struct sd_node *node;
@@ -1234,8 +1244,9 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		json_object_object_add(req_obj, "obj", vdi_obj);
 		node = (struct sd_node *)data;
 		data_obj = json_object_new_object();
-		json_object_object_add(data_obj, "node",
-				       json_object_new_string(node_to_str(node)));
+		node_obj = json_object_new_object();
+		etcd_node_to_json(node, node_obj);
+		json_object_object_add(data_obj, "node", node_obj);
 		json_object_object_add(obj, "data", data_obj);
 		break;
 	case SD_OP_ALTER_VDI_COPY:
@@ -1523,29 +1534,15 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 
 			*id = json_object_get_int(val_obj);
 		} else if (!strcmp(key, "node")) {
-			struct etcd_node tmp;
-			const char *val = json_object_get_string(val_obj);
-			struct sd_node *node;
-			int ret;
+			struct sd_node *node = (struct sd_node *)data;
 
 			if (data_length < sizeof(*node)) {
 				sd_warn("%s: invalde node data size",
 					__func__);
 				return;
 			}
-			memset(&tmp, 0, sizeof(tmp));
-			strcpy(tmp.node_id, val);
-			tmp.ctx = ctx;
-			rb_init_node(&tmp.rb);
-			ret = etcd_node_download(&tmp);
-			if (ret < 0) {
-				sd_warn("%s: failed to download '%s'",
-					__func__, tmp.node_id);
-			} else {
-				node = (struct sd_node *)data;
-				memcpy(node, &tmp.node,
-				       sizeof(*node));
-			}
+			memset(node, 0, sizeof(*node));
+			etcd_json_to_node(val_obj, node);
 		} else
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
