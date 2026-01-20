@@ -635,8 +635,6 @@ static void parse_watch_response(struct json_object *resp, void *arg)
 		 * for the next event.
 		 */
 		ev->ev_revision++;
-		sd_debug("%s: new revision %ld",
-			 __func__, ev->ev_revision);
 	}
 
 	/* 'created' set in response to a 'WatchRequest', no data is pending */
