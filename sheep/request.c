@@ -709,8 +709,8 @@ main_fn void put_request(struct request *req)
 	if (!ci) {
 		sd_warn("complete req=%p op=%s", req, op);
 	} else {
-		sd_warn("complete req=%p, fd=%d, client=%s:%d op=%s",
-			req, ci->conn.fd, ci->conn.ipstr, ci->conn.port, op);
+		sd_debug("complete req=%p, fd=%d, client=%s:%d op=%s",
+			 req, ci->conn.fd, ci->conn.ipstr, ci->conn.port, op);
 	}
 
 	if (refcount_dec(&req->refcnt) > 0) {
