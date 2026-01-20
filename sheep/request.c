@@ -529,7 +529,8 @@ static struct request *alloc_local_request(void *data, int data_length)
 	}
 
 	req->local = true;
-
+	INIT_LIST_NODE(&req->request_list);
+	INIT_LIST_NODE(&req->pending_list);
 	refcount_set(&req->refcnt, 1);
 
 	return req;
