@@ -209,7 +209,12 @@ static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
 		strcpy(val, addr);
 		len = strlen(val);
 	} else if (!strcmp(attr, "io_addr")) {
+		uint8_t empty_addr[16] = {};
 		const char *addr = io_node_to_str(&node->node);
+
+		if (!memcmp(node->node.nid.io_addr, empty_addr,
+			   sizeof(empty_addr)))
+			return 0;
 		strcpy(val, addr);
 		len = strlen(val);
 	} else
@@ -223,13 +228,22 @@ static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
 #ifdef HAVE_DISKVNODES
 static int etcd_node_set_disk_attr(struct etcd_node *node, int disk_num)
 {
+	struct disk_info *di = &node->node.disks[disk_num];
 	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
+	int ret;
 
-	len = snprintf(val, sizeof(val), "%lu",
-		       node->node.disks[disk_num].disk_space);
-	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/disks/%lu",
-		node->node_id, node->node.disks[disk_num].disk_id);
+	len = snprintf(val, sizeof(val), "%lu", di->disk_id);
+	snprintf(key, sizeof(key),
+		 DEFAULT_BASE MEMBER_ZNODE "%s/disks/%d/disk_id",
+		 node->node_id, disk_num);
+	ret = etcd_kv_new(node->ctx, key, val, len);
+	if (ret < 0)
+		return ret;
+	len = snprintf(val, sizeof(val), "%lu", di->disk_space);
+	snprintf(key, sizeof(key),
+		 DEFAULT_BASE MEMBER_ZNODE "%s/disks/%d/disk_space",
+		 node->node_id, disk_num);
 	return etcd_kv_new(node->ctx, key, val, len);
 }
 #endif
@@ -291,8 +305,8 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	int attr_type;
 #ifdef HAVE_DISKVNODES
 	struct disk_info *disk_info = NULL;
-	unsigned long disk_id;
-	int i, disk_num = -1;
+	char *disk;
+	int ret, disk_num = -1;
 #endif
 
 	attr = strrchr(kv->key, '/');
@@ -337,29 +351,27 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 	}
 
 #ifdef HAVE_DISKVNODES
-	if (!strstr(kv->key, "disks")) {
+	disk = strstr(kv->key, "disks");
+	if (!disk) {
 		sd_debug("unhandled attribute '%s'", attr);
 		return -EINVAL;
 	}
-	disk_id = strtoul(attr, NULL, 10);
-	for (i = 0; i < DISK_MAX; i++) {
-		if (!node->node.disks[i].disk_id) {
-			if (disk_num == -1)
-				disk_num = i;
-			continue;
-		}
-		if (node->node.disks[i].disk_id == disk_id) {
-			disk_info = &node->node.disks[i];
-			break;
-		}
+	ret = sscanf(disk, "disks/%u/%s", &disk_num, attr);
+	if (ret != 2) {
+		sd_debug("cannot parse '%s'", disk);
+		return -EINVAL;
 	}
-	if (!disk_info) {
-		if (disk_num >= DISK_MAX)
-			return -EINVAL;
-		disk_info = &node->node.disks[disk_num];
+	if (disk_num >= DISK_MAX)
+		return -EINVAL;
+	disk_info = &node->node.disks[disk_num];
+	if (!strcmp(attr, "disk_id"))
+		disk_info->disk_id = num;
+	else if (!strcmp(attr, "disk_space"))
+		disk_info->disk_space = num;
+	else {
+		sd_debug("unhandled disk addribute '%s'", attr);
+		return -EINVAL;
 	}
-	disk_info->disk_id = disk_id;
-	disk_info->disk_space = num;
 #endif
 	return 0;
 }
