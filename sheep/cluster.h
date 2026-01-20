@@ -210,7 +210,7 @@ static inline const char *get_cdrv_option(const struct cluster_driver *cdrv,
 /* callbacks back into sheepdog from the cluster drivers */
 void sd_accept_handler(const struct sd_node *joined,
 		       const struct rb_root *nroot, size_t nr_members,
-		       const void *opaque);
+		       const struct cluster_info *cinfo);
 void sd_leave_handler(const struct sd_node *left, const struct rb_root *nroot,
 		      size_t nr_members);
 void sd_notify_handler(const struct sd_node *sender, void *msg, size_t msg_len);

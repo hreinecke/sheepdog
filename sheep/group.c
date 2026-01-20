@@ -1273,9 +1273,8 @@ static bool cluster_join_check(const struct cluster_info *cinfo)
 
 main_fn void sd_accept_handler(const struct sd_node *joined,
 			       const struct rb_root *nroot, size_t nr_nodes,
-			       const void *opaque)
+			       const struct cluster_info *cinfo)
 {
-	const struct cluster_info *cinfo = opaque;
 	enum sd_status status = sys_get_status();
 	struct sd_node *n;
 

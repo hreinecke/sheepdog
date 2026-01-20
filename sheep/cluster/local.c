@@ -482,7 +482,8 @@ static bool local_process_event(void)
 
 		return false;
 	case EVENT_ACCEPT:
-		sd_accept_handler(&ev->sender.node, &root, nr_nodes, ev->buf);
+		cinfo = (struct cluster_info *)ev->buf;
+		sd_accept_handler(&ev->sender.node, &root, nr_nodes, cinfo);
 		break;
 	case EVENT_LEAVE:
 		if (ev->sender.gateway) {
