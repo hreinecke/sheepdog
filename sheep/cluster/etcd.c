@@ -793,6 +793,7 @@ static void etcd_json_to_nodes(struct json_object *obj,
 		int j, nr_disks;
 #endif
 
+		memset(&node, 0, sizeof(node));
 		node_obj = json_object_array_get_idx(obj, i);
 		attr_obj = json_object_object_get(node_obj, "nid");
 		nid_str = json_object_get_string(attr_obj);
