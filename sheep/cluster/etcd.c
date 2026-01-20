@@ -538,9 +538,12 @@ static int etcd_cinfo_upload(struct etcd_ctx *ctx,
 	return rc;
 }
 
+#define UPDATE_CINFO_FROM_ETCD(c, a, k, v) \
+	else if (!strcmp(k, #a)) (c)->a = v
+
 static int etcd_cinfo_create(struct etcd_ctx *ctx)
 {
-	int rc = 0, num_kvs, i, j;
+	int rc = 0, num_kvs, i;
 	char key[1024];
 	struct etcd_kv *kvs;
 	unsigned long attr_mask = -1;
@@ -548,76 +551,44 @@ static int etcd_cinfo_create(struct etcd_ctx *ctx)
 	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE);
 	num_kvs = etcd_kv_range(ctx, key, &kvs);
 	for (i = 0; i < num_kvs; i++) {
-		size_t elems = ARRAY_SIZE(etcd_cinfo_attr_names);
 		const char *attr;
-		enum cinfo_attr_type attr_type = 0;
-		enum sd_status status;
 		unsigned long val;
 
 		attr = strrchr(kvs[i].key, '/');
-		for (j = 0; j < elems; j++) {
-			const char *n = etcd_cinfo_attr_names[j];
-
-			if (!n)
-				continue;
-			if (!strcmp(n, attr + 1)) {
-				attr_type = j;
-				break;
-			}
-		}
-		if (!attr_type)
+		if (!attr) {
+			sd_warn("invalid key '%s'", kvs[i].key);
 			continue;
-		attr_mask &= ~attr_type;
-		switch (attr_type) {
-		case CINFO_ATTR_PROTO_VER:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.proto_ver = val;
-			break;
-		case CINFO_ATTR_DISABLE_RECOVERY:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.proto_ver = val;
-			break;
-		case CINFO_ATTR_NR_NODES:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.nr_nodes = val;
-			break;
-		case CINFO_ATTR_EPOCH:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.epoch = val;
-			break;
-		case CINFO_ATTR_CTIME:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.ctime = val;
-			break;
-		case CINFO_ATTR_FLAGS:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.flags = val;
-			break;
-		case CINFO_ATTR_NR_COPIES:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.nr_copies = val;
-			break;
-		case CINFO_ATTR_COPY_POLICY:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.copy_policy = val;
-			break;
-		case CINFO_ATTR_BSS:
-			val = strtoul(kvs[i].value, NULL, 10);
-			etcd_cinfo.block_size_shift = val;
-			break;
-		case CINFO_ATTR_DEFAULT_STORE:
+		}
+		attr++;
+		if (!strcmp(attr, "default_store")) {
 			if (kvs[i].value_len)
 				strcpy((char *)etcd_cinfo.default_store,
 				       kvs[i].value);
-			break;
-		case CINFO_ATTR_STATUS:
+			continue;
+		}
+		if (!strcmp(attr, "status")) {
+			enum sd_status status;
 			status = etcd_cinfo_status_to_type(kvs[i].value);
 			if (status)
 				etcd_cinfo.status = status;
-			break;
-		default:
-			break;
+			continue;
 		}
+		val = strtoul(kvs[i].value, NULL, 10);
+
+		if (!strcmp(attr, "proto_ver"))
+			etcd_cinfo.proto_ver = val;
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, disable_recovery,
+				       attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, nr_nodes, attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, epoch, attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, ctime, attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, flags, attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, nr_copies, attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, copy_policy, attr, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, block_size_shift,
+				       attr, val);
+		else
+			sd_debug("unhandled attribute '%s'", attr + 1);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(etcd_cinfo_attr_names); i++) {
@@ -1842,8 +1813,11 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		sd_debug("skipping updates to '%s'", kv->key);
 		return;
 	}
-	if (strcmp(key + 1, EV_ZNODE)) {
-		if (!strcmp(key + 1, "status")) {
+	key++;
+	if (strcmp(key, EV_ZNODE)) {
+		unsigned long val;
+
+		if (!strcmp(key, "status")) {
 			enum sd_status status;
 
 			status = etcd_cinfo_status_to_type(kv->value);
@@ -1854,7 +1828,27 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			}
 			return;
 		}
-		sd_debug("skipping updates to '%s'", key + 1);
+		if (!strcmp(key, "default_store")) {
+			if (kv->value_len)
+				strcpy((char *)etcd_cinfo.default_store,
+				       kv->value);
+			return;
+		}
+		val = strtoul(kv->value, NULL, 10);
+		if (!strcmp(key, "proto_ver"))
+			etcd_cinfo.proto_ver = val;
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, disable_recovery,
+				       key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, nr_nodes, key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, epoch, key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, ctime, key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, flags, key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, nr_copies, key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, copy_policy, key, val);
+		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, block_size_shift,
+				       key, val);
+		else
+			sd_debug("skipping updates to '%s'", key);
 		return;
 	}
 	if (kv->value_len) {
