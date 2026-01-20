@@ -1464,8 +1464,8 @@ static void etcd_json_to_req(struct json_object *obj,
 	}
 }
 
-static void etcd_json_to_data(struct json_object *obj, void *data,
-			      size_t data_length)
+static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
+			      void *data, size_t data_length)
 {
 	struct json_object_iterator itb, ite;
 
@@ -1533,7 +1533,10 @@ static void etcd_json_to_data(struct json_object *obj, void *data,
 					__func__);
 				return;
 			}
+			memset(&tmp, 0, sizeof(tmp));
 			strcpy(tmp.node_id, val);
+			tmp.ctx = ctx;
+			rb_init_node(&tmp.rb);
 			ret = etcd_node_download(&tmp);
 			if (ret < 0) {
 				sd_warn("%s: failed to download '%s'",
@@ -1604,7 +1607,7 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 		if (!strcmp(key, "req")) {
 			etcd_json_to_req(val_obj, &msg->req);
 		} else if (!strcmp(key, "data")) {
-			etcd_json_to_data(val_obj, &msg->data,
+			etcd_json_to_data(node->ctx, val_obj, &msg->data,
 					  data_len);
 		} else if (!strcmp(key, "node")) {
 			if (node)
