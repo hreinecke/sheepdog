@@ -1007,7 +1007,6 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 			       json_object_new_string(event));
 	json_str = json_object_to_json_string_ext(obj,
 						  JSON_C_TO_STRING_PLAIN);
-	sd_debug("post event %s", json_str);
 	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE EV_ZNODE);
 
 	rc = etcd_kv_store(ctx, key, json_str, strlen(json_str));
