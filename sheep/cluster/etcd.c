@@ -1607,7 +1607,7 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 		if (!strcmp(key, "req")) {
 			etcd_json_to_req(val_obj, &msg->req);
 		} else if (!strcmp(key, "data")) {
-			etcd_json_to_data(node->ctx, val_obj, &msg->data,
+			etcd_json_to_data(this_ctx, val_obj, &msg->data,
 					  data_len);
 		} else if (!strcmp(key, "node")) {
 			if (node)
@@ -1850,6 +1850,7 @@ static void etcd_handle_notify(struct etcd_ctx *ctx,
 	size_t msg_len = 0;
 
 	memset(&notify, 0, sizeof(notify));
+	notify.ctx = ctx;
 	rb_init_node(&notify.rb);
 	msg = etcd_json_to_msg(obj, &notify, &msg_len);
 	if (!msg) {
