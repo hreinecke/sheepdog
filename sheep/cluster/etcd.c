@@ -1,14 +1,5 @@
 /*
- * Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
- *
- * Copyright (C) 2012 Taobao Inc.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License version
- * 2 as published by the Free Software Foundation.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2025 Hannes Reinecke, SUSE
  */
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +15,7 @@
 #include "work.h"
 #include "util.h"
 #include "rbtree.h"
+#include "json.h"
 #include "etcd_client.h"
 
 #define SESSION_TIMEOUT 30		/* seconds */
@@ -198,7 +190,7 @@ static int etcd_node_set_int_attr(struct etcd_node *node, const char *attr,
 	return etcd_kv_new(node->ctx, key, val, len);
 }
 
-static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
+static int etcd_node_set_addr(struct etcd_node *node, const char *attr)
 {
 	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
@@ -226,9 +218,9 @@ static int etcd_node_set_str_attr(struct etcd_node *node, const char *attr)
 }
 
 #ifdef HAVE_DISKVNODES
-static int etcd_node_set_disk_attr(struct etcd_node *node, int disk_num)
+static int etcd_node_disk_upload(struct etcd_node *node,
+				 struct disk_info *di, int disk_num)
 {
-	struct disk_info *di = &node->node.disks[disk_num];
 	char key[1024], val[MAX_NODE_STR_LEN];
 	size_t len;
 	int ret;
@@ -254,47 +246,32 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 
 	if (create && etcd_node_exists(node->ctx, node->node_id))
 		return -EEXIST;
-	for (i = 0; i < ARRAY_SIZE(etcd_node_attr_names); i++) {
-		if (!etcd_node_attr_names[i])
-			continue;
-		switch (i) {
-		case ATTR_ADDR:
-			rc = etcd_node_set_str_attr(node, "addr");
-			break;
-		case ATTR_IO_ADDR:
-			rc = etcd_node_set_str_attr(node, "io_addr");
-			break;
-		case ATTR_ZONE:
-			rc = etcd_node_set_int_attr(node, "zone",
-						    node->node.zone);
-			break;
-		case ATTR_NR_VNODES:
-			rc = etcd_node_set_int_attr(node, "nr_vnodes",
-						    node->node.nr_vnodes);
-			break;
-		case ATTR_SPACE:
-			rc = etcd_node_set_int_attr(node, "space",
-						    node->node.space);
-			break;
-		default:
-			rc = -EINVAL;
-			break;
-		}
-		if (rc < 0)
-			return rc;
-	}
+	rc = etcd_node_set_addr(node, "addr");
+	if (rc) goto err;
+	rc = etcd_node_set_addr(node, "io_addr");
+	if (rc) goto err;
+	rc = etcd_node_set_int_attr(node, "zone", node->node.zone);
+	if (rc) goto err;
+	rc = etcd_node_set_int_attr(node, "nr_vnodes",
+				    node->node.nr_vnodes);
+	if (rc) goto err;
+	rc = etcd_node_set_int_attr(node, "space",
+				    node->node.space);
+	if (rc) goto err;
 #ifdef HAVE_DISKVNODES
 	for (i = 0; i < DISK_MAX; i++) {
-		if (!node->node.disks[i].disk_id)
+		struct disk_info *di = &node->node.disks[i];
+		if (!di->disk_id)
 			continue;
-		rc = etcd_node_set_disk_attr(node, i);
-		if (rc < 0) {
-			etcd_node_delete(node);
-			return rc;
-		}
+		rc = etcd_node_disk_upload(node, di, i);
+		if (rc < 0)
+			goto err;
 	}
 #endif
 	return 0;
+err:
+	etcd_node_delete(node);
+	return rc;
 }
 
 static inline int etcd_kv_to_node(struct etcd_kv *kv,
@@ -673,60 +650,6 @@ static void etcd_status_to_json(struct json_object *obj, enum sd_status status)
 			       json_object_new_string(status_str));
 }
 
-static void etcd_node_to_json(struct sd_node *node, json_object *obj)
-{
-	const char *node_id = node_to_str(node);
-#ifdef HAVE_DISKVNODES
-	struct json_object *disks_obj;
-	int i;
-#endif
-
-	json_object_object_add(obj, "nid",
-			       json_object_new_string(node_id));
-	json_object_object_add(obj, "zone",
-			       json_object_new_int64(node->zone));
-	json_object_object_add(obj, "space",
-			       json_object_new_int64(node->space));
-#ifdef HAVE_DISKVNODES
-	disks_obj = json_object_new_array();
-	for (i = 0; i < DISK_MAX; i++) {
-		struct json_object *disk_obj;
-		struct disk_info *d = &node->disks[i];
-
-		if (!d->disk_id)
-			continue;
-		disk_obj = json_object_new_object();
-		json_object_object_add(disk_obj, "num",
-				       json_object_new_int(i));
-		json_object_object_add(disk_obj, "id",
-				       json_object_new_int64(d->disk_id));
-		json_object_object_add(disk_obj, "space",
-				       json_object_new_int64(d->disk_space));
-		json_object_array_add(disks_obj, disk_obj);
-	}
-	json_object_object_add(obj, "disks", disks_obj);
-#endif
-}
-
-static void etcd_nodes_to_json(struct sd_node *nodes, int nr_nodes,
-			       json_object *obj)
-{
-	struct json_object *nodes_obj;
-
-	if (!nodes)
-		return;
-
-	nodes_obj = json_object_new_array();
-	for (int i = 0; i < nr_nodes; i++) {
-		struct json_object *node_obj;
-
-		node_obj = json_object_new_object();
-		etcd_node_to_json(&nodes[i], node_obj);
-		json_object_array_add(nodes_obj, node_obj);
-	}
-	json_object_object_add(obj, "nodes", nodes_obj);
-}
-
 #define UPDATE_JSON_INT(o, c, n) \
 	if ((c)->n)					\
 		json_object_object_add(o, #n,		\
@@ -758,75 +681,12 @@ static void etcd_cinfo_to_json(struct cluster_info *cinfo,
 		json_object_object_add(cinfo_obj, "default_store",
 				       json_object_new_string(default_store));
 
-	etcd_nodes_to_json(cinfo->nodes, cinfo->nr_nodes, cinfo_obj);
+	nodes_to_json(cinfo->nodes, cinfo->nr_nodes, cinfo_obj);
 
 	json_object_object_add(obj, "cluster", cinfo_obj);
 	if (node)
 		json_object_object_add(obj, "node",
 				       json_object_new_string(node->node_id));
-}
-
-static void etcd_json_to_node(struct json_object *obj,
-			       struct sd_node *node)
-{
-	struct json_object *node_obj;
-	const char *nid_str;
-#ifdef HAVE_DISKVNODES
-	struct json_object *disks_obj;
-	int j, nr_disks;
-#endif
-
-	node_obj = json_object_object_get(obj, "nid");
-	nid_str = json_object_get_string(node_obj);
-	if (!str_to_node(nid_str, node)) {
-		sd_warn("failed to parse '%s'", nid_str);
-		return;
-	}
-	node_obj = json_object_object_get(obj, "zone");
-	if (node_obj)
-		node->zone = json_object_get_int64(node_obj);
-	node_obj = json_object_object_get(obj, "space");
-	if (node_obj)
-		node->space = json_object_get_int64(node_obj);
-#ifdef HAVE_DISKVNODES
-	disks_obj = json_object_object_get(obj, "disks");
-	nr_disks = json_object_array_length(disks_obj);
-	for (j = 0; j < nr_disks; j++) {
-		struct json_object *disk_obj, *num_obj;
-		struct json_object *id_obj, *space_obj;
-		struct disk_info *disk;
-		int disk_num;
-
-		disk_obj = json_object_array_get_idx(disks_obj, j);
-		num_obj = json_object_object_get(disk_obj, "num");
-		if (!num_obj)
-			continue;
-		disk_num = json_object_get_int(num_obj);
-		disk = &node->disks[disk_num];
-		id_obj = json_object_object_get(disk_obj, "id");
-		if (id_obj)
-			disk->disk_id = json_object_get_int64(id_obj);
-		space_obj = json_object_object_get(disk_obj, "space");
-		if (space_obj)
-			disk->disk_id = json_object_get_int64(space_obj);
-	}
-#endif
-}
-
-static void etcd_json_to_nodes(struct json_object *obj,
-			       struct cluster_info *cinfo)
-{
-	int i, nr_nodes = json_object_array_length(obj);
-
-	cinfo->nr_nodes = nr_nodes;
-	for (i = 0; i < nr_nodes; i++) {
-		struct json_object *node_obj;
-		struct sd_node *node = &cinfo->nodes[i];
-
-		node_obj = json_object_array_get_idx(obj, i);
-		memset(node, 0, sizeof(*node));
-		etcd_json_to_node(node_obj, node);
-	}
 }
 
 static int etcd_json_to_cinfo(struct json_object *obj,
@@ -877,7 +737,9 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			strcpy((char *)cinfo->default_store,
 			       json_object_get_string(val_obj));
 		} else if (!strcmp(key, "nodes")) {
-			etcd_json_to_nodes(val_obj, cinfo);
+			int nr_nodes;
+			json_to_nodes(val_obj, cinfo->nodes, &nr_nodes);
+			cinfo->nr_nodes = nr_nodes;
 		} else {
 			sd_warn("%s: unhandled key '%s'", __func__, key);
 			num_val--;
@@ -1203,7 +1065,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		node = (struct sd_node *)data;
 		data_obj = json_object_new_object();
 		node_obj = json_object_new_object();
-		etcd_node_to_json(node, node_obj);
+		node_to_json(node, node_obj);
 		json_object_object_add(data_obj, "node", node_obj);
 		json_object_object_add(obj, "data", data_obj);
 		break;
@@ -1488,7 +1350,7 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 				return;
 			}
 			memset(node, 0, sizeof(*node));
-			etcd_json_to_node(val_obj, node);
+			json_to_node(val_obj, node);
 		} else
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
