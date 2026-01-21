@@ -227,6 +227,7 @@ struct sd_node_0_8 {
 struct sd_node {
 	struct rb_node  rb;
 	struct node_id  nid;
+	uint16_t	nr_disks;
 	uint16_t	nr_vnodes;
 	uint32_t	zone;
 	uint64_t        space;

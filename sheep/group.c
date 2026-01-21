@@ -905,7 +905,7 @@ static bool membership_changed(const struct cluster_info *cinfo,
 			  size_t nr_nodes)
 {
 	const struct sd_node *key, *n;
-	int i, ret;
+	int i;
 
 	if (nr_nodes != cinfo->nr_nodes)
 		return true;
@@ -914,14 +914,21 @@ static bool membership_changed(const struct cluster_info *cinfo,
 		return false;
 
 	for (i = 0; i < cinfo->nr_nodes; i++) {
+		int j;
+
 		key = cinfo->nodes + i;
 		n = rb_search(nroot, key, rb, node_cmp);
 		if (!n)
 			continue;
-		ret = memcmp(n->disks, key->disks,
-			     sizeof(struct disk_info) * DISK_MAX);
-		if (ret)
-			return true;
+		for (j = 0; j < n->nr_disks; j++) {
+			const struct disk_info *n_di, *key_di;
+
+			n_di = &n->disks[j];
+			key_di = &key->disks[j];
+			if (n_di->disk_id != key_di->disk_id ||
+			    n_di->disk_space != key_di->disk_space)
+				return true;
+		}
 	}
 	return false;
 }
@@ -1339,9 +1346,11 @@ static void update_node_info(struct sd_node *node)
 
 	if (is_cluster_diskmode(&sys->cinfo)) {
 		memset(n->disks, 0, sizeof(struct disk_info) * DISK_MAX);
-		for (int i = 0; i < DISK_MAX; i++)
-			if (node->disks[i].disk_id)
-				n->disks[i] = node->disks[i];
+		for (int i = 0; i < node->nr_disks; i++) {
+			if (!node->disks[i].disk_id)
+				sd_warn("no id on disk %d", i);
+			n->disks[i] = node->disks[i];
+		}
 	}
 	put_vnode_info(cur_vinfo);
 }

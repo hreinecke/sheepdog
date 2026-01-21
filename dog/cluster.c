@@ -211,20 +211,16 @@ static int cluster_format(int argc, char **argv)
 
 static void print_nodes(const struct epoch_log *logs, uint16_t flags)
 {
-	int i, nr_disk;
+	int i;
 	const struct sd_node *entry;
 
 	for (i = 0; i < logs->nr_nodes; i++) {
 		entry = logs->nodes + i;
 		if (flags & SD_CLUSTER_FLAG_DISKMODE) {
-			for (nr_disk = 0; nr_disk < DISK_MAX; nr_disk++) {
-				if (entry->disks[nr_disk].disk_id == 0)
-					break;
-			}
 			printf("%s%s:%d(%d)",
 				(i == 0) ? "" : ", ",
 				addr_to_str(entry->nid.addr, entry->nid.port),
-					entry->nr_vnodes, nr_disk);
+			       entry->nr_vnodes, entry->nr_disks);
 		} else
 			printf("%s%s:%d",
 				(i == 0) ? "" : ", ",
@@ -244,23 +240,14 @@ static void do_print_nodes_diff(const struct epoch_log *log1,
 	for (i = 0; i < log1->nr_nodes; i++) {
 		entry1 = log1->nodes + i;
 		if (flags & SD_CLUSTER_FLAG_DISKMODE) {
-			for (nr_disk1 = 0; nr_disk1 < DISK_MAX; nr_disk1++) {
-				if (entry1->disks[nr_disk1].disk_id == 0)
-					break;
-			}
+			nr_disk1 = entry1->nr_disks;
 		}
 		for (j = 0; j < log2->nr_nodes; j++) {
 			entry2 = log2->nodes + j;
-			if (flags & SD_CLUSTER_FLAG_DISKMODE) {
-				for (nr_disk2 = 0; nr_disk2 < DISK_MAX;
-						nr_disk2++) {
-					if (entry2->disks[nr_disk2].disk_id
-							== 0)
-						break;
-				}
-			}
-			if (node_cmp(entry1, entry2) == 0
-					&& nr_disk1 == nr_disk2)
+			if (flags & SD_CLUSTER_FLAG_DISKMODE)
+				nr_disk2 = entry2->nr_disks;
+			if (node_cmp(entry1, entry2) == 0 &&
+			    nr_disk1 == nr_disk2)
 				break;
 		}
 
