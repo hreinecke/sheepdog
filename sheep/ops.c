@@ -1483,7 +1483,7 @@ static int local_set_vnodes(const struct sd_req *req,
 static struct sd_op_template sd_ops[] = {
 
 	/* cluster operations */
-	/* req.vdi, arg 'vdi->name' */
+	/* req.vdi, arg 'vdi_name' */
 	[SD_OP_NEW_VDI] = {
 		.name = "NEW_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1492,7 +1492,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = post_cluster_new_vdi,
 	},
 
-	/* NULL, arg 'vdi->name' */
+	/* NULL, arg 'vdi_name' */
 	[SD_OP_DEL_VDI] = {
 		.name = "DEL_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
@@ -1575,7 +1575,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_recovery_completion,
 	},
 
-	/* req.vdi, arg NULL */
+	/* rsq.vdi, arg 'vdi_name' */
 	[SD_OP_GET_VDI_INFO] = {
 		.name = "GET_VDI_INFO",
 		.type = SD_OP_TYPE_CLUSTER,

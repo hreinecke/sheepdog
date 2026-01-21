@@ -990,13 +990,21 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	UPDATE_JSON_INT(req_obj, req, data_length);
 	switch (req->opcode) {
 	case SD_OP_NEW_VDI:
+		vdi_obj = json_object_new_object();
+		etcd_vdi_to_json(&msg->req, vdi_obj);
+		json_object_object_add(req_obj, "vdi", vdi_obj);
+		data_obj = json_object_new_object();
+		json_object_object_add(data_obj, "vdi_name",
+				       json_object_new_string(data));
+		json_object_object_add(obj, "data", data_obj);
+		break;
 	case SD_OP_NOTIFY_VDI_ADD:
-	case SD_OP_GET_VDI_INFO:
 	case SD_OP_RELEASE_VDI:
 		vdi_obj = json_object_new_object();
 		etcd_vdi_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "vdi", vdi_obj);
 		break;
+	case SD_OP_GET_VDI_INFO:
 	case SD_OP_DEL_VDI:
 	case SD_OP_LOCK_VDI:
 		data_obj = json_object_new_object();
