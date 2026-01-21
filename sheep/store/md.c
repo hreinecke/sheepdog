@@ -806,6 +806,7 @@ void update_node_disks(void)
 		return;
 
 	memset(sys->this_node.disks, 0, sizeof(struct disk_info) * DISK_MAX);
+	sys->this_node.nr_disks = 0;
 	sd_read_lock(&md.lock);
 	rb_for_each_entry(disk, &md.root, rb) {
 		sys->this_node.disks[i].disk_id =
@@ -815,6 +816,7 @@ void update_node_disks(void)
 			 i, sys->this_node.disks[i].disk_id,
 			 sys->this_node.disks[i].disk_space);
 		i++;
+		sys->this_node.nr_disks++;
 	}
 	sd_rw_unlock(&md.lock);
 
@@ -831,6 +833,7 @@ void update_node_disks(void)
 #else
 void update_node_disks(void)
 {
+	sys->this_node.nr_disks = 0;
 }
 #endif
 

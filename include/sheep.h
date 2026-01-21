@@ -223,7 +223,7 @@ node_disk_to_vnodes(const struct sd_node *n, struct rb_root *vroot)
 						       io_addr));
 	uint64_t hval, disk_vnodes, total = 0;
 
-	for (int j = 0; j < DISK_MAX; j++) {
+	for (int j = 0; j < n->nr_disks; j++) {
 		if (!n->disks[j].disk_id)
 			continue;
 		hval = fnv_64a_64(node_hval, n->disks[j].disk_id);

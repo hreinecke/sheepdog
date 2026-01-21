@@ -22,11 +22,13 @@ void node_to_json(struct sd_node *node, struct json_object *obj)
 			       json_object_new_int64(node->zone));
 	json_object_object_add(obj, "space",
 			       json_object_new_int64(node->space));
+	json_object_object_add(obj, "nr_disks",
+			       json_object_new_int(node->nr_disks));
 	json_object_object_add(obj, "nr_vnodes",
 			       json_object_new_int(node->nr_vnodes));
 #ifdef HAVE_DISKVNODES
 	disks_obj = json_object_new_array();
-	for (i = 0; i < DISK_MAX; i++) {
+	for (i = 0; i < node->nr_disks; i++) {
 		struct json_object *disk_obj;
 		struct disk_info *d = &node->disks[i];
 
@@ -114,7 +116,9 @@ void json_to_node(struct json_object *obj, struct sd_node *node)
 				sd_warn("failed to parse '%s'", nid_str);
 				return;
 			}
-		} else if (!strcmp(key, "nr_vnodes"))
+		} else if (!strcmp(key, "nr_disks"))
+			node->nr_disks = json_object_get_int(val_obj);
+		else if (!strcmp(key, "nr_vnodes"))
 			node->nr_vnodes = json_object_get_int(val_obj);
 		else if (!strcmp(key, "zone"))
 			node->zone = json_object_get_int64(val_obj);

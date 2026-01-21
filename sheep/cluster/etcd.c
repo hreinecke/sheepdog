@@ -53,22 +53,6 @@ const char *etcd_event_names[] = {
 	[EVENT_UPDATE_NODE] = "update-node",
 };
 
-enum etcd_node_attr_type {
-	ATTR_ADDR = 1 << 0,
-	ATTR_IO_ADDR = 1 << 1,
-	ATTR_ZONE = 1 << 2,
-	ATTR_NR_VNODES = 1 << 3,
-	ATTR_SPACE = 1 << 4,
-};
-
-const char *etcd_node_attr_names[] = {
-	[ATTR_ADDR] = "addr",
-	[ATTR_IO_ADDR] = "io_addr",
-	[ATTR_ZONE] = "zone",
-	[ATTR_NR_VNODES] = "nr_vnodes",
-	[ATTR_SPACE] = "space",
-};
-
 const char *etcd_cinfo_status_names[] = {
 	[SD_STATUS_INIT] = "init",
 	[SD_STATUS_OK] = "ok",
@@ -141,19 +125,6 @@ static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 static struct etcd_node this_node;
 static struct etcd_ctx *this_ctx;
 
-static enum etcd_node_attr_type etcd_attr_to_type(const char *attr)
-{
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(etcd_node_attr_names); i++) {
-		if (!etcd_node_attr_names[i])
-			continue;
-		if (!strcmp(attr, etcd_node_attr_names[i]))
-			return i;
-	}
-	return 0;
-}
-
 static inline bool etcd_node_exists(struct etcd_ctx *ctx, const char *node_id)
 {
 	char path[1024], val[MAX_NODE_STR_LEN];
@@ -209,6 +180,14 @@ static int etcd_node_set_addr(struct etcd_node *node, const char *attr)
 			return 0;
 		strcpy(val, addr);
 		len = strlen(val);
+#ifdef HAVE_ACCELIO
+	} else if (!strcmp(attr, "io_transport_type")) {
+		if (node->node.nid.io_transport_type == IO_TRANSPORT_TYPE_RDMA)
+			strcpy(val, "rdma");
+		else
+			strcpy(val, "tcp");
+		len = strlen(val);
+#endif
 	} else
 		return -EINVAL;
 
@@ -250,19 +229,24 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 	if (rc) goto err;
 	rc = etcd_node_set_addr(node, "io_addr");
 	if (rc) goto err;
+#ifdef HAVE_ACCELIO
+	rc = etcd_node_set_addr(node, "io_transport_type");
+	if (rc) goto err;
+#endif
 	rc = etcd_node_set_int_attr(node, "zone", node->node.zone);
 	if (rc) goto err;
 	rc = etcd_node_set_int_attr(node, "nr_vnodes",
 				    node->node.nr_vnodes);
 	if (rc) goto err;
+	rc = etcd_node_set_int_attr(node, "nr_disks",
+				    node->node.nr_disks);
+	if (rc) goto err;
 	rc = etcd_node_set_int_attr(node, "space",
 				    node->node.space);
 	if (rc) goto err;
 #ifdef HAVE_DISKVNODES
-	for (i = 0; i < DISK_MAX; i++) {
+	for (i = 0; i < node->node.nr_disks; i++) {
 		struct disk_info *di = &node->node.disks[i];
-		if (!di->disk_id)
-			continue;
 		rc = etcd_node_disk_upload(node, di, i);
 		if (rc < 0)
 			goto err;
@@ -279,7 +263,6 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 {
 	char *attr;
 	unsigned long num;
-	int attr_type;
 #ifdef HAVE_DISKVNODES
 	struct disk_info *disk_info = NULL;
 	char *disk;
@@ -292,64 +275,65 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		return -EINVAL;
 	}
 	attr++;
-	attr_type = etcd_attr_to_type(attr);
-	if (attr_type == ATTR_ADDR) {
+	if (!strcmp(attr, "addr")) {
 		str_to_node(kv->value, &node->node);
 		return 0;
 	}
-	if (attr_type == ATTR_IO_ADDR) {
+	if (!strcmp(attr, "io_addr")) {
 		str_to_io_node(kv->value, &node->node);
 		return 0;
 	}
-		
+#ifdef HAVE_ACCELIO
+	if (!strcmp(attr, "io_transport_type")) {
+		if (!strcmp(kv->value, "rdma"))
+			node->node.nid.io_transport_type =
+				IO_TRANSPORT_TYPE_RDMA;
+		else if (!strcmp(kv->value, "tcp"))
+			node->node.nid.io_transport_type =
+				IO_TRANSPORT_TYPE_TCP;
+		else
+			sd_warn("invalid io transport type '%s'", kv->value);
+		return 0;
+	}
+#endif
 	errno = 0;
 	num = strtoul(kv->value, NULL, 10);
 	if (errno) {
 		sd_debug("parsing error on '%s'", kv->value);
 		return -errno;
 	}
-	switch (attr_type) {
-	case ATTR_ZONE:
+	if (!strcmp(attr, "zone"))
 		node->node.zone = num;
-		return 0;
-	case ATTR_NR_VNODES:
+	else if (!strcmp(attr, "nr_disks"))
+		node->node.nr_disks = num;
+	else if (!strcmp(attr, "nr_vnodes"))
 		node->node.nr_vnodes = num;
-		return 0;
-	case ATTR_SPACE:
+	else if (!strcmp(attr, "space"))
 		node->node.space = num;
-		return 0;
-#ifdef HAVE_ACCELIO
-	case ATTR_TRANSPORT:
-		node->node.nid.io_transport_type = num;
-		return 0;
-#endif
-	default:
-		break;
-	}
-
 #ifdef HAVE_DISKVNODES
-	disk = strstr(kv->key, "disks");
-	if (!disk) {
+	else if ((disk = strstr(kv->key, "disks"))) {
+		ret = sscanf(disk, "disks/%u/%s", &disk_num, attr);
+		if (ret != 2) {
+			sd_debug("cannot parse '%s'", disk);
+			return -EINVAL;
+		}
+		if (disk_num >= DISK_MAX)
+			return -EINVAL;
+		disk_info = &node->node.disks[disk_num];
+		if (!strcmp(attr, "disk_id"))
+			disk_info->disk_id = num;
+		else if (!strcmp(attr, "disk_space"))
+			disk_info->disk_space = num;
+		else {
+			sd_debug("unhandled disk addribute '%s'", attr);
+			return -EINVAL;
+		}
+	}
+#endif
+	else {
 		sd_debug("unhandled attribute '%s'", attr);
 		return -EINVAL;
 	}
-	ret = sscanf(disk, "disks/%u/%s", &disk_num, attr);
-	if (ret != 2) {
-		sd_debug("cannot parse '%s'", disk);
-		return -EINVAL;
-	}
-	if (disk_num >= DISK_MAX)
-		return -EINVAL;
-	disk_info = &node->node.disks[disk_num];
-	if (!strcmp(attr, "disk_id"))
-		disk_info->disk_id = num;
-	else if (!strcmp(attr, "disk_space"))
-		disk_info->disk_space = num;
-	else {
-		sd_debug("unhandled disk addribute '%s'", attr);
-		return -EINVAL;
-	}
-#endif
 	return 0;
 }
 
@@ -771,7 +755,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	struct etcd_node *node = NULL;
 	char base[MAX_NODE_STR_LEN];
 	struct etcd_kv *kvs;
-	int node_size = sizeof(*node) + sizeof(struct disk_info) * DISK_MAX;
+	int node_size = sizeof(*node);
 	int i, rc;
 
 	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
