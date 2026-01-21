@@ -976,7 +976,8 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 {
 	struct sd_req *req = &msg->req;
 	struct sd_rsp *rsp = &msg->rsp;
-	struct json_object *req_obj, *vdi_obj, *data_obj, *node_obj;
+	struct json_object *req_obj, *rsp_obj;
+	struct json_object *vdi_obj, *data_obj, *node_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
 	uint32_t *vdi_id = (uint32_t *)data;
 	struct sd_node *node;
@@ -1090,27 +1091,41 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	}
 	json_object_object_add(obj, "req", req_obj);
-	if (rsp->result || rsp->data_length) {
-		struct json_object *rsp_obj =
-			json_object_new_object();
+	rsp_obj = json_object_new_object();
+	UPDATE_JSON_INT(rsp_obj, rsp, proto_ver);
+	UPDATE_JSON_INT(rsp_obj, rsp, opcode);
+	UPDATE_JSON_INT(rsp_obj, rsp, flags);
+	UPDATE_JSON_INT(rsp_obj, rsp, epoch);
+	UPDATE_JSON_INT(rsp_obj, rsp, id);
+	UPDATE_JSON_INT(rsp_obj, rsp, data_length);
+	UPDATE_JSON_INT(rsp_obj, rsp, result);
 
-		if (rsp->data_length)
-			json_object_object_add(rsp_obj, "data_length",
-					       json_object_new_int(rsp->data_length));
-
-		if (rsp->result)
-			json_object_object_add(rsp_obj, "result",
-					       json_object_new_int(rsp->result));
-		json_object_object_add(obj, "rsp", rsp_obj);
+	switch (rsp->opcode) {
+	case SD_OP_NEW_VDI:
+	case SD_OP_DEL_VDI:
+	case SD_OP_GET_VDI_INFO:
+	case SD_OP_GET_VDI_ATTR:
+	case SD_OP_LOCK_VDI:
+		vdi_obj = json_object_new_object();
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, vdi_id);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, attr_id);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, copies);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, block_size_shift);
+		json_object_object_add(rsp_obj, "vdi", vdi_obj);
+		break;
+	default:
+		break;
 	}
+	json_object_object_add(obj, "rsp", rsp_obj);
+
 	return SD_RES_SUCCESS;
 }
 
 #define DEREF_JSON_INT(o, c, n, k)		\
 	else if (!strcmp(k, #n)) (c)->n = json_object_get_int(o)
 
-static void etcd_json_to_vdi(struct json_object *obj,
-			     struct sd_req *req)
+static void etcd_json_to_req_vdi(struct json_object *obj,
+				 struct sd_req *req)
 {
 	struct json_object_iterator itb, ite;
 
@@ -1131,6 +1146,31 @@ static void etcd_json_to_vdi(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->vdi, block_size_shift, key);
 		DEREF_JSON_INT(val_obj, &req->vdi, snapid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi, type, key);
+		else
+			sd_warn("%s: unhandled vdi attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_rsp_vdi(struct json_object *obj,
+				 struct sd_rsp *rsp)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "vdi_id"))
+			rsp->vdi.vdi_id =
+				json_object_get_int(val_obj);
+		DEREF_JSON_INT(val_obj, &rsp->vdi, attr_id, key);
+		DEREF_JSON_INT(val_obj, &rsp->vdi, copies, key);
+		DEREF_JSON_INT(val_obj, &rsp->vdi, block_size_shift, key);
 		else
 			sd_warn("%s: unhandled vdi attribute '%s'",
 				__func__, key);
@@ -1169,8 +1209,8 @@ static void etcd_json_to_cluster(struct json_object *obj,
 	}
 }
 
-static void etcd_json_to_obj(struct json_object *obj,
-			     struct sd_req *req)
+static void etcd_json_to_req_obj(struct json_object *obj,
+				 struct sd_req *req)
 {
 	struct json_object_iterator itb, ite;
 
@@ -1192,6 +1232,31 @@ static void etcd_json_to_obj(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->obj, ec_index, key);
 		DEREF_JSON_INT(val_obj, &req->obj, tgt_epoch, key);
 		DEREF_JSON_INT(val_obj, &req->obj, offset, key);
+		else
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_rsp_obj(struct json_object *obj,
+				 struct sd_rsp *rsp)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "offset")) {
+			rsp->obj.offset =
+				json_object_get_int64(val_obj);
+		} else if (!strcmp(key, "copies"))
+			rsp->obj.copies =
+				json_object_get_int(val_obj);
 		else
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
@@ -1241,11 +1306,11 @@ static void etcd_json_to_req(struct json_object *obj,
 		struct json_object *attr_obj;
 
 		if (!strcmp(key, "vdi")) {
-			etcd_json_to_vdi(val_obj, req);
+			etcd_json_to_req_vdi(val_obj, req);
 		} else if (!strcmp(key, "cluster")) {
 			etcd_json_to_cluster(val_obj, req);
 		} else if (!strcmp(key, "obj")) {
-			etcd_json_to_obj(val_obj, req);
+			etcd_json_to_req_obj(val_obj, req);
 		} else if (!strcmp(key, "vdi_state")) {
 			etcd_json_to_vdi_state(val_obj, req);
 		} else if (!strcmp(key, "inode_coherence")) {
@@ -1269,6 +1334,69 @@ static void etcd_json_to_req(struct json_object *obj,
 		} else if (!strcmp(key, "id")) {
 			req->id = json_object_get_int(val_obj);
 		} else if (strcmp(key, "data_length"))
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_rsp_node(struct json_object *obj,
+				  struct sd_rsp *rsp)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "store_size")) {
+			rsp->node.store_size =
+				json_object_get_int64(val_obj);
+		} else if (!strcmp(key, "store_free"))
+			rsp->node.store_free =
+				json_object_get_int(val_obj);
+		DEREF_JSON_INT(val_obj, &rsp->node, nr_nodes, key);
+		else
+			sd_warn("%s: unhandled attribute '%s'",
+				__func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
+static void etcd_json_to_rsp(struct json_object *obj,
+			     struct sd_rsp *rsp)
+{
+	struct json_object_iterator itb, ite;
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "vdi")) {
+			etcd_json_to_rsp_vdi(val_obj, rsp);
+		} else if (!strcmp(key, "obj")) {
+			etcd_json_to_rsp_obj(val_obj, rsp);
+		} else if (!strcmp(key, "node")) {
+			etcd_json_to_rsp_node(val_obj, rsp);
+		} else if (!strcmp(key, "proto_ver")) {
+			rsp->proto_ver = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "opcode")) {
+			rsp->opcode = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "flags")) {
+			rsp->flags = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "epoch")) {
+			rsp->epoch = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "id")) {
+			rsp->id = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "data_length")) {
+			rsp->data_length = json_object_get_int(val_obj);
+		} else
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
 		json_object_iter_next(&itb);
@@ -1403,6 +1531,8 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 		val_obj = json_object_iter_peek_value(&itb);
 		if (!strcmp(key, "req")) {
 			etcd_json_to_req(val_obj, &msg->req);
+		} else if (!strcmp(key, "rsp")) {
+			etcd_json_to_rsp(val_obj, &msg->rsp);
 		} else if (!strcmp(key, "data")) {
 			etcd_json_to_data(this_ctx, val_obj, &msg->data,
 					  data_len);
