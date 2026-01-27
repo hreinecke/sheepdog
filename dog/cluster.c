@@ -515,7 +515,7 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 			   i->block_size_shift);
 
 	/* fill data object id */
-	if (i->store_policy == 0) {
+	if (i->store_policy == SD_DEFAULT_STORE_POLICY) {
 		nr_objs = count_data_objs(i);
 		for (uint32_t idx = 0; idx < nr_objs; idx++) {
 			vdi_id = sd_inode_get_vid(i, idx);

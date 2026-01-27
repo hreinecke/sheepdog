@@ -1092,7 +1092,7 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 		sd_inode_copy_vdis(sheep_bnode_writer, sheep_bnode_reader,
 				   data_vdi_id, iocb->store_policy,
 				   iocb->nr_copies, iocb->copy_policy, new);
-	else if (new->store_policy)
+	else if (new->store_policy == SD_HYPER_STORE_POLICY)
 		sd_inode_init(new->data_vdi_id, 1);
 
 	if (gref) {
@@ -1782,7 +1782,7 @@ static void delete_vdi_work(struct work *work)
 	if (inode->vdi_size == 0 && vdi_is_deleted(inode))
 		goto out;
 
-	if (inode->store_policy == 0) {
+	if (inode->store_policy == SD_DEFAULT_STORE_POLICY) {
 		nr_objs = count_data_objs(inode);
 		for (nr_deleted = 0, i = 0; i < nr_objs; i++) {
 			uint32_t vid = sd_inode_get_vid(inode, i);
@@ -2075,7 +2075,7 @@ int sd_create_hyper_volume(const char *name, uint32_t *vdi_id)
 	hdr.vdi.vdi_size = SD_MAX_VDI_SIZE;
 	hdr.vdi.copies = sys->cinfo.nr_copies;
 	hdr.vdi.copy_policy = sys->cinfo.copy_policy;
-	hdr.vdi.store_policy = 1;
+	hdr.vdi.store_policy = SD_HYPER_STORE_POLICY;
 	/* XXX Cannot use both features, Hypervolume and Change object size */
 	if (sys->cinfo.block_size_shift != SD_DEFAULT_BLOCK_SIZE_SHIFT) {
 		hdr.vdi.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;

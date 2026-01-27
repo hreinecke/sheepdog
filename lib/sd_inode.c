@@ -541,7 +541,7 @@ uint32_t sd_inode_get_vid(const struct sd_inode *inode, uint32_t idx)
 	struct find_path path;
 	int ret;
 
-	if (inode->store_policy == 0)
+	if (inode->store_policy == SD_DEFAULT_STORE_POLICY)
 		return inode->data_vdi_id[idx];
 	else {
 		/* btree is not init, so vdi is 0 */
@@ -710,7 +710,7 @@ int sd_inode_set_vid_range(struct sd_inode *inode, uint32_t idx_start,
 	int idx;
 
 	for (idx = idx_start; idx <= idx_end; idx++) {
-		if (inode->store_policy == 0)
+		if (inode->store_policy == SD_DEFAULT_STORE_POLICY)
 			inode->data_vdi_id[idx] = vdi_id;
 		else {
 			if (inode->data_vdi_id[0] == 0)
@@ -728,7 +728,7 @@ int sd_inode_set_vid_range(struct sd_inode *inode, uint32_t idx_start,
 					  idx, vdi_id);
 		}
 	}
-	if (inode->store_policy != 0)
+	if (inode->store_policy != SD_DEFAULT_STORE_POLICY)
 		dump_btree(inode);
 
 	icache_release(inode->nr_copies, inode->copy_policy);
@@ -751,7 +751,7 @@ uint32_t sd_inode_get_meta_size(struct sd_inode *inode, size_t size)
 	struct sd_index_header *header;
 	uint32_t len;
 
-	if (inode->store_policy == 0) {
+	if (inode->store_policy == SD_DEFAULT_STORE_POLICY) {
 		len = count_data_objs(inode) * sizeof(inode->data_vdi_id[0]);
 		if (len > size - SD_INODE_HEADER_SIZE - sizeof(uint32_t))
 			len = size - SD_INODE_HEADER_SIZE - sizeof(uint32_t);
@@ -775,7 +775,7 @@ int sd_inode_write(struct sd_inode *inode, int flags, bool create, bool direct)
 	uint32_t len;
 	int ret;
 
-	if (inode->store_policy == 0)
+	if (inode->store_policy == SD_DEFAULT_STORE_POLICY)
 		ret = inode_actor.writer(vid_to_vdi_oid(inode->vdi_id), inode,
 					 SD_INODE_HEADER_SIZE, 0,
 					 flags, inode->nr_copies,
@@ -808,7 +808,7 @@ int sd_inode_write_vid(struct sd_inode *inode,
 {
 	int ret = SD_RES_SUCCESS;
 
-	if (inode->store_policy == 0)
+	if (inode->store_policy == SD_DEFAULT_STORE_POLICY)
 		ret = inode_actor.writer(vid_to_vdi_oid(vid), &value,
 					 sizeof(value),
 				SD_INODE_HEADER_SIZE + sizeof(value) * idx,
@@ -838,7 +838,7 @@ void sd_inode_copy_vdis(write_node_fn writer, read_node_fn reader,
 
 	memcpy(newi->data_vdi_id, data_vdi_id, sizeof(newi->data_vdi_id));
 
-	if (store_policy == 1 && header->depth > 1) {
+	if (store_policy == SD_HYPER_STORE_POLICY && header->depth > 1) {
 		/* for B-tree (> 1 level), it needs to copy all leaf-node */
 		last_idx = LAST_INDRECT_IDX(data_vdi_id);
 		old_iter_idx = FIRST_INDIRECT_IDX(data_vdi_id);
@@ -945,7 +945,7 @@ static void volume_stat(const struct sd_inode *inode, uint64_t *my_objs,
 void sd_inode_stat(const struct sd_inode *inode, uint64_t *my_objs,
 		   uint64_t *cow_objs)
 {
-	if (inode->store_policy == 0)
+	if (inode->store_policy == SD_DEFAULT_STORE_POLICY)
 		volume_stat(inode, my_objs, cow_objs);
 	else
 		hypver_volume_stat(inode, my_objs, cow_objs);
