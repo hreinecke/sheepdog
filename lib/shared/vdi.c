@@ -350,7 +350,7 @@ int sd_vdi_snapshot(struct sd_cluster *c, char *name, char *snap_tag)
 		return ret;
 	}
 
-	if (inode->store_policy) {
+	if (inode->store_policy == SD_HYPER_STORE_POLICY) {
 		fprintf(stderr, "Creating a snapshot of hypervolume"
 				" is not supported\n");
 		return SD_RES_INVALID_PARMS;
@@ -410,9 +410,9 @@ int sd_vdi_create(struct sd_cluster *c, char *name, uint64_t size)
 		return SD_RES_WAIT_FOR_FORMAT;
 	}
 
-	uint8_t store_policy = 0;
+	uint8_t store_policy = SD_DEFAULT_STORE_POLICY;
 	if (size > SD_OLD_MAX_VDI_SIZE)
-		store_policy = 1;/** for hyper volume **/
+		store_policy = SD_HYPER_STORE_POLICY;/** for hyper volume **/
 
 	ret = do_vdi_create(c, name, size,
 			0, false, ci.nr_copies, ci.copy_policy,

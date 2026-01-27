@@ -335,6 +335,9 @@ struct recovery_throttling {
 	bool throttling;
 };
 
+#define SD_DEFAULT_STORE_POLICY 0
+#define SD_HYPER_STORE_POLICY 1
+
 struct sd_inode {
 	char name[SD_MAX_VDI_LEN];
 	char tag[SD_MAX_VDI_TAG_LEN];
