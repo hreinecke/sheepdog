@@ -1919,6 +1919,7 @@ static void etcd_lease_refresh(void *arg)
 	    etcd_cinfo.status == SD_STATUS_KILLED)
 		return;
 
+	sd_debug("%s: refresh lease\n", __func__);
 	ret = etcd_lease_keepalive(ctx);
 	if (ret < 0) {
 		sd_err("%s: failed to refresh lease, error %d",
@@ -1935,19 +1936,6 @@ static int etcd_join(const struct sd_node *myself,
 	struct cluster_info *cinfo = opaque;
 	struct json_object *cinfo_obj;
 	static sd_thread_t watch_thr;
-	static struct timer t = {
-		.callback = etcd_lease_refresh,
-	};
-
-	ret = etcd_lease_grant(this_ctx);
-	if (ret < 0) {
-		sd_err("no lease granted, error %d", ret);
-		return ret;
-	}
-	t.data = this_ctx;
-	add_timer(&t, this_ctx->ttl * 1000);
-
-	etcd_cinfo_create(this_ctx);
 
 	sd_info("node %s id %s", this_ctx->node_name, this_ctx->node_id);
 	ret = sd_thread_create("etcd-watch", &watch_thr,
@@ -2003,6 +1991,9 @@ static int etcd_cluster_init(const char *option)
 	char *hosts, *to, *p;
 	int ret = 0;
 	char *addr = NULL;
+	static struct timer t = {
+		.callback = etcd_lease_refresh,
+	};
 
 	if (!option) {
 		sd_err("You must specify etcd client address.");
@@ -2028,6 +2019,17 @@ static int etcd_cluster_init(const char *option)
 		ret = -1;
 		goto out;
 	}
+
+	ret = etcd_lease_grant(this_ctx);
+	if (ret < 0) {
+		sd_err("no lease granted, error %d", ret);
+		goto out;
+	}
+	t.data = this_ctx;
+	add_timer(&t, this_ctx->ttl * 1000);
+
+	etcd_cinfo_create(this_ctx);
+
 out:
 	if (addr)
 		free(addr);
