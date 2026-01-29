@@ -860,13 +860,14 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 
 static void block_event_list_del(struct etcd_node *n)
 {
-	struct etcd_node *ev;
+	struct etcd_node *node;
 
-	list_for_each_entry(ev, &etcd_block_list, list) {
-		if (node_eq(&ev->node, &n->node)) {
-			list_del(&ev->list);
-			free(ev);
-		}
+	list_for_each_entry(node, &etcd_block_list, list) {
+		if (!node_eq(&node->node, &n->node))
+			continue;
+		if (!node->callbacked)
+			node->callbacked = sd_block_handler(&node->node);
+		list_del(&node->list);
 	}
 }
 
