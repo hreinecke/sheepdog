@@ -1925,7 +1925,7 @@ static void etcd_lease_refresh(void *arg)
 		       __func__, ret);
 		return;
 	}
-	add_timer(arg, this_ctx->ttl * 100);
+	add_timer(arg, this_ctx->ttl * 500);
 }
 
 static int etcd_join(const struct sd_node *myself,
@@ -2025,7 +2025,7 @@ static int etcd_cluster_init(const char *option)
 		sd_err("no lease granted, error %d", ret);
 		goto out;
 	}
-	add_timer(&t, this_ctx->ttl * 100);
+	add_timer(&t, this_ctx->ttl * 500);
 
 	etcd_cinfo_create(this_ctx);
 
