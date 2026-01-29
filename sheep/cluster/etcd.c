@@ -116,8 +116,6 @@ struct etcd_cluster_info {
 static LIST_HEAD(etcd_block_list);
 static struct rb_root etcd_node_root = RB_ROOT;
 static struct etcd_cluster_info etcd_cinfo = {};
-static sd_thread_t lease_thr;
-static sd_thread_t watch_thr;
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
@@ -1912,34 +1910,22 @@ static void *etcd_event_watcher(void *arg)
 	pthread_exit(NULL);
 }
 
-static void *etcd_lease_refresh(void *arg)
+static void etcd_lease_refresh(void *arg)
 {
 	struct etcd_ctx *ctx = arg;
-	struct etcd_conn_ctx *conn = NULL;;
 	int ret;
 
-	conn = etcd_conn_create(ctx);
-	if (!conn) {
-		pthread_exit(NULL);
-	}
-	pthread_cleanup_push(delete_conn, conn);
+	if (etcd_cinfo.status == SD_STATUS_SHUTDOWN ||
+	    etcd_cinfo.status == SD_STATUS_KILLED)
+		return;
 
-	while (etcd_cinfo.status != SD_STATUS_SHUTDOWN ||
-	       etcd_cinfo.status != SD_STATUS_KILLED) {
-		ret = etcd_lease_keepalive(ctx);
-		if (ret < 0) {
-			sd_err("%s: failed to refresh lease, error %d",
-			       __func__, ret);
-			break;
-		}
-		sleep(ctx->ttl / 2);
+	ret = etcd_lease_keepalive(ctx);
+	if (ret < 0) {
+		sd_err("%s: failed to refresh lease, error %d",
+		       __func__, ret);
+		return;
 	}
-	pthread_cleanup_pop(1);
-
-	ret = pthread_detach(pthread_self());
-	if (ret)
-		sd_err("%s", strerror(ret));
-	pthread_exit(NULL);
+	add_timer(arg, ctx->ttl * 1000);
 }
 
 static int etcd_join(const struct sd_node *myself,
@@ -1948,27 +1934,26 @@ static int etcd_join(const struct sd_node *myself,
 	int ret;
 	struct cluster_info *cinfo = opaque;
 	struct json_object *cinfo_obj;
+	static sd_thread_t watch_thr;
+	static struct timer t = {
+		.callback = etcd_lease_refresh,
+	};
 
 	ret = etcd_lease_grant(this_ctx);
 	if (ret < 0) {
 		sd_err("no lease granted, error %d", ret);
 		return ret;
 	}
+	t.data = this_ctx;
+	add_timer(&t, this_ctx->ttl * 1000);
 
 	etcd_cinfo_create(this_ctx);
 
-	ret = sd_thread_create("etcd-lease", &lease_thr,
-			       etcd_lease_refresh, this_ctx);
-	if (ret) {
-		sd_err("failed to start lease refresh, error %d", ret);
-		return ret;
-	}
 	sd_info("node %s id %s", this_ctx->node_name, this_ctx->node_id);
 	ret = sd_thread_create("etcd-watch", &watch_thr,
 			       etcd_event_watcher, this_ctx);
 	if (ret) {
 		sd_err("failed to start etcd, error %d", ret);
-		sd_thread_join(lease_thr, NULL);
 		ret = -1;
 	}
 
