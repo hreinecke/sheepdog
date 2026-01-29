@@ -22,7 +22,7 @@
 static const char *default_etcd_host = "localhost";
 static const char *default_etcd_proto = "http";
 static int default_etcd_port = 2379;
-static int default_etcd_ttl = 60;
+static int default_etcd_ttl = 10;
 
 static char *__b64enc(const char *str, int str_len)
 {
