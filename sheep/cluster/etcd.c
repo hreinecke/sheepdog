@@ -113,6 +113,7 @@ struct etcd_cluster_info {
 	uint8_t default_store[STORE_LEN];
 };
 
+static struct sd_mutex etcd_block_mutex = SD_MUTEX_INITIALIZER;
 static LIST_HEAD(etcd_block_list);
 static struct rb_root etcd_node_root = RB_ROOT;
 static struct etcd_cluster_info etcd_cinfo = {};
@@ -862,13 +863,14 @@ static void block_event_list_del(struct etcd_node *n)
 {
 	struct etcd_node *node;
 
+	sd_mutex_lock(&etcd_block_mutex);
 	list_for_each_entry(node, &etcd_block_list, list) {
 		if (!node_eq(&node->node, &n->node))
 			continue;
-		if (!node->callbacked)
-			node->callbacked = sd_block_handler(&node->node);
 		list_del(&node->list);
+		node->callbacked = false;
 	}
+	sd_mutex_unlock(&etcd_block_mutex);
 }
 
 static void etcd_vdi_to_json(struct sd_req *req, struct json_object *obj)
@@ -1686,11 +1688,14 @@ static void etcd_kick_block_event(void)
 {
 	struct etcd_node *block;
 
-	if (list_empty(&etcd_block_list))
-		return;
-	block = list_first_entry(&etcd_block_list, typeof(*block), list);
-	if (!block->callbacked)
-		block->callbacked = sd_block_handler(&block->node);
+	sd_mutex_lock(&etcd_block_mutex);
+	if (!list_empty(&etcd_block_list)) {
+		block = list_first_entry(&etcd_block_list,
+					 typeof(*block), list);
+		if (!block->callbacked)
+			block->callbacked = sd_block_handler(&block->node);
+	}
+	sd_mutex_unlock(&etcd_block_mutex);
 }
 
 static void etcd_handle_block(struct etcd_ctx *ctx,
@@ -1712,10 +1717,12 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 		sd_warn("blocking node not registered");
 		return;
 	}
+	sd_mutex_lock(&etcd_block_mutex);
 	list_add_tail(&node->list, &etcd_block_list);
 	node = list_first_entry(&etcd_block_list, typeof(*node), list);
 	if (!node->callbacked)
 		node->callbacked = sd_block_handler(&node->node);
+	sd_mutex_unlock(&etcd_block_mutex);
 }
 
 static void etcd_handle_unblock(struct etcd_ctx *ctx,
@@ -1731,13 +1738,15 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 		return;
 	}
 	sd_debug("UNBLOCK %s", unblock.node_id);
-	if (list_empty(&etcd_block_list)) {
-		free(msg);
-		return;
+	sd_mutex_lock(&etcd_block_mutex);
+	if (!list_empty(&etcd_block_list)) {
+		block = list_first_entry(&etcd_block_list,
+					 typeof(*block), list);
+		list_del(&block->list);
+		block->callbacked = false;
+		sd_notify_handler(&block->node, (void *)msg, msg_len);
 	}
-	block = list_first_entry(&etcd_block_list, typeof(*block), list);
-	list_del(&block->list);
-	sd_notify_handler(&block->node, (void *)msg, msg_len);
+	sd_mutex_unlock(&etcd_block_mutex);
 	free(msg);
 }
 
