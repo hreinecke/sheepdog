@@ -1857,6 +1857,7 @@ static int start_deletion(struct request *req, uint32_t vid)
 	dw->work.fn = delete_vdi_work;
 	dw->work.done = delete_vdi_done;
 
+	sd_debug("queue vdi deletion");
 	queue_work(sys->deletion_wqueue, &dw->work);
 
 	/*
@@ -1865,7 +1866,7 @@ static int start_deletion(struct request *req, uint32_t vid)
 	 */
 	eventfd_xread(finish_fd);
 	close(finish_fd);
-
+	sd_debug("vdi deleted");
 	rsp->vdi.vdi_id = vid;
 
 	return ret;
@@ -1881,9 +1882,10 @@ int vdi_delete(const struct vdi_iocb *iocb, struct request *req)
 	int ret;
 
 	ret = vdi_lookup(iocb, &info);
-	if (ret != SD_RES_SUCCESS)
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lookup name %s", iocb->name);
 		goto out;
-
+	}
 	ret = start_deletion(req, info.vid);
 out:
 	return ret;
