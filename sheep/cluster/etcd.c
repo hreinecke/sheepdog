@@ -1912,7 +1912,6 @@ static void *etcd_event_watcher(void *arg)
 
 static void etcd_lease_refresh(void *arg)
 {
-	struct etcd_ctx *ctx = arg;
 	int ret;
 
 	if (etcd_cinfo.status == SD_STATUS_SHUTDOWN ||
@@ -1920,13 +1919,13 @@ static void etcd_lease_refresh(void *arg)
 		return;
 
 	sd_debug("%s: refresh lease\n", __func__);
-	ret = etcd_lease_keepalive(ctx);
+	ret = etcd_lease_keepalive(this_ctx);
 	if (ret < 0) {
 		sd_err("%s: failed to refresh lease, error %d",
 		       __func__, ret);
 		return;
 	}
-	add_timer(arg, ctx->ttl * 100);
+	add_timer(arg, this_ctx->ttl * 100);
 }
 
 static int etcd_join(const struct sd_node *myself,
@@ -1993,6 +1992,7 @@ static int etcd_cluster_init(const char *option)
 	char *addr = NULL;
 	static struct timer t = {
 		.callback = etcd_lease_refresh,
+		.data = &t,
 	};
 
 	if (!option) {
@@ -2025,7 +2025,6 @@ static int etcd_cluster_init(const char *option)
 		sd_err("no lease granted, error %d", ret);
 		goto out;
 	}
-	t.data = this_ctx;
 	add_timer(&t, this_ctx->ttl * 100);
 
 	etcd_cinfo_create(this_ctx);
