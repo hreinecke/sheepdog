@@ -1926,7 +1926,7 @@ static void etcd_lease_refresh(void *arg)
 		       __func__, ret);
 		return;
 	}
-	add_timer(arg, ctx->ttl * 1000);
+	add_timer(arg, ctx->ttl * 100);
 }
 
 static int etcd_join(const struct sd_node *myself,
@@ -2026,7 +2026,7 @@ static int etcd_cluster_init(const char *option)
 		goto out;
 	}
 	t.data = this_ctx;
-	add_timer(&t, this_ctx->ttl * 1000);
+	add_timer(&t, this_ctx->ttl * 100);
 
 	etcd_cinfo_create(this_ctx);
 
