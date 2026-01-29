@@ -1725,7 +1725,6 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 	block = list_first_entry(&etcd_block_list, typeof(*block), list);
 	list_del(&block->list);
 	sd_notify_handler(&block->node, (void *)msg, msg_len);
-	free(block);
 	free(msg);
 }
 
