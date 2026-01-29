@@ -1043,6 +1043,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	}
 	json_object_object_add(obj, "req", req_obj);
+
 	rsp_obj = json_object_new_object();
 	UPDATE_JSON_INT(rsp_obj, rsp, proto_ver);
 	UPDATE_JSON_INT(rsp_obj, rsp, opcode);
@@ -1052,7 +1053,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	UPDATE_JSON_INT(rsp_obj, rsp, data_length);
 	UPDATE_JSON_INT(rsp_obj, rsp, result);
 
-	switch (rsp->opcode) {
+	switch (req->opcode) {
 	case SD_OP_NEW_VDI:
 	case SD_OP_DEL_VDI:
 	case SD_OP_GET_VDI_INFO:
@@ -1539,9 +1540,9 @@ static int etcd_unblock(void *msg, size_t msg_len)
 	int rc;
 
 	obj = json_object_new_object();
+	rc = etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_object_object_add(obj, "node",
 			       json_object_new_string(this_node.node_id));
-	rc = etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_str = json_object_to_json_string(obj);
 	sd_debug("%s: obj %s\n", __func__, json_str);
 	if (rc == SD_RES_SUCCESS)
