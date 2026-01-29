@@ -931,7 +931,6 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	struct json_object *req_obj, *rsp_obj;
 	struct json_object *vdi_obj, *data_obj, *node_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
-	uint32_t *vdi_id = (uint32_t *)data;
 	struct sd_node *node;
 
 	req_obj = json_object_new_object();
@@ -946,10 +945,12 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		vdi_obj = json_object_new_object();
 		etcd_vdi_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "vdi", vdi_obj);
-		data_obj = json_object_new_object();
-		json_object_object_add(data_obj, "vdi_name",
-				       json_object_new_string(data));
-		json_object_object_add(obj, "data", data_obj);
+		if (data_len) {
+			data_obj = json_object_new_object();
+			json_object_object_add(data_obj, "vdi_name",
+					       json_object_new_string(data));
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_NOTIFY_VDI_ADD:
 	case SD_OP_RELEASE_VDI:
@@ -960,42 +961,51 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	case SD_OP_GET_VDI_INFO:
 	case SD_OP_DEL_VDI:
 	case SD_OP_LOCK_VDI:
-		data_obj = json_object_new_object();
-		json_object_object_add(data_obj, "vdi_name",
-				       json_object_new_string(data));
-		json_object_object_add(obj, "data", data_obj);
+		if (data_len) {
+			data_obj = json_object_new_object();
+			json_object_object_add(data_obj, "vdi_name",
+					       json_object_new_string(data));
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_MAKE_FS:
 		vdi_obj = json_object_new_object();
 		etcd_cluster_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "cluster", vdi_obj);
-		data_obj = json_object_new_object();
-		json_object_object_add(data_obj, "store_name",
-				       json_object_new_string(data));
-		json_object_object_add(obj, "data", data_obj);
+		if (data_len) {
+			data_obj = json_object_new_object();
+			json_object_object_add(data_obj, "store_name",
+					       json_object_new_string(data));
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_GET_VDI_ATTR:
-		vdi_attr = (struct sheepdog_vdi_attr *)data;
-		vdi_obj = json_object_new_object();
-		etcd_vdi_to_json(&msg->req, vdi_obj);
-		json_object_object_add(req_obj, "vdi", vdi_obj);
-		vdi_obj = json_object_new_object();
-		json_object_object_add(vdi_obj, "name",
-				       json_object_new_string(vdi_attr->name));
-		json_object_object_add(vdi_obj, "tag",
-				       json_object_new_string(vdi_attr->tag));
-		UPDATE_JSON_INT(vdi_obj, vdi_attr, snap_id);
-		json_object_object_add(vdi_obj, "key",
-				       json_object_new_string(vdi_attr->key));
-		data_obj = json_object_new_object();
-		json_object_object_add(data_obj, "vdi_attr", vdi_obj);
-		json_object_object_add(obj, "data", data_obj);
+		if (data_len) {
+			vdi_attr = (struct sheepdog_vdi_attr *)data;
+			vdi_obj = json_object_new_object();
+			etcd_vdi_to_json(&msg->req, vdi_obj);
+			json_object_object_add(req_obj, "vdi", vdi_obj);
+			vdi_obj = json_object_new_object();
+			json_object_object_add(vdi_obj, "name",
+					       json_object_new_string(vdi_attr->name));
+			json_object_object_add(vdi_obj, "tag",
+					       json_object_new_string(vdi_attr->tag));
+			UPDATE_JSON_INT(vdi_obj, vdi_attr, snap_id);
+			json_object_object_add(vdi_obj, "key",
+					       json_object_new_string(vdi_attr->key));
+			data_obj = json_object_new_object();
+			json_object_object_add(data_obj, "vdi_attr", vdi_obj);
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_NOTIFY_VDI_DEL:
-		data_obj = json_object_new_object();
-		json_object_object_add(data_obj, "vdi_id",
-				       json_object_new_int(*vdi_id));
-		json_object_object_add(req_obj, "data", data_obj);
+		if (data_len) {
+			uint32_t *vdi_id = (uint32_t *)data;
+			data_obj = json_object_new_object();
+			json_object_object_add(data_obj, "vdi_id",
+					       json_object_new_int(*vdi_id));
+			json_object_object_add(req_obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_DELETE_CACHE:
 	case SD_OP_ALTER_CLUSTER_COPY:
@@ -1007,12 +1017,14 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		vdi_obj = json_object_new_object();
 		etcd_obj_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "obj", vdi_obj);
-		node = (struct sd_node *)data;
-		data_obj = json_object_new_object();
-		node_obj = json_object_new_object();
-		node_to_json(node, node_obj);
-		json_object_object_add(data_obj, "node", node_obj);
-		json_object_object_add(obj, "data", data_obj);
+		if (data_len) {
+			node = (struct sd_node *)data;
+			data_obj = json_object_new_object();
+			node_obj = json_object_new_object();
+			node_to_json(node, node_obj);
+			json_object_object_add(data_obj, "node", node_obj);
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_ALTER_VDI_COPY:
 		vdi_obj = json_object_new_object();
