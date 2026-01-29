@@ -218,6 +218,8 @@ static int cluster_get_vdi_info(struct request *req)
 		.snapid = hdr->vdi.snapid,
 	};
 
+	sd_debug("name %s len %d snapid %u", iocb.name, data_len,
+		 hdr->vdi.snapid);
 	if (vdi_init_tag(&iocb.tag, req->data, data_len) < 0)
 		return SD_RES_INVALID_PARMS;
 
