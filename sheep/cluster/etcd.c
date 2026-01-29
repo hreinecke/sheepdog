@@ -116,6 +116,8 @@ struct etcd_cluster_info {
 static LIST_HEAD(etcd_block_list);
 static struct rb_root etcd_node_root = RB_ROOT;
 static struct etcd_cluster_info etcd_cinfo = {};
+static sd_thread_t lease_thr;
+static sd_thread_t watch_thr;
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
@@ -868,54 +870,6 @@ static void block_event_list_del(struct etcd_node *n)
 			free(ev);
 		}
 	}
-}
-
-static int etcd_join(const struct sd_node *myself,
-		     void *opaque, size_t opaque_len)
-{
-	int rc;
-	struct cluster_info *cinfo = opaque;
-	struct json_object *cinfo_obj;
-
-	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
-
-	etcd_build_node_list(this_ctx, &etcd_node_root);
-
-	this_node.ctx = this_ctx;
-	this_node.node = *myself;
-	strcpy(this_node.node_id, this_ctx->node_name);
-	rc = etcd_node_upload(&this_node, true);
-	if (rc < 0) {
-		if (rc == -EEXIST)
-			sd_err("Previous etcd key exist, shoot myself. Please "
-			       "wait for %d seconds to join me again.",
-			       DIV_ROUND_UP(etcd_timeout, 1000));
-		exit(1);
-	}
-	cinfo_obj = json_object_new_object();
-	etcd_cinfo_to_json(cinfo, cinfo_obj, &this_node);
-	rc = etcd_update_event(this_ctx, EVENT_JOIN, cinfo_obj);
-	if (rc < 0) {
-		etcd_node_delete(&this_node);
-		memset(&this_node.node, 0, sizeof(this_node.node));
-	}
-	json_object_put(cinfo_obj);
-	return rc;
-}
-
-static int etcd_leave(void)
-{
-	int rc;
-	struct json_object *node_obj;
-
-	sd_info("leaving from cluster");
-	node_obj = json_object_new_object();
-	json_object_object_add(node_obj, "node",
-			       json_object_new_string(this_node.node_id));
-	block_event_list_del(&this_node);
-	rc = etcd_update_event(this_ctx, EVENT_LEAVE, node_obj);
-	json_object_put(node_obj);
-	return rc;
 }
 
 static void etcd_vdi_to_json(struct sd_req *req, struct json_object *obj)
@@ -1988,10 +1942,80 @@ static void *etcd_lease_refresh(void *arg)
 	pthread_exit(NULL);
 }
 
+static int etcd_join(const struct sd_node *myself,
+		     void *opaque, size_t opaque_len)
+{
+	int ret;
+	struct cluster_info *cinfo = opaque;
+	struct json_object *cinfo_obj;
+
+	ret = etcd_lease_grant(this_ctx);
+	if (ret < 0) {
+		sd_err("no lease granted, error %d", ret);
+		return ret;
+	}
+
+	etcd_cinfo_create(this_ctx);
+
+	ret = sd_thread_create("etcd-lease", &lease_thr,
+			       etcd_lease_refresh, this_ctx);
+	if (ret) {
+		sd_err("failed to start lease refresh, error %d", ret);
+		return ret;
+	}
+	sd_info("node %s id %s", this_ctx->node_name, this_ctx->node_id);
+	ret = sd_thread_create("etcd-watch", &watch_thr,
+			       etcd_event_watcher, this_ctx);
+	if (ret) {
+		sd_err("failed to start etcd, error %d", ret);
+		sd_thread_join(lease_thr, NULL);
+		ret = -1;
+	}
+
+	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
+
+	etcd_build_node_list(this_ctx, &etcd_node_root);
+
+	this_node.ctx = this_ctx;
+	this_node.node = *myself;
+	strcpy(this_node.node_id, this_ctx->node_name);
+	ret = etcd_node_upload(&this_node, true);
+	if (ret < 0) {
+		if (ret == -EEXIST)
+			sd_err("Previous etcd key exist, shoot myself. Please "
+			       "wait for %d seconds to join me again.",
+			       DIV_ROUND_UP(etcd_timeout, 1000));
+		exit(1);
+	}
+	cinfo_obj = json_object_new_object();
+	etcd_cinfo_to_json(cinfo, cinfo_obj, &this_node);
+	ret = etcd_update_event(this_ctx, EVENT_JOIN, cinfo_obj);
+	if (ret < 0) {
+		etcd_node_delete(&this_node);
+		memset(&this_node.node, 0, sizeof(this_node.node));
+	}
+	json_object_put(cinfo_obj);
+	return ret;
+}
+
+static int etcd_leave(void)
+{
+	int rc;
+	struct json_object *node_obj;
+
+	sd_info("leaving from cluster");
+	node_obj = json_object_new_object();
+	json_object_object_add(node_obj, "node",
+			       json_object_new_string(this_node.node_id));
+	block_event_list_del(&this_node);
+	rc = etcd_update_event(this_ctx, EVENT_LEAVE, node_obj);
+	json_object_put(node_obj);
+	return rc;
+}
+
 static int etcd_cluster_init(const char *option)
 {
 	char *hosts, *to, *p;
-	sd_thread_t t;
 	int ret = 0;
 	char *addr = NULL;
 
@@ -2018,26 +2042,6 @@ static int etcd_cluster_init(const char *option)
 		       addr ? addr: "localhost");
 		ret = -1;
 		goto out;
-	}
-	ret = etcd_lease_grant(this_ctx);
-	if (ret < 0) {
-		sd_err("no lease granted, error %d", ret);
-		goto out;
-	}
-
-	etcd_cinfo_create(this_ctx);
-
-	ret = sd_thread_create("etcd-lease", &t, etcd_lease_refresh, this_ctx);
-	if (ret) {
-		sd_err("failed to start lease, error %d", ret);
-		ret = -1;
-		goto out;
-	}
-	sd_info("node %s id %s", this_ctx->node_name, this_ctx->node_id);
-	ret = sd_thread_create("etcd-watch", &t, etcd_event_watcher, this_ctx);
-	if (ret) {
-		sd_err("failed to start etcd, error %d", ret);
-		ret = -1;
 	}
 out:
 	if (addr)
