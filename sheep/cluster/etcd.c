@@ -1539,6 +1539,8 @@ static int etcd_unblock(void *msg, size_t msg_len)
 	int rc;
 
 	obj = json_object_new_object();
+	json_object_object_add(obj, "node",
+			       json_object_new_string(this_node.node_id));
 	rc = etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_str = json_object_to_json_string(obj);
 	sd_debug("%s: obj %s\n", __func__, json_str);
@@ -1705,16 +1707,16 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 static void etcd_handle_unblock(struct etcd_ctx *ctx,
 				struct json_object *obj)
 {
-	struct etcd_node *block;
+	struct etcd_node unblock, *block;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
 
-	sd_debug("UNBLOCK");
-	msg = etcd_json_to_msg(obj, NULL, &msg_len);
+	msg = etcd_json_to_msg(obj, &unblock, &msg_len);
 	if (!msg) {
 		sd_warn("%s: failed to deserialize json", __func__);
 		return;
 	}
+	sd_debug("UNBLOCK %s", unblock.node_id);
 	if (list_empty(&etcd_block_list)) {
 		free(msg);
 		return;
