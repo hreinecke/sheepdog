@@ -1348,6 +1348,8 @@ static void etcd_json_to_rsp(struct json_object *obj,
 			rsp->id = json_object_get_int(val_obj);
 		} else if (!strcmp(key, "data_length")) {
 			rsp->data_length = json_object_get_int(val_obj);
+		} else if (!strcmp(key, "result")) {
+			rsp->result = json_object_get_int(val_obj);
 		} else
 			sd_warn("%s: unhandled attribute '%s'",
 				__func__, key);
