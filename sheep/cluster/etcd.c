@@ -1551,15 +1551,12 @@ static int etcd_unblock(void *msg, size_t msg_len)
 {
 	struct vdi_op_message *op = (struct vdi_op_message *)msg;
 	struct json_object *obj;
-	const char *json_str;
 	int rc;
 
 	obj = json_object_new_object();
 	rc = etcd_msg_to_json(op, obj, op->data, msg_len - sizeof(*op));
 	json_object_object_add(obj, "node",
 			       json_object_new_string(this_node.node_id));
-	json_str = json_object_to_json_string(obj);
-	sd_debug("%s: obj %s\n", __func__, json_str);
 	if (rc == SD_RES_SUCCESS)
 		rc = etcd_update_event(this_ctx, EVENT_UNBLOCK, obj);
 	json_object_put(obj);
