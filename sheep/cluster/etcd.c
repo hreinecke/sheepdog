@@ -1698,7 +1698,7 @@ static void etcd_kick_block_event(void)
 static void etcd_handle_block(struct etcd_ctx *ctx,
 			      struct json_object *obj)
 {
-	struct etcd_node block, *node;
+	struct etcd_node block, *node, *tmp;
 	struct json_object *node_obj;
 
 	node_obj = json_object_object_get(obj, "node");
@@ -1715,7 +1715,16 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 		return;
 	}
 	sd_mutex_lock(&etcd_block_mutex);
-	list_add_tail(&node->list, &etcd_block_list);
+	list_for_each_entry(tmp, &etcd_block_list, list) {
+		if (tmp == node) {
+			sd_warn("%s: node '%s' already on blocked list",
+				__func__, node->node_id);
+			node = NULL;
+			break;
+		}
+	}
+	if (node)
+		list_add_tail(&node->list, &etcd_block_list);
 	node = list_first_entry(&etcd_block_list, typeof(*node), list);
 	if (!node->callbacked)
 		node->callbacked = sd_block_handler(&node->node);
@@ -1725,7 +1734,7 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 static void etcd_handle_unblock(struct etcd_ctx *ctx,
 				struct json_object *obj)
 {
-	struct etcd_node unblock, *block;
+	struct etcd_node unblock, *block = NULL;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
 
@@ -1741,9 +1750,11 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 					 typeof(*block), list);
 		list_del(&block->list);
 		block->callbacked = false;
-		sd_notify_handler(&block->node, (void *)msg, msg_len);
 	}
 	sd_mutex_unlock(&etcd_block_mutex);
+	if (block)
+		sd_notify_handler(&block->node, (void *)msg, msg_len);
+
 	free(msg);
 }
 
