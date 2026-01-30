@@ -25,7 +25,7 @@
 
 static int efd;
 static struct rb_root events_tree = RB_ROOT;
-static pthread_mutex_t events_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct sd_mutex events_mutex = SD_MUTEX_INITIALIZER;
 
 static void timer_handler(int fd, int events, void *data)
 {
@@ -98,9 +98,9 @@ static struct event_info *lookup_event(int fd)
 {
 	struct event_info key = { .fd = fd }, *event;
 
-	pthread_mutex_lock(&events_mutex);
+	sd_mutex_lock(&events_mutex);
 	event = rb_search(&events_tree, &key, rb, event_cmp);
-	pthread_mutex_unlock(&events_mutex);
+	sd_mutex_unlock(&events_mutex);
 	return event;
 }
 
@@ -126,12 +126,12 @@ int register_event_prio(int fd, event_handler_t h, void *data, int prio)
 		sd_err("failed to add epoll event for fd %d: %m", fd);
 		free(ei);
 	} else {
-		pthread_mutex_lock(&events_mutex);
+		sd_mutex_lock(&events_mutex);
 		if (rb_insert(&events_tree, ei, rb, event_cmp)) {
 			sd_err("failed to insert epoll event for fd %d", fd);
 			ret = -1;
 		}
-		pthread_mutex_unlock(&events_mutex);
+		sd_mutex_unlock(&events_mutex);
 		if (ret < 0) {
 			ret = epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
 			if (ret)
@@ -159,9 +159,9 @@ void unregister_event(int fd)
 	if (ret)
 		sd_err("failed to delete epoll event for fd %d: %m", fd);
 
-	pthread_mutex_lock(&events_mutex);
+	sd_mutex_lock(&events_mutex);
 	rb_erase(&ei->rb, &events_tree);
-	pthread_mutex_unlock(&events_mutex);
+	sd_mutex_unlock(&events_mutex);
 	free(ei);
 
 	/*
