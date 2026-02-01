@@ -1577,7 +1577,7 @@ static struct sd_op_template sd_ops[] = {
 		.process_main = cluster_recovery_completion,
 	},
 
-	/* rsq.vdi, arg 'vdi_name' */
+	/* req.vdi, arg 'vdi_name', rsp.vdi */
 	[SD_OP_GET_VDI_INFO] = {
 		.name = "GET_VDI_INFO",
 		.type = SD_OP_TYPE_CLUSTER,

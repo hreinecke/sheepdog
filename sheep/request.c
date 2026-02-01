@@ -706,7 +706,9 @@ main_fn void put_request(struct request *req)
 	const struct sd_op_template *op_tmpl = get_sd_op(req->rq.opcode);
 	const char *op = op_tmpl ? op_name(op_tmpl) : "<unknown>";
 
-	if (!ci) {
+	if (req->local) {
+		sd_debug("complete local req=%p ob=%s", req, op);
+	} else if (!ci) {
 		sd_warn("complete req=%p op=%s", req, op);
 	} else {
 		sd_debug("complete req=%p, fd=%d, client=%s:%d op=%s",
