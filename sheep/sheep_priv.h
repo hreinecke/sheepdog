@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <sys/epoll.h>
 #include <signal.h>
+#include <uuid/uuid.h>
 
 #include "sheepdog_proto.h"
 #include "event.h"
@@ -231,6 +232,7 @@ struct vdi_iocb {
 	uint32_t base_vid;
 	uint32_t snapid;
 	bool create_snapshot;
+	bool has_uuid;
 	uint8_t copy_policy;
 	uint8_t store_policy;
 	uint8_t nr_copies;
