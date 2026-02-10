@@ -2676,19 +2676,15 @@ out:
 
 static int vdi_object_dump_inode(int argc, char **argv)
 {
+	const char *vdiname = argv[optind++];
 	struct sd_inode *inode = xzalloc(sizeof(*inode));
-	int fd, ret;
+	int ret;
 
-	fd = open(argv[optind], O_RDONLY);
-	if (fd < 0) {
-		sd_err("failed to open inode object file: %m");
-		return EXIT_FAILURE;
-	}
-
-	ret = xread(fd, inode, sizeof(*inode));
-	if (ret != sizeof(*inode)) {
-		sd_err("failed to read inode object file: %m");
-		close(fd);
+	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
+			   vdi_cmd_data.snapshot_tag, NULL, inode,
+			   SD_INODE_SIZE);
+	if (ret != EXIT_SUCCESS) {
+		sd_err("no inode object");
 		return EXIT_FAILURE;
 	}
 
@@ -2743,7 +2739,6 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		       inode->gref[i].generation, inode->gref[i].count);
 	}
 
-	close(fd);
 	return EXIT_SUCCESS;
 }
 
