@@ -59,7 +59,7 @@ if BUILD_ACCELIO
 sheep_SOURCES		+= xio_server.c xio_client.c
 endif
 
-sheep_LDADD	  	= ../lib/libsd.a -lpthread -lm -ljson-c \
+sheep_LDADD	  	= ../lib/libsd.a -luuid -lpthread -lm -ljson-c \
 			  $(libacrd_LIBS) $(corosync_LIBS) $(LIBS)
 
 if BUILD_NFS

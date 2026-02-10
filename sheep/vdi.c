@@ -1077,6 +1077,7 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 {
 	struct sd_inode *new = xzalloc(sizeof(*new));
 	unsigned long block_size = (UINT32_C(1) << iocb->block_size_shift);
+	uuid_t uuid;
 
 	pstrcpy(new->name, sizeof(new->name), iocb->name);
 	new->vdi_id = new_vid;
@@ -1087,12 +1088,17 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	new->nr_copies = iocb->nr_copies;
 	new->block_size_shift = find_next_bit(&block_size, BITS_PER_LONG, 0);
 	new->snap_id = new_snapid;
+	if (SD_INODE_USE_UUID(new)) {
+		uuid_generate(uuid);
+		memcpy(&new->vm_clock_nsec, (char *)uuid, 8);
+		memcpy(&new->vm_state_size, (char *)(uuid + 8), 8);
+	}
 	new->parent_vdi_id = iocb->base_vid;
 	if (data_vdi_id)
 		sd_inode_copy_vdis(sheep_bnode_writer, sheep_bnode_reader,
-				   data_vdi_id, iocb->store_policy,
+				   data_vdi_id, sd_store_policy_is_hyper(new),
 				   iocb->nr_copies, iocb->copy_policy, new);
-	else if (new->store_policy == SD_HYPER_STORE_POLICY)
+	else if (sd_store_policy_is_hyper(new))
 		sd_inode_init(new->data_vdi_id, 1);
 
 	if (gref) {
@@ -1782,7 +1788,7 @@ static void delete_vdi_work(struct work *work)
 	if (inode->vdi_size == 0 && vdi_is_deleted(inode))
 		goto out;
 
-	if (inode->store_policy == SD_DEFAULT_STORE_POLICY) {
+	if (!sd_store_policy_is_hyper(inode)) {
 		nr_objs = count_data_objs(inode);
 		for (nr_deleted = 0, i = 0; i < nr_objs; i++) {
 			uint32_t vid = sd_inode_get_vid(inode, i);
@@ -2075,7 +2081,7 @@ int sd_create_hyper_volume(const char *name, uint32_t *vdi_id)
 	hdr.vdi.vdi_size = SD_MAX_VDI_SIZE;
 	hdr.vdi.copies = sys->cinfo.nr_copies;
 	hdr.vdi.copy_policy = sys->cinfo.copy_policy;
-	hdr.vdi.store_policy = SD_HYPER_STORE_POLICY;
+	hdr.vdi.store_policy = SD_HYPER_STORE_POLICY | SD_UUID_POLICY_MASK;
 	/* XXX Cannot use both features, Hypervolume and Change object size */
 	if (sys->cinfo.block_size_shift != SD_DEFAULT_BLOCK_SIZE_SHIFT) {
 		hdr.vdi.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;
