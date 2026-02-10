@@ -183,6 +183,7 @@ int init_config_file(void)
 	char *cfg_file = NULL;
 	struct json_object *obj;
 	uint16_t cluster_flags;
+	bool is_json_config = false;
 
 	check_tmp_config();
 
@@ -219,9 +220,10 @@ int init_config_file(void)
 		sd_info("reading from json config file");
 		json_to_config(obj, &config);
 		json_object_put(obj);
+		is_json_config = true;
 	}
 
-	if (config.version != SD_FORMAT_VERSION) {
+	if (!is_json_config && config.version != SD_FORMAT_VERSION) {
 		sd_err("This sheep version is not compatible with"
 		       " the existing data layout, %d", config.version);
 		if (sys->upgrade) {
