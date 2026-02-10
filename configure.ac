@@ -127,6 +127,9 @@ AC_CHECK_HEADERS([urcu.h urcu/uatomic.h],,
 AC_CHECK_HEADERS([json-c/json.h],,
 	AC_MSG_ERROR(libjson-c is required))
 
+AC_CHECK_HEADERS([uuid/uuid.h],,
+	AC_MSG_ERROR(libuuid is required))
+
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
 AC_TYPE_UID_T

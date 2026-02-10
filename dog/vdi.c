@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <search.h>
+#include <uuid/uuid.h>
 
 #include "dog.h"
 #include "treeview.h"
@@ -52,6 +53,7 @@ static struct sd_option vdi_options[] = {
 	 "in reclamation loop during VDI deletion"},
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
+	{'u', "uuid", false, "generate an inode UUID"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -565,6 +567,7 @@ static int vdi_create(int argc, char **argv)
 	uint32_t object_size;
 	uint64_t old_max_total_size = 0;
 	struct sd_inode *inode = NULL;
+	uint8_t store_policy = vdi_cmd_data.store_policy & SD_STORE_POLICY_MASK;
 	int ret;
 
 	if (!argv[optind]) {
@@ -577,7 +580,7 @@ static int vdi_create(int argc, char **argv)
 
 	if (vdi_cmd_data.block_size_shift) {
 		object_size = (UINT32_C(1) << vdi_cmd_data.block_size_shift);
-	} else if (vdi_cmd_data.store_policy == SD_HYPER_STORE_POLICY) {
+	} else if (store_policy == SD_HYPER_STORE_POLICY) {
 		/* Force to use default block_size_shift for hyper volume */
 		vdi_cmd_data.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;
 		object_size = (UINT32_C(1) << vdi_cmd_data.block_size_shift);
@@ -610,7 +613,7 @@ static int vdi_create(int argc, char **argv)
 	old_max_total_size = object_size * OLD_MAX_DATA_OBJS;
 
 	if (size > old_max_total_size &&
-	    SD_DEFAULT_STORE_POLICY == vdi_cmd_data.store_policy) {
+	    SD_DEFAULT_STORE_POLICY == store_policy) {
 		sd_err("VDI size is larger than %s bytes, please use '-y' to "
 		       "create a hyper volume with size up to %s bytes"
 		       " or use '-z' to create larger object size volume",
@@ -792,7 +795,7 @@ static int vdi_snapshot(int argc, char **argv)
 			return ret;
 	}
 
-	if (inode->store_policy == SD_HYPER_STORE_POLICY) {
+	if (sd_store_policy_is_hyper(inode)) {
 		sd_err("creating a snapshot of hypervolume is not supported");
 		return EXIT_FAILURE;
 	}
@@ -970,7 +973,7 @@ static int vdi_resize(int argc, char **argv)
 
 	object_size = (UINT32_C(1) << inode->block_size_shift);
 	old_max_total_size = object_size * OLD_MAX_DATA_OBJS;
-	if (SD_DEFAULT_STORE_POLICY == inode->store_policy) {
+	if (!sd_store_policy_is_hyper(inode)) {
 		if (new_size > old_max_total_size) {
 			sd_err("New VDI size is too large."
 			       " This volume's max size is %"PRIu64,
@@ -2260,7 +2263,7 @@ int do_vdi_check(const struct sd_inode *inode)
 	queue_vdi_check_work(inode, vid_to_vdi_oid(inode->vdi_id), NULL, wq,
 			     nr_copies);
 
-	if (inode->store_policy == SD_DEFAULT_STORE_POLICY) {
+	if (!sd_store_policy_is_hyper(inode)) {
 		max_idx = count_data_objs(inode);
 		vdi_show_progress(done, inode->vdi_size);
 		for (uint32_t idx = 0; idx < max_idx; idx++) {
@@ -2688,13 +2691,22 @@ static int vdi_object_dump_inode(int argc, char **argv)
 	printf("tag: %s\n", inode->tag);
 	printf("create_time: %"PRIx64"\n", inode->create_time);
 	printf("snap_ctime: %"PRIx64"\n", inode->snap_ctime);
-	printf("vm_clock_nsec: %"PRIx64"\n", inode->vm_clock_nsec);
 	printf("vdi_size: %"PRIu64"\n", inode->vdi_size);
-	printf("vm_state_size: %"PRIu64"\n", inode->vm_state_size);
+	if (!SD_INODE_USE_UUID(inode)) {
+		printf("vm_clock_nsec: %"PRIx64"\n", inode->vm_clock_nsec);
+		printf("vm_state_size: %"PRIu64"\n", inode->vm_state_size);
+	} else {
+		uuid_t uuid;
+		char uuid_str[UUID_STR_LEN];
+
+		memcpy((char *)uuid, &inode->vm_clock_nsec, 8);
+		memcpy((char *)(uuid + 8), &inode->vm_state_size, 8);
+		uuid_unparse(uuid, uuid_str);
+		printf("uuid: %s\n", uuid_str);
+	}
 	printf("copy_policy: %d\n", inode->copy_policy);
 	printf("store_policy: %s\n",
-	       inode->store_policy == SD_HYPER_STORE_POLICY ?
-	       "hyper" : "default");
+	       sd_store_policy_is_hyper(inode) ? "hyper" : "default");
 	printf("nr_copies: %d\n", inode->nr_copies);
 	printf("block_size_shift: %d\n", inode->block_size_shift);
 	printf("snap_id: %"PRIu32"\n", inode->snap_id);
@@ -2983,7 +2995,7 @@ static struct subcommand vdi_cmd[] = {
 	{"check", "<vdiname>", "seaphT", "check and repair image's consistency",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_check, vdi_options},
-	{"create", "<vdiname> <size>", "PycaphrvzT", "create an image",
+	{"create", "<vdiname> <size>", "PycaphrvzTu", "create an image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_create, vdi_options},
 	{"snapshot", "<vdiname>", "saphrvTR", "create a snapshot",
@@ -3114,7 +3126,7 @@ static int vdi_parser(int ch, const char *opt)
 		vdi_cmd_data.force = true;
 		break;
 	case 'y':
-		vdi_cmd_data.store_policy = SD_HYPER_STORE_POLICY;
+		vdi_cmd_data.store_policy |= SD_HYPER_STORE_POLICY;
 		if (vdi_cmd_data.block_size_shift) {
 			sd_info("Don't specify both -y and -z options, please");
 			exit(EXIT_FAILURE);
@@ -3141,7 +3153,8 @@ static int vdi_parser(int ch, const char *opt)
 			       " Please set shift bit larger than 20");
 			exit(EXIT_FAILURE);
 		}
-		if (vdi_cmd_data.store_policy == SD_HYPER_STORE_POLICY) {
+		if ((vdi_cmd_data.store_policy & SD_STORE_POLICY_MASK) ==
+		    SD_HYPER_STORE_POLICY) {
 			sd_info("Don't specify both -y and -z options, please");
 			exit(EXIT_FAILURE);
 		}
@@ -3188,6 +3201,9 @@ static int vdi_parser(int ch, const char *opt)
 				"positive integer");
 			exit(EXIT_FAILURE);
 		}
+		break;
+	case 'u':
+		vdi_cmd_data.store_policy |= SD_UUID_POLICY_MASK;
 		break;
 	}
 
