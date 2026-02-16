@@ -292,7 +292,7 @@ static void for_each_node_print(uint64_t oid)
 		ret = dog_exec_req(&n->nid, &hdr, NULL);
 		if (ret < 0)
 			continue;
-		switch (rsp->result) {
+		if (rsp->result) {
 			sd_err("%s", sd_strerror(rsp->result));
 			continue;
 		}
