@@ -133,6 +133,9 @@ int register_event_prio(int fd, event_handler_t h, void *data, int prio)
 		}
 		sd_mutex_unlock(&events_mutex);
 		if (ret < 0) {
+			ret = epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+			if (ret)
+				panic("failed to clear epoll event");
 			free(ei);
 			errno = EBUSY;
 		}
