@@ -166,10 +166,10 @@ err:
 
 void submit_blocking_sheep_request(struct sd_cluster *c, uint64_t oid)
 {
-	struct sheep_request *req;
+	struct sheep_request *req, *tmp;
 
 	sd_write_lock(&c->blocking_lock);
-	list_for_each_entry(req, &c->blocking_list, list) {
+	list_for_each_entry_safe(req, tmp, &c->blocking_list, list) {
 		if (req->oid != oid)
 			continue;
 		list_del(&req->list);

@@ -34,8 +34,20 @@ static inline void INIT_LIST_NODE(struct list_node *list)
 	list->prev = list;
 }
 
+static inline int list_is_head(const struct list_node *list,
+			       const struct list_head *head)
+{
+	return list == &head->n;
+}
+
 #define list_first_entry(head, type, member) \
 	list_entry((head)->n.next, type, member)
+
+#define list_next_entry(pos, member) \
+	list_entry((pos)->member.next, typeof(*(pos)), member)
+
+#define list_entry_is_head(pos, head, member) \
+	list_is_head(&pos->member, (head))
 
 static inline bool list_empty(const struct list_head *head)
 {
@@ -56,16 +68,15 @@ static inline bool list_linked(const struct list_node *node)
 	     pos = LOCAL(n), LOCAL(n) = pos->next)
 
 #define list_for_each_entry(pos, head, member)				\
-	for (typeof(pos) LOCAL(n) = (pos = list_entry((head)->n.next,	\
-						      typeof(*pos),	\
-						      member),		\
-				     list_entry(pos->member.next,	\
-						typeof(*pos),		\
-						member));		\
-	     &pos->member != &(head)->n;				\
-	     pos = LOCAL(n), LOCAL(n) = list_entry(LOCAL(n)->member.next, \
-						   typeof(*LOCAL(n)),	\
-						   member))
+	for (pos = list_first_entry(head, typeof(*pos), member);	\
+	     !list_entry_is_head(pos, head, member);			\
+	     pos = list_next_entry(pos, member))
+
+#define list_for_each_entry_safe(pos, n, head, member)			\
+	for (pos = list_first_entry(head, typeof(*pos), member),	\
+		     n = list_next_entry(pos, member);			\
+	     !list_entry_is_head(pos, head, member);			\
+	     pos = n, n = list_next_entry(n, member))
 
 static inline void __list_add(struct list_node *new,
 			      struct list_node *prev,
