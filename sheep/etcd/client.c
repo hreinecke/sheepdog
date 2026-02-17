@@ -15,9 +15,9 @@
 #include <json-c/json.h>
 
 #include "util.h"
-#include "base64.h"
+#include "etcd/base64.h"
 #include "logger.h"
-#include "etcd_client.h"
+#include "etcd/client.h"
 
 static const char *default_etcd_host = "localhost";
 static const char *default_etcd_proto = "http";

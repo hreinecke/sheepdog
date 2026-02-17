@@ -16,7 +16,7 @@
 #include "util.h"
 #include "rbtree.h"
 #include "json.h"
-#include "etcd_client.h"
+#include "etcd/client.h"
 
 #define SESSION_TIMEOUT 30		/* seconds */
 
