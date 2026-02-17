@@ -456,7 +456,7 @@ static void cluster_info_export(struct cluster_info *cinfo)
 {
 	int len = offsetof(struct cluster_info, nodes) +
 		sys->cinfo.nr_nodes * sizeof(struct sd_node);
-	memcpy(cinfo, &src->cinfo, len);
+	memcpy(cinfo, &sys->cinfo, len);
 	if (sys->autovnodes)
 		cinfo->flags |= SD_CLUSTER_FLAG_AUTO_VNODES;
 	else
@@ -1239,7 +1239,7 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 
 	if (node_is_local(joined) && sys->gateway_only
 		&& sys->cinfo.ctime <= 0)
-		autovnodes = cinfo->flags & SD_CLUSTER_FLAGS_AUTO_VNODES;
+		autovnodes = cinfo->flags & SD_CLUSTER_FLAG_AUTO_VNODES;
 	else
 		autovnodes = sys->autovnodes;
 
