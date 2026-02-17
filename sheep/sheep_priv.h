@@ -154,6 +154,7 @@ struct system_info {
 
 	struct sd_mutex local_req_lock;
 	struct list_head local_req_queue;
+	struct sd_mutex req_wait_lock;
 	struct list_head req_wait_queue;
 	int nr_outstanding_reqs;
 
