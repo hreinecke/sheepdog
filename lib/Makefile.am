@@ -44,7 +44,7 @@ endif
 
 libsd_a_SOURCES		= event.c logger.c net.c util.c rbtree.c strbuf.c \
 			  sha1.c option.c work.c sockfd_cache.c fec.c \
-			  sd_inode.c common.c
+			  sd_inode.c common.c json.c
 
 if YASM_AVX2_SUPPORT
 libsd_a_LIBADD_		= isa-l/bin/ec_base.o \
