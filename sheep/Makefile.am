@@ -49,6 +49,9 @@ endif
 if BUILD_SHEPHERD
 sheep_SOURCES		+= cluster/shepherd.c
 endif
+if BUILD_ETCD
+sheep_SOURCES		+= cluster/etcd.c etcd/client.c etcd/socket.c etcd/base64.c
+endif
 
 if BUILD_TRACE
 AM_CPPFLAGS		+= -DENABLE_TRACE
@@ -68,6 +71,10 @@ endif
 
 if BUILD_TRACE
 sheep_LDADD		+= -lbfd -liberty -lsframe -lz
+endif
+
+if BUILD_ETCD
+sheep_LDADD		+= -lneon
 endif
 
 sheep_DEPENDENCIES	= ../lib/libsd.a ../lib/libisa.a

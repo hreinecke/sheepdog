@@ -242,6 +242,11 @@ AC_ARG_ENABLE([shepherd],
 	[ enable_shepherd="no" ],)
 AM_CONDITIONAL(BUILD_SHEPHERD, test x$enable_shepherd = xyes)
 
+AC_ARG_ENABLE([etcd],
+	[  --enable-etcd      : build etcd cluster driver ],,
+	[ enable_etcd="no" ],)
+AM_CONDITIONAL(BUILD_ETCD, test x$enable_etcd = xyes)
+
 AC_ARG_WITH([initddir],
 	[  --with-initddir=DIR     : path to init script directory. ],
 	[ INITDDIR="$withval" ],
@@ -305,6 +310,10 @@ fi
 
 if test x$enable_systemd = xyes -a x$have_systemd != xyes ; then
     AC_MSG_ERROR([Explicitly requested systemd support, but systemd not found])
+fi
+
+if test x$enable_etcd = xyes ; then
+    PKG_CHECK_MODULES([neon],[neon],[have_neon=yes])
 fi
 
 ##### systemd unit files
