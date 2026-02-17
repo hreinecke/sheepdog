@@ -28,6 +28,9 @@ static struct sd_mutex wait_vdis_lock = SD_MUTEX_INITIALIZER;
 static struct sd_cond wait_vdis_cond = SD_COND_INITIALIZER;
 static refcnt_t nr_get_vdis_works;
 
+static struct sd_mutex pending_block_mutex = SD_MUTEX_INITIALIZER;
+static struct sd_mutex pending_notify_mutex = SD_MUTEX_INITIALIZER;
+
 static main_thread(struct vnode_info *) current_vnode_info;
 static main_thread(struct list_head *) pending_block_list;
 static main_thread(struct list_head *) pending_notify_list;
@@ -174,7 +177,8 @@ struct vnode_info *get_vnode_info_epoch(uint32_t epoch,
 			return NULL;
 	}
 	for (int i = 0; i < nr_nodes; i++)
-		rb_insert(&nroot, &nodes[i], rb, node_cmp);
+		if (rb_insert(&nroot, &nodes[i], rb, node_cmp))
+			panic("vnode %d hash collision", i);
 
 	return alloc_vnode_info(&nroot);
 }
@@ -269,6 +273,7 @@ static void cluster_op_done(struct work *work)
 	req->status = REQUEST_DONE;
 	return;
 drop:
+	sd_warn("%s (%p) dropped", op_name(req->op), req);
 	list_del(&req->pending_list);
 	req->rp.result = SD_RES_CLUSTER_ERROR;
 	put_request(req);
@@ -287,7 +292,8 @@ drop:
  */
 main_fn bool sd_block_handler(const struct sd_node *sender)
 {
-	struct request *req;
+	struct request *req = NULL;
+	struct list_head *l;
 
 	if (!node_is_local(sender))
 		return false;
@@ -296,8 +302,16 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 
 	cluster_op_running = true;
 
-	req = list_first_entry(main_thread_get(pending_block_list),
-				struct request, pending_list);
+	sd_mutex_lock(&pending_block_mutex);
+	l = main_thread_get(pending_block_list);
+	if (!list_empty(l))
+		req = list_first_entry(l, struct request,
+				       pending_list);
+	sd_mutex_unlock(&pending_block_mutex);
+	if (!req) {
+		sd_warn("empty block list");
+		return false;
+	}
 	req->work.fn = do_process_work;
 	req->work.done = cluster_op_done;
 
@@ -315,18 +329,32 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
  */
 main_fn void queue_cluster_request(struct request *req)
 {
+	struct request *tmp;
 	int ret;
+
 	sd_debug("%s (%p)", op_name(req->op), req);
 
 	if (has_process_work(req->op)) {
+		sd_mutex_lock(&pending_block_mutex);
+		list_add_tail(&req->pending_list,
+			      main_thread_get(pending_block_list));
+		sd_mutex_unlock(&pending_block_mutex);
 		ret = sys->cdrv->block();
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("failed to broadcast block to cluster, %s",
 			       sd_strerror(ret));
+			sd_mutex_lock(&pending_block_mutex);
+			list_for_each_entry(tmp,
+					    main_thread_get(pending_block_list),
+					    pending_list) {
+				if (tmp == req) {
+					list_del(&req->pending_list);
+					break;
+				}
+			}
+			sd_mutex_unlock(&pending_block_mutex);
 			goto error;
 		}
-		list_add_tail(&req->pending_list,
-			      main_thread_get(pending_block_list));
 	} else {
 		struct vdi_op_message *msg;
 		size_t size;
@@ -334,16 +362,26 @@ main_fn void queue_cluster_request(struct request *req)
 		msg = prepare_cluster_msg(req, &size);
 		msg->rsp.result = SD_RES_SUCCESS;
 
+		sd_mutex_lock(&pending_notify_mutex);
+		list_add_tail(&req->pending_list,
+			      main_thread_get(pending_notify_list));
+		sd_mutex_unlock(&pending_notify_mutex);
 		ret = sys->cdrv->notify(msg, size);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("failed to broadcast notify to cluster, %s",
 			       sd_strerror(ret));
+			sd_mutex_lock(&pending_notify_mutex);
+			list_for_each_entry(tmp,
+					    main_thread_get(pending_notify_list),
+					    pending_list) {
+				if (tmp == req) {
+					list_del(&req->pending_list);
+					break;
+				}
+			}
+			sd_mutex_unlock(&pending_notify_mutex);
 			goto error;
 		}
-
-		list_add_tail(&req->pending_list,
-			      main_thread_get(pending_notify_list));
-
 		free(msg);
 	}
 	req->status = REQUEST_INIT;
@@ -1006,23 +1044,37 @@ main_fn void sd_notify_handler(const struct sd_node *sender, void *data,
 			       size_t data_len)
 {
 	struct vdi_op_message *msg = data;
-	const struct sd_op_template *op = get_sd_op(msg->req.opcode);
-	int ret = msg->rsp.result;
+	const struct sd_op_template *op =
+		msg ? get_sd_op(msg->req.opcode) : NULL;
+	int ret = msg? msg->rsp.result : 0;
 	struct request *req = NULL;
+	struct list_head *l;
 
 	sd_debug("op %s, size: %zu, from: %s", op_name(op), data_len,
 		 node_to_str(sender));
 
+	if (!op)
+		return;
 	if (node_is_local(sender)) {
-		if (has_process_work(op))
-			req = list_first_entry(
-				main_thread_get(pending_block_list),
-				struct request, pending_list);
-		else
-			req = list_first_entry(
-				main_thread_get(pending_notify_list),
-				struct request, pending_list);
-		list_del(&req->pending_list);
+		if (has_process_work(op)) {
+			sd_mutex_lock(&pending_block_mutex);
+			l = main_thread_get(pending_block_list);
+			if (!list_empty(l)) {
+				req = list_first_entry(l,  struct request,
+						       pending_list);
+				list_del(&req->pending_list);
+			}
+			sd_mutex_unlock(&pending_block_mutex);
+		} else {
+			sd_mutex_lock(&pending_notify_mutex);
+			l = main_thread_get(pending_notify_list);
+			if (!list_empty(l)) {
+				req = list_first_entry(l, struct request,
+						       pending_list);
+				list_del(&req->pending_list);
+			}
+			sd_mutex_unlock(&pending_notify_mutex);
+		}
 	}
 
 	if (ret == SD_RES_SUCCESS && has_process_main(op))
@@ -1096,10 +1148,11 @@ static int send_join_request(void)
 
 static void requeue_cluster_request(void)
 {
-	struct request *req;
+	struct request *req, *found = NULL;
 	struct vdi_op_message *msg;
 	size_t size;
 
+	sd_mutex_lock(&pending_notify_mutex);
 	list_for_each_entry(req, main_thread_get(pending_notify_list),
 			    pending_list) {
 		/*
@@ -1115,7 +1168,10 @@ static void requeue_cluster_request(void)
 		sd_notify_handler(&sys->this_node, msg, size);
 		free(msg);
 	}
+	sd_mutex_unlock(&pending_notify_mutex);
 
+retry:
+	sd_mutex_lock(&pending_block_mutex);
 	list_for_each_entry(req, main_thread_get(pending_block_list),
 			    pending_list) {
 		switch (req->status) {
@@ -1123,8 +1179,7 @@ static void requeue_cluster_request(void)
 			/* this request has never been executed, re-queue it */
 			sd_debug("requeue a block request, op: %s",
 				 op_name(req->op));
-			list_del(&req->pending_list);
-			queue_cluster_request(req);
+			found = req;
 			break;
 		case REQUEST_QUEUED:
 			/*
@@ -1156,6 +1211,15 @@ static void requeue_cluster_request(void)
 		default:
 			break;
 		}
+		if (found)
+			break;
+	}
+	if (found)
+		list_del(&found->pending_list);
+	sd_mutex_unlock(&pending_block_mutex);
+	if (found) {
+		queue_cluster_request(found);
+		goto retry;
 	}
 }
 
