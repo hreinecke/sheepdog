@@ -27,12 +27,25 @@ static void config_to_json(struct sheepdog_config *cfg,
 			   struct json_object *obj)
 {
 	const char *default_store = (const char *)cfg->default_store;
-	struct json_object *cfg_obj;
+	struct json_object *cfg_obj, *flags_obj;
 
 	cfg_obj = json_object_new_object();
 	json_object_object_add(cfg_obj, "ctime",
 			       json_object_new_int64(cfg->ctime));
-	_SET_CINFO_VAL(cfg_obj, cfg, flags);
+	flags_obj = json_object_new_object();
+	json_object_object_add(flags_obj, "strict",
+			       json_object_new_boolean(cfg->flags.strict));
+	json_object_object_add(flags_obj, "diskmode",
+			       json_object_new_boolean(cfg->flags.diskmode));
+	json_object_object_add(flags_obj, "auto_vnodes",
+			       json_object_new_boolean(cfg->flags.auto_vnodes));
+	json_object_object_add(flags_obj, "use_lock",
+			       json_object_new_boolean(cfg->flags.use_lock));
+	json_object_object_add(flags_obj, "recycle_vid",
+			       json_object_new_boolean(cfg->flags.recycle_vid));
+	json_object_object_add(flags_obj, "avoid_diskfull",
+			       json_object_new_boolean(cfg->flags.avoid_diskfull));
+	json_object_object_add(cfg_obj, "flags", flags_obj);
 	_SET_CINFO_VAL(cfg_obj, cfg, copies);
 	if (strlen(default_store))
 		json_object_object_add(cfg_obj, "default_store",
@@ -84,15 +97,22 @@ static void check_tmp_config(void)
 
 static int get_cluster_config(void)
 {
-	bool autovnodes = config.flags & SD_CLUSTER_FLAG_AUTO_VNODES;
-	int flags = config.flags & ~SD_CLUSTER_FLAG_AUTO_VNODES;
-
 	sys->cinfo.ctime = config.ctime;
 	sys->cinfo.nr_copies = config.copies;
 
-	sys->cinfo.flags = flags;
+	sys->cinfo.flags = 0;
+	if (config.flags.strict)
+		sys->cinfo.flags |= SD_CLUSTER_FLAG_STRICT;
+	if (config.flags.diskmode)
+		sys->cinfo.flags |= SD_CLUSTER_FLAG_DISKMODE;
+	if (config.flags.use_lock)
+		sys->cinfo.flags |= SD_CLUSTER_FLAG_USE_LOCK;
+	if (config.flags.recycle_vid)
+		sys->cinfo.flags |= SD_CLUSTER_FLAG_RECYCLE_VID;
+	if (config.flags.avoid_diskfull)
+		sys->cinfo.flags |= SD_CLUSTER_FLAG_AVOID_DISKFULL;
 	if (config.ctime > 0)
-		sys->autovnodes = autovnodes;
+		sys->autovnodes = config.flags.auto_vnodes;
 	sys->cinfo.copy_policy = config.copy_policy;
 	sys->cinfo.block_size_shift = config.block_size_shift;
 	memcpy(sys->cinfo.default_store, config.default_store,
@@ -129,6 +149,55 @@ int init_node_config_file(void)
 	return 0;
 }
 
+static void json_decode_flags(struct json_object *obj,
+			     struct sheepdog_config *cfg)
+{
+	struct json_object_iterator itb, ite;
+
+	if (json_object_is_type(obj, json_type_int)) {
+		int flags = json_object_get_int(obj);
+
+		/* compability with version 0006 */
+		cfg->flags.strict = !!(flags & SD_CLUSTER_FLAG_STRICT);
+		cfg->flags.diskmode = !!(flags & SD_CLUSTER_FLAG_DISKMODE);
+		cfg->flags.auto_vnodes =
+			!!(flags & SD_CLUSTER_FLAG_AUTO_VNODES);
+		cfg->flags.use_lock = !!(flags & SD_CLUSTER_FLAG_USE_LOCK);
+		cfg->flags.recycle_vid =
+			!!(flags & SD_CLUSTER_FLAG_RECYCLE_VID);
+		cfg->flags.avoid_diskfull =
+			!!(flags & SD_CLUSTER_FLAG_AVOID_DISKFULL);
+		return;
+	}
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "strict"))
+			cfg->flags.strict = json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "diskmode"))
+			cfg->flags.diskmode = json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "auto_vnodes"))
+			cfg->flags.auto_vnodes =
+				json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "use_lock"))
+			cfg->flags.use_lock =
+				json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "recycle_vid"))
+			cfg->flags.recycle_vid =
+				json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "avoid_diskfull"))
+			cfg->flags.avoid_diskfull =
+				json_object_get_boolean(val_obj);
+		else
+			sd_warn("%s: unhandled key '%s'", __func__, key);
+		json_object_iter_next(&itb);
+	}
+}
+
 static int json_to_config(struct json_object *obj,
 			  struct sheepdog_config *cfg)
 {
@@ -152,7 +221,7 @@ static int json_to_config(struct json_object *obj,
 		if (!strcmp(key, "ctime"))
 			cfg->ctime = json_object_get_int64(val_obj);
 		else if (!strcmp(key, "flags"))
-			cfg->flags = json_object_get_int(val_obj);
+			json_decode_flags(val_obj, cfg);
 		else if (!strcmp(key, "copies"))
 			cfg->copies = json_object_get_int(val_obj);
 		else if (!strcmp(key, "default_store")) {
@@ -259,17 +328,15 @@ int init_config_file(void)
 	}
 
 reload:
-	if ((config.flags & SD_CLUSTER_FLAG_AUTO_VNODES) !=
-	    (sys->autovnodes)
-		&& !sys->gateway_only
-		&& config.ctime > 0) {
+	if ((config.flags.auto_vnodes != sys->autovnodes)
+	    && !sys->gateway_only && config.ctime > 0) {
 		sd_err("Designation of before a restart and a vnodes option is different.");
 		return -1;
 	}
 
 	ret = 0;
 	get_cluster_config();
-	if ((config.flags & SD_CLUSTER_FLAG_DISKMODE) !=
+	if ((config.flags.diskmode) !=
 	    (sys->cinfo.flags & SD_CLUSTER_FLAG_DISKMODE)) {
 		sd_err("This sheep can't run because "
 		       "exists data format mismatch");
@@ -306,7 +373,18 @@ int set_cluster_config(const struct cluster_info *cinfo)
 	config.ctime = cinfo->ctime;
 	config.copies = cinfo->nr_copies;
 	config.copy_policy = cinfo->copy_policy;
-	config.flags = cinfo->flags;
+	config.flags.strict =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_STRICT);
+	config.flags.diskmode =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_DISKMODE);
+	config.flags.auto_vnodes =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_AUTO_VNODES);
+	config.flags.use_lock =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_USE_LOCK);
+	config.flags.recycle_vid =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_RECYCLE_VID);
+	config.flags.avoid_diskfull =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_AVOID_DISKFULL);
 	config.block_size_shift = cinfo->block_size_shift;
 	memset(config.default_store, 0, sizeof(config.default_store));
 	pstrcpy((char *)config.default_store, sizeof(config.default_store),
