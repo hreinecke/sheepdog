@@ -181,9 +181,7 @@ static int cluster_format(int argc, char **argv)
 	if (cluster_cmd_data.recycle_vid)
 		hdr.cluster.flags |= SD_CLUSTER_FLAG_RECYCLE_VID;
 
-#ifdef HAVE_DISKVNODES
 	hdr.cluster.flags |= SD_CLUSTER_FLAG_DISKMODE;
-#endif
 
 	if (cluster_cmd_data.fixed_vnodes)
 		hdr.cluster.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;

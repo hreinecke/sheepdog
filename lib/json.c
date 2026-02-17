@@ -11,10 +11,8 @@
 void node_to_json(struct sd_node *node, struct json_object *obj)
 {
 	const char *node_id = node_to_str(node);
-#ifdef HAVE_DISKVNODES
 	struct json_object *disks_obj;
 	int i;
-#endif
 
 	json_object_object_add(obj, "nid",
 			       json_object_new_string(node_id));
@@ -26,7 +24,6 @@ void node_to_json(struct sd_node *node, struct json_object *obj)
 			       json_object_new_int(node->nr_disks));
 	json_object_object_add(obj, "nr_vnodes",
 			       json_object_new_int(node->nr_vnodes));
-#ifdef HAVE_DISKVNODES
 	disks_obj = json_object_new_array();
 	for (i = 0; i < node->nr_disks; i++) {
 		struct json_object *disk_obj;
@@ -44,7 +41,6 @@ void node_to_json(struct sd_node *node, struct json_object *obj)
 		json_object_array_add(disks_obj, disk_obj);
 	}
 	json_object_object_add(obj, "disks", disks_obj);
-#endif
 }
 
 void nodes_to_json(struct sd_node *nodes, int nr_nodes,
@@ -66,7 +62,6 @@ void nodes_to_json(struct sd_node *nodes, int nr_nodes,
 	json_object_object_add(obj, "nodes", nodes_obj);
 }
 
-#ifdef HAVE_DISKVNODES
 static void json_to_disks(struct json_object *obj, struct sd_node *node)
 {
 	int j, nr_disks;
@@ -96,7 +91,6 @@ static void json_to_disks(struct json_object *obj, struct sd_node *node)
 			disk->disk_space = json_object_get_int64(space_obj);
 	}
 }
-#endif
 
 void json_to_node(struct json_object *obj, struct sd_node *node)
 {
@@ -124,10 +118,8 @@ void json_to_node(struct json_object *obj, struct sd_node *node)
 			node->zone = json_object_get_int64(val_obj);
 		else if (!strcmp(key, "space"))
 			node->space = json_object_get_int64(val_obj);
-#ifdef HAVE_DISKVNODES
 		else if (!strcmp(key, "disks"))
 			json_to_disks(val_obj, node);
-#endif
 		else
 			sd_warn("unhandled node attribute '%s'", key);
 		json_object_iter_next(&itb);

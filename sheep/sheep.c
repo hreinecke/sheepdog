@@ -798,10 +798,6 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 		fprintf(stdout, " nfs");
 		have_feats = 1;
 #endif
-#ifdef HAVE_DISKVNODES
-		fprintf(stdout, " diskvnodes");
-		have_feats = 1;
-#endif
 #ifdef HAVE_LTTNG_UST
 		fprintf(stdout, " lttng-ust");
 		have_feats = 1;
@@ -1020,9 +1016,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	#ifdef HAVE_DISKVNODES
 	sys->cinfo.flags |= SD_CLUSTER_FLAG_DISKMODE;
-	#endif
 
 	sheep_info.port = port;
 	early_log_init(log_format, &sheep_info);

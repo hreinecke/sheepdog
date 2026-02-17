@@ -232,15 +232,9 @@ struct sd_node {
 	uint16_t	nr_vnodes;
 	uint32_t	zone;
 	uint64_t        space;
-#ifdef HAVE_DISKVNODES
 	#define SD_MAX_NODES 830
 	#define SD_NODE_SIZE (80 + sizeof(struct disk_info) * DISK_MAX)
 	struct disk_info disks[DISK_MAX];
-#else
-	#define SD_MAX_NODES 6144
-	#define SD_NODE_SIZE 80
-	struct disk_info disks[0];
-#endif
 };
 
 struct oid_entry {

@@ -90,10 +90,6 @@ if BUILD_NFS
 RPMBUILDOPTS += --define "_have_nfs 1"
 endif
 
-if BUILD_DISKVNODES
-RPMBUILDOPTS += --define "_have_diskvnodes 1"
-endif
-
 if BUILD_LTTNG_UST
 RPMBUILDOPTS += --define "_have_lttng_ust 1"
 endif

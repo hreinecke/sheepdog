@@ -795,7 +795,6 @@ static inline void md_del_disk(const char *path)
 	md_remove_disk(disk);
 }
 
-#ifdef HAVE_DISKVNODES
 void update_node_disks(void)
 {
 	const struct disk *disk;
@@ -827,12 +826,6 @@ void update_node_disks(void)
 	}
 	sd_rw_unlock(&md.lock);
 }
-#else
-void update_node_disks(void)
-{
-	sys->this_node.nr_disks = 0;
-}
-#endif
 
 static int do_plug_unplug(char *disks, bool plug)
 {

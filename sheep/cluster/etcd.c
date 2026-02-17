@@ -197,7 +197,6 @@ static int etcd_node_set_addr(struct etcd_node *node, const char *attr)
 	return etcd_kv_new(node->ctx, key, val, len);
 }
 
-#ifdef HAVE_DISKVNODES
 static int etcd_node_disk_upload(struct etcd_node *node,
 				 struct disk_info *di, int disk_num)
 {
@@ -218,14 +217,10 @@ static int etcd_node_disk_upload(struct etcd_node *node,
 		 node->node_id, disk_num);
 	return etcd_kv_new(node->ctx, key, val, len);
 }
-#endif
 
 static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 {
-	int rc;
-#ifdef HAVE_DISKVNODES
-	int i;
-#endif
+	int rc, i;
 
 	if (create && etcd_node_exists(node->ctx, node->node_id))
 		return -EEXIST;
@@ -248,14 +243,13 @@ static inline bool etcd_node_upload(struct etcd_node *node, bool create)
 	rc = etcd_node_set_int_attr(node, "space",
 				    node->node.space);
 	if (rc) goto err;
-#ifdef HAVE_DISKVNODES
+
 	for (i = 0; i < node->node.nr_disks; i++) {
 		struct disk_info *di = &node->node.disks[i];
 		rc = etcd_node_disk_upload(node, di, i);
 		if (rc < 0)
 			goto err;
 	}
-#endif
 	return 0;
 err:
 	etcd_node_delete(node);
@@ -267,11 +261,9 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 {
 	char *attr;
 	unsigned long num;
-#ifdef HAVE_DISKVNODES
 	struct disk_info *disk_info = NULL;
 	char *disk;
 	int ret, disk_num = -1;
-#endif
 
 	attr = strrchr(kv->key, '/');
 	if (!attr) {
@@ -314,7 +306,6 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		node->node.nr_vnodes = num;
 	else if (!strcmp(attr, "space"))
 		node->node.space = num;
-#ifdef HAVE_DISKVNODES
 	else if ((disk = strstr(kv->key, "disks"))) {
 		ret = sscanf(disk, "disks/%u/%s", &disk_num, attr);
 		if (ret != 2) {
@@ -332,9 +323,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 			sd_debug("unhandled disk addribute '%s'", attr);
 			return -EINVAL;
 		}
-	}
-#endif
-	else {
+	} else {
 		sd_debug("unhandled attribute '%s'", attr);
 		return -EINVAL;
 	}

@@ -290,11 +290,6 @@ AC_ARG_ENABLE([nfs],
 	[ enable_nfs="no" ],)
 AM_CONDITIONAL(BUILD_NFS, test x$enable_nfs = xyes)
 
-AC_ARG_ENABLE([diskvnodes],
-	[  --enable-diskvnodes      : enable disk as vnodes (default no) ],,
-	[ enable_diskvnodes="no" ],)
-AM_CONDITIONAL(BUILD_DISKVNODES, test x$enable_diskvnodes = xyes)
-
 AC_ARG_ENABLE([earthquake],
 	[  --enable-earthquake      : enable earthquake debugger (default no) ],,
 	[ enable_earthquake="no" ],)
@@ -460,10 +455,6 @@ if test "x${enable_nfs}" = xyes; then
 		AC_MSG_ERROR(rpc.h header not found))
 	AC_DEFINE_UNQUOTED(HAVE_NFS, 1, [have nfs])
 	PACKAGE_FEATURES="$PACKAGE_FEATURES nfs"
-fi
-
-if test "x${enable_diskvnodes}" = xyes; then
-	AC_DEFINE_UNQUOTED(HAVE_DISKVNODES, 1, [have diskvnodes])
 fi
 
 if test "x${enable_earthquake}" = xyes; then
