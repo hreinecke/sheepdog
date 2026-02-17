@@ -77,7 +77,7 @@ static void update_vdi_family(uint32_t parent_vid,
 			      struct vdi_state_entry *entry, bool unordered)
 {
 	uint32_t vid = entry->vid;
-	struct vdi_family_member *new, *vdi, *parent;
+	struct vdi_family_member *new, *vdi, *parent, *tmp;
 
 	sd_mutex_lock(&vdi_family_mutex);
 
@@ -134,8 +134,8 @@ found:
 out:
 	/* correct children from orphan list */
 
-	list_for_each_entry(vdi, &vdi_family_temporal_orphans,
-			    child_list_node) {
+	list_for_each_entry_safe(vdi, tmp, &vdi_family_temporal_orphans,
+				 child_list_node) {
 		if (vdi->parent_vid != vid)
 			continue;
 
@@ -2006,7 +2006,7 @@ static void clean_family(struct vdi_family_member *member)
 
 void clean_vdi_state(void)
 {
-	struct vdi_family_member *member;
+	struct vdi_family_member *member, *tmp;
 
 	sd_write_lock(&vdi_state_lock);
 	rb_destroy(&vdi_state_root, struct vdi_state_entry, node);
@@ -2015,7 +2015,7 @@ void clean_vdi_state(void)
 
 	sd_mutex_lock(&vdi_family_mutex);
 
-	list_for_each_entry(member, &vdi_family_roots, roots_list) {
+	list_for_each_entry_safe(member, tmp, &vdi_family_roots, roots_list) {
 		clean_family(member);
 		list_del(&member->roots_list);
 		free(member);
