@@ -1086,6 +1086,7 @@ static void listen_handler(int listen_fd, int events, void *data)
 	sd_debug("accepted a new connection: %d", fd);
 }
 
+struct sd_mutex listening_fd_mutex = SD_MUTEX_INITIALIZER;
 static LIST_HEAD(listening_fd_list);
 
 struct listening_fd {
@@ -1096,22 +1097,36 @@ struct listening_fd {
 static int create_listen_port_fn(int fd, void *data)
 {
 	struct listening_fd *new_fd;
+	int ret;
 
 	new_fd = xzalloc(sizeof(*new_fd));
 	new_fd->fd = fd;
+	sd_mutex_lock(&listening_fd_mutex);
 	list_add_tail(&new_fd->list, &listening_fd_list);
+	sd_mutex_unlock(&listening_fd_mutex);
 
-	return register_event(fd, listen_handler, data);
+	ret = register_event(fd, listen_handler, data);
+	if (ret) {
+		sd_mutex_lock(&listening_fd_mutex);
+		list_del(&new_fd->list);
+		sd_mutex_unlock(&listening_fd_mutex);
+		free(new_fd);
+	}
+	return ret;
 }
 
 void unregister_listening_fds(void)
 {
-	struct listening_fd *fd;
+	struct listening_fd *fd, *tmp;
 
-	list_for_each_entry(fd, &listening_fd_list, list) {
+	sd_mutex_lock(&listening_fd_mutex);
+	list_for_each_entry_safe(fd, tmp, &listening_fd_list, list) {
 		sd_debug("unregistering fd: %d", fd->fd);
+		list_del(&fd->list);
 		unregister_event(fd->fd);
+		free(fd);
 	}
+	sd_mutex_unlock(&listening_fd_mutex);
 }
 
 int create_listen_port(const char *bindaddr, int port)
