@@ -503,12 +503,12 @@ int for_each_object_in_stale(int (*func)(uint64_t oid, const char *path,
 			     void *arg)
 {
 	int ret = SD_RES_SUCCESS;
-	char path[PATH_MAX];
+	char path[PATH_MAX + 7];
 	const struct disk *disk;
 
 	sd_read_lock(&md.lock);
 	rb_for_each_entry(disk, &md.root, rb) {
-		snprintf(path, sizeof(path), "%s/.stale", disk->path);
+		snprintf(path, PATH_MAX + 7, "%s/.stale", disk->path);
 		ret = for_each_object_in_path(path, func, false, NULL, arg);
 		if (ret != SD_RES_SUCCESS)
 			break;
