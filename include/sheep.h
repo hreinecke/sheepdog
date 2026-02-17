@@ -297,7 +297,7 @@ static inline void nodes_to_buffer(struct rb_root *nroot, void *buffer)
 
 #define MAX_NODE_STR_LEN 256
 
-static inline const char *node_id_to_str(const struct node_id *id)
+static inline const char *node_id_to_str(const struct node_id *id, bool io)
 {
 	static __thread char str[MAX_NODE_STR_LEN];
 	int af = AF_INET6;
@@ -314,14 +314,20 @@ static inline const char *node_id_to_str(const struct node_id *id)
 
 	snprintf(str, sizeof(str), "%s ip:%s port:%d",
 		(af == AF_INET) ? "IPv4" : "IPv6",
-		addr_to_str(id->addr, 0), id->port);
+		 io ? addr_to_str(id->io_addr, 0) : addr_to_str(id->addr, 0),
+		 io ? id->io_port : id->port);
 
 	return str;
 }
 
 static inline const char *node_to_str(const struct sd_node *id)
 {
-	return node_id_to_str(&id->nid);
+	return node_id_to_str(&id->nid, false);
+}
+
+static inline const char *io_node_to_str(const struct sd_node *id)
+{
+	return node_id_to_str(&id->nid, true);
 }
 
 static inline struct sd_node *str_to_node(const char *str, struct sd_node *id)
@@ -332,6 +338,19 @@ static inline struct sd_node *str_to_node(const char *str, struct sd_node *id)
 	sscanf(str, "%s ip:%s port:%d", v, ip, &port);
 	id->nid.port = port;
 	if (!str_to_addr(ip, id->nid.addr))
+		return NULL;
+
+	return id;
+}
+
+static inline struct sd_node *str_to_io_node(const char *str, struct sd_node *id)
+{
+	int port;
+	char v[8], ip[MAX_NODE_STR_LEN];
+
+	sscanf(str, "%s ip:%s port:%d", v, ip, &port);
+	id->nid.io_port = port;
+	if (!str_to_addr(ip, id->nid.io_addr))
 		return NULL;
 
 	return id;
