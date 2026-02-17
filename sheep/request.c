@@ -1106,11 +1106,12 @@ static int create_listen_port_fn(int fd, void *data)
 
 void unregister_listening_fds(void)
 {
-	struct listening_fd *fd;
+	struct listening_fd *fd, *tmp;
 
-	list_for_each_entry(fd, &listening_fd_list, list) {
+	list_for_each_entry_safe(fd, tmp, &listening_fd_list, list) {
 		sd_debug("unregistering fd: %d", fd->fd);
 		unregister_event(fd->fd);
+		free(fd);
 	}
 }
 
