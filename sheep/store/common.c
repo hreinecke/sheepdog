@@ -13,6 +13,7 @@
 #include <linux/falloc.h>
 
 #include "sheep_priv.h"
+#include "json.h"
 
 char *obj_path;
 char *epoch_path;
@@ -105,50 +106,82 @@ bool store_id_match(enum store_id id)
 
 int update_epoch_log(uint32_t epoch, struct sd_node *nodes, size_t nr_nodes)
 {
-	int ret, len, nodes_len;
+	struct json_object *obj;
+	int ret, len;
 	time_t t;
-	char path[PATH_MAX], *buf;
+	struct tm *tm;
+	char path[PATH_MAX], timestr[256];
+	const char *buf;
 
 	sd_debug("update epoch: %d, %zu", epoch, nr_nodes);
 
-	/* Piggyback the epoch creation time for 'dog cluster info' */
+	obj = json_object_new_object();
 	time(&t);
-	nodes_len = nr_nodes * sizeof(struct sd_node);
-	len = nodes_len + sizeof(time_t);
-	buf = xmalloc(len);
-	memcpy(buf, nodes, nodes_len);
-	memcpy(buf + nodes_len, &t, sizeof(time_t));
+	tm = localtime(&t);
+	strftime(timestr, 256, "%Y-%m-%d %H:%M:%S %z", tm);
+	json_object_object_add(obj, "timestamp",
+			       json_object_new_string(timestr));
+	nodes_to_json(nodes, nr_nodes, obj);
+	buf = json_object_to_json_string(obj);
+	len = strlen(buf);
 
-	/*
-	 * rb field is unused in epoch file, zero-filling it
-	 * is good for epoch file recovery because it is unified
-	 */
-	for (int i = 0; i < nr_nodes; i++)
-		memset(buf + i * sizeof(struct sd_node)
-				+ offsetof(struct sd_node, rb),
-				0, sizeof(struct rb_node));
-
-	snprintf(path, sizeof(path), "%s%08u", epoch_path, epoch);
+	snprintf(path, sizeof(path), "%s%08u.json", epoch_path, epoch);
 
 	ret = atomic_create_and_write(path, buf, len, true, false);
 
-	free(buf);
+	json_object_put(obj);
 	return ret;
 }
 
-static int do_epoch_log_read(uint32_t epoch, struct sd_node *nodes, int len,
-			     int *nr_nodes, time_t *timestamp)
+static int do_epoch_log_read_json(int fd, uint32_t epoch, struct sd_node *nodes,
+		int len, int *nr_nodes, time_t *timestamp)
 {
-	int fd, ret, buf_len;
-	char path[PATH_MAX];
-	struct stat epoch_stat;
+	struct json_object *obj;
+	struct json_object_iterator itb, ite;
+	int max_nodes;
 
-	snprintf(path, sizeof(path), "%s%08u", epoch_path, epoch);
-	fd = open(path, O_RDONLY);
-	if (fd < 0) {
-		sd_debug("failed to open epoch %"PRIu32" log, %m", epoch);
+	max_nodes = len / sizeof(struct sd_node);
+	obj = json_object_from_fd(fd);
+	if (!obj) {
+		sd_debug("Cannot parse epoch %"PRIu32" log", epoch);
 		goto err;
 	}
+
+	itb = json_object_iter_begin(obj);
+	ite = json_object_iter_end(obj);
+
+	while (!json_object_iter_equal(&itb, &ite)) {
+		const char *key = json_object_iter_peek_name(&itb);
+		struct json_object *val_obj = json_object_iter_peek_value(&itb);
+
+		if (!strcmp(key, "timestamp")) {
+			const char *timestr = json_object_get_string(val_obj);
+			struct tm tm;
+
+			strptime(timestr, "%Y-%m-%d %H:%M:%S %z", &tm);
+			if (timestamp)
+				*timestamp = mktime(&tm);
+		} else if (!strcmp(key, "nodes")) {
+			if (json_object_array_length(val_obj) > max_nodes) {
+				json_object_put(obj);
+				return SD_RES_BUFFER_SMALL;
+			}
+			json_to_nodes(val_obj, nodes, nr_nodes);
+		} else
+			sd_warn("Unhandled json attribute '%s'", key);
+		json_object_iter_next(&itb);
+	}
+	json_object_put(obj);
+	return SD_RES_SUCCESS;
+err:
+	return SD_RES_NO_TAG;
+}
+
+static int do_epoch_log_read(int fd, uint32_t epoch, struct sd_node *nodes,
+		int len, int *nr_nodes, time_t *timestamp)
+{
+	int ret, buf_len;
+	struct stat epoch_stat;
 
 	memset(&epoch_stat, 0, sizeof(epoch_stat));
 	ret = fstat(fd, &epoch_stat);
@@ -192,21 +225,57 @@ static int do_epoch_log_read(uint32_t epoch, struct sd_node *nodes, int len,
 	close(fd);
 	return SD_RES_SUCCESS;
 err:
-	if (fd >= 0)
-		close(fd);
 	return SD_RES_NO_TAG;
 }
 
 int epoch_log_read(uint32_t epoch, struct sd_node *nodes,
 				int len, int *nr_nodes)
 {
-	return do_epoch_log_read(epoch, nodes, len, nr_nodes, NULL);
+	char path[PATH_MAX];
+	int fd, ret;
+
+	snprintf(path, sizeof(path), "%s%08u.json", epoch_path, epoch);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		snprintf(path, sizeof(path), "%s%08u", epoch_path, epoch);
+		fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			sd_debug("failed to open epoch %"PRIu32" log, %m",
+				 epoch);
+			return SD_RES_NO_TAG;
+		}
+		ret = do_epoch_log_read(fd, epoch, nodes, len,
+					nr_nodes, NULL);
+	} else
+		ret = do_epoch_log_read_json(fd, epoch, nodes, len,
+					     nr_nodes, NULL);
+	close(fd);
+	return ret;
 }
 
 int epoch_log_read_with_timestamp(uint32_t epoch, struct sd_node *nodes,
 				int len, int *nr_nodes, time_t *timestamp)
 {
-	return do_epoch_log_read(epoch, nodes, len, nr_nodes, timestamp);
+	char path[PATH_MAX];
+	int fd, ret;
+
+	snprintf(path, sizeof(path), "%s%08u.json", epoch_path, epoch);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		snprintf(path, sizeof(path), "%s%08u", epoch_path, epoch);
+		fd = open(path, O_RDONLY);
+		if (fd < 0) {
+			sd_debug("failed to open epoch %"PRIu32" log, %m",
+				 epoch);
+			return SD_RES_NO_TAG;
+		}
+		return do_epoch_log_read(fd, epoch, nodes, len,
+					 nr_nodes, timestamp);
+	} else
+		ret = do_epoch_log_read_json(fd, epoch, nodes, len,
+					     nr_nodes, timestamp);
+	close(fd);
+	return ret;
 }
 
 uint32_t get_latest_epoch(void)
@@ -221,13 +290,20 @@ uint32_t get_latest_epoch(void)
 		panic("failed to get the latest epoch: %m");
 
 	while ((d = readdir(dir))) {
+		if (strlen(d->d_name) > 8) {
+			if (strcmp(d->d_name + 8, ".json"))
+				continue;
+		} else if (strlen(d->d_name) != 8)
+			continue;
+		sd_debug("checking %s", d->d_name);
+		errno = 0;
 		e = strtol(d->d_name, &p, 10);
-		if (d->d_name == p)
+		if (d->d_name == p || errno) {
+			sd_debug("Invalid epoch file name");
 			continue;
+		}
 
-		if (strlen(d->d_name) != 8)
-			continue;
-
+		sd_debug("found epoch %u", e);
 		if (e > epoch)
 			epoch = e;
 	}
