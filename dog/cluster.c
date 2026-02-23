@@ -106,11 +106,10 @@ static int cluster_format(int argc, char **argv)
 	rb_for_each_entry(n, &sd_nroot, rb) {
 		struct sd_req info_req;
 		struct sd_rsp *info_rsp = (struct sd_rsp *)&info_req;
-		struct cluster_info cinfo;
+		uint8_t flags;
 
-		sd_init_req(&info_req, SD_OP_CLUSTER_INFO);
-		info_req.data_length = sizeof(cinfo);
-		ret = dog_exec_req(&n->nid, &info_req, &cinfo);
+		sd_init_req(&info_req, SD_OP_CLUSTER_STATUS);
+		ret = dog_exec_req(&n->nid, &info_req, NULL);
 		if (ret < 0) {
 			sd_err("Fail to execute request");
 			return EXIT_FAILURE;
@@ -120,14 +119,15 @@ static int cluster_format(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 
+		flags = info_rsp->cluster.flags;
 		if (n->nr_vnodes != 0) {
-			if ((cinfo.flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+			if ((flags & SD_CLUSTER_FLAG_AUTO_VNODES)
 				&& cluster_cmd_data.fixed_vnodes) {
 				sd_err("Can not apply the option of '-V', "
 					"because there are vnode strategy of sheep "
 					"is auto in the cluster");
 				return EXIT_FAILURE;
-			} else if (!(cinfo.flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+			} else if (!(flags & SD_CLUSTER_FLAG_AUTO_VNODES)
 				&& !cluster_cmd_data.fixed_vnodes) {
 				sd_err("Need to specify the option of '-V', "
 					"because there are vnode strategy of sheep "

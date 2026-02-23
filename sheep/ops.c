@@ -1102,6 +1102,21 @@ static int local_cluster_info(const struct sd_req *req, struct sd_rsp *rsp,
 	return SD_RES_SUCCESS;
 }
 
+static int local_cluster_status(const struct sd_req *req, struct sd_rsp *rsp,
+				void *data, const struct sd_node *sender)
+{
+	rsp->cluster.proto_ver = sys->cinfo.proto_ver;
+	rsp->cluster.copy_policy = sys->cinfo.copy_policy;
+	rsp->cluster.nr_nodes = sys->cinfo.nr_nodes;
+	rsp->cluster.epoch = sys->cinfo.epoch;
+	rsp->cluster.ctime = sys->cinfo.ctime;
+	rsp->cluster.flags = sys->cinfo.flags;
+	rsp->cluster.nr_copies = sys->cinfo.nr_copies;
+	rsp->cluster.block_size_shift = sys->cinfo.block_size_shift;
+
+	return SD_RES_SUCCESS;
+}
+
 #ifdef HAVE_NFS
 
 static int local_nfs_create(struct request *req)
@@ -1802,6 +1817,13 @@ static struct sd_op_template sd_ops[] = {
 		.type = SD_OP_TYPE_LOCAL,
 		.force = true,
 		.process_main = local_cluster_info,
+	},
+
+	[SD_OP_CLUSTER_STATUS] = {
+		.name = "CLUSTER STATUS",
+		.type = SD_OP_TYPE_LOCAL,
+		.force = true,
+		.process_main = local_cluster_status,
 	},
 
 #ifdef HAVE_NFS
