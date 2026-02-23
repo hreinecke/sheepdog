@@ -340,12 +340,10 @@ int farm_save_snapshot(const char *tag, bool multithread)
 	if (!log_nr) {
 		struct sd_req hdr;
 		struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-		struct cluster_info cinfo;
 		struct snap_log_hdr log_hdr;
 
-		sd_init_req(&hdr, SD_OP_CLUSTER_INFO);
-		hdr.data_length = sizeof(cinfo);
-		ret = dog_exec_req(&sd_nid, &hdr, &cinfo);
+		sd_init_req(&hdr, SD_OP_CLUSTER_STATUS);
+		ret = dog_exec_req(&sd_nid, &hdr, NULL);
 		if (ret < 0) {
 			sd_err("Fail to execute request");
 			goto out;
@@ -357,9 +355,9 @@ int farm_save_snapshot(const char *tag, bool multithread)
 		}
 		log_hdr.magic = FARM_MAGIC;
 		log_hdr.version = FARM_VERSION;
-		log_hdr.copy_number = cinfo.nr_copies;
-		log_hdr.copy_policy = cinfo.copy_policy;
-		log_hdr.block_size_shift = cinfo.block_size_shift;
+		log_hdr.copy_number = rsp->cluster.nr_copies;
+		log_hdr.copy_policy = rsp->cluster.copy_policy;
+		log_hdr.block_size_shift = rsp->cluster.block_size_shift;
 		snap_log_write_hdr(&log_hdr);
 	}
 

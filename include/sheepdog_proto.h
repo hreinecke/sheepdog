@@ -258,6 +258,16 @@ struct sd_rsp {
 			uint8_t		block_size_shift;
 			uint8_t		__pad2;
 		} cluster_default;
+		struct {
+			uint8_t		proto_ver;
+			uint8_t		copy_policy;
+			uint16_t	nr_nodes;
+			uint32_t	epoch;
+			uint64_t	ctime;
+			uint16_t	flags;
+			uint8_t 	nr_copies;
+			uint8_t		block_size_shift;
+		} cluster;
 
 		uint32_t		__pad[8];
 	};

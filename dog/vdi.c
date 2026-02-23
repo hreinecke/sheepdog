@@ -584,17 +584,16 @@ static int vdi_create(int argc, char **argv)
 	} else {
 		struct sd_req hdr;
 		struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-		struct cluster_info cinfo;
-		sd_init_req(&hdr, SD_OP_CLUSTER_INFO);
-		hdr.data_length = sizeof(cinfo);
-		ret = dog_exec_req(&sd_nid, &hdr, &cinfo);
+
+		sd_init_req(&hdr, SD_OP_CLUSTER_STATUS);
+		ret = dog_exec_req(&sd_nid, &hdr, NULL);
 		if (ret < 0) {
-			sd_err("Fail to execute request: SD_OP_CLUSTER_INFO");
+			sd_err("Fail to execute request: SD_OP_CLUSTER_STATUS");
 			ret = EXIT_FAILURE;
 			goto out;
 		}
 
-		if (!cinfo.ctime) {
+		if (!rsp->cluster.ctime) {
 			sd_err("Failed to create VDI %s: %s", vdiname,
 			       sd_strerror(SD_RES_WAIT_FOR_FORMAT));
 			return EXIT_FAILURE;
@@ -605,7 +604,7 @@ static int vdi_create(int argc, char **argv)
 			ret = EXIT_FAILURE;
 			goto out;
 		}
-		object_size = (UINT32_C(1) << cinfo.block_size_shift);
+		object_size = (UINT32_C(1) << rsp->cluster.block_size_shift);
 	}
 
 	old_max_total_size = object_size * OLD_MAX_DATA_OBJS;
