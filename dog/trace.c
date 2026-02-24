@@ -96,9 +96,10 @@ read_buffer:
 	hdr.data_length = TRACE_BUF_LEN;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
-	if (ret < 0)
+	if (ret < 0) {
 		rval = EXIT_SYSFAIL;
 		goto out;
+	}
 
 	if (rsp->result == SD_RES_AGAIN)
 		goto read_buffer;
@@ -195,7 +196,7 @@ static int trace_status(int argc, char **argv)
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0)
 		return EXIT_SYSFAIL;
-	switch (rsp->result) {
+	if (rsp->result) {
 		sd_err("%s", sd_strerror(rsp->result));
 		return EXIT_FAILURE;
 	}
