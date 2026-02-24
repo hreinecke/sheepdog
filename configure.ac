@@ -413,8 +413,6 @@ if test "x${enable_trace}" = xyes; then
 	if [[[ $host != *x86_64* ]]]; then
 		AC_MSG_ERROR(tracer can be used on x86_64 architectures)
 	fi
-	AC_CHECK_LIB([bfd], [bfd_openr],,
-		AC_MSG_ERROR(requires binutils-dev))
 	AC_CHECK_HEADERS([bfd.h],,
 		AC_MSG_ERROR(requires binutils-dev))
 	AC_DEFINE_UNQUOTED([HAVE_TRACE], 1, [have trace])

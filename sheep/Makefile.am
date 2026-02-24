@@ -66,6 +66,10 @@ if BUILD_NFS
 sheep_LDADD		+= -lrt
 endif
 
+if BUILD_TRACE
+sheep_LDADD		+= -lbfd -liberty -lsframe -lz
+endif
+
 sheep_DEPENDENCIES	= ../lib/libsd.a
 
 

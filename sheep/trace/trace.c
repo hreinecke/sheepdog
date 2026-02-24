@@ -372,7 +372,7 @@ static int init_callers(void)
 		unsigned long ip, addr = bfd_asymbol_value(sym);
 		const char *name = bfd_asymbol_name(sym);
 		const char *section =
-			bfd_get_section_name(abfd, bfd_get_section(sym));
+			bfd_section_name(bfd_asymbol_section(sym));
 
 		if (addr == 0 || !(sym->flags & BSF_FUNCTION))
 			/* sym is not a function */
