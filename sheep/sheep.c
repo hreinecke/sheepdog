@@ -811,7 +811,7 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 int main(int argc, char **argv)
 {
 	int ch, longindex, ret, port = SD_LISTEN_PORT, io_port = SD_LISTEN_PORT;
-	int rc = 1;
+	int rc = 1, num;
 	const char *dirp = DEFAULT_OBJECT_DIR, *short_options;
 	char *dir, *pid_file = NULL, *bindaddr = NULL, log_path[PATH_MAX],
 	     *argp = NULL;
@@ -1234,11 +1234,13 @@ int main(int argc, char **argv)
 	check_host_env();
 	sd_info("sheepdog daemon (version %s) started", PACKAGE_VERSION);
 
-	while (sys->nr_outstanding_reqs != 0 ||
+	while ((num = uatomic_read(&sys->nr_outstanding_reqs)) != 0 ||
 	       (sys->cinfo.status != SD_STATUS_KILLED &&
-		sys->cinfo.status != SD_STATUS_SHUTDOWN))
-		event_loop(-1);
-
+		sys->cinfo.status != SD_STATUS_SHUTDOWN)) {
+		if (sys->cinfo.status == SD_STATUS_SHUTDOWN && num)
+			sd_debug("%d outstanding requests", num);
+		event_loop(1000);
+	}
 	rc = 0;
 	sd_info("shutdown");
 
