@@ -172,6 +172,13 @@ static inline const char *sd_strerror(int err)
 		[SD_RES_AGAIN] = "Ask to try again",
 		[SD_RES_STALE_OBJ] = "Object may be stale",
 		[SD_RES_CLUSTER_ERROR] = "Cluster driver error",
+		[SD_RES_VDI_NOT_EMPTY] = "VDI is not empty",
+		[SD_RES_NOT_FOUND] = "Not found",
+		[SD_RES_INCOMPLETE] = "Incomplete object",
+		[SD_RES_COLLECTING_CINFO] = "Not ready, collecting status",
+		[SD_RES_GATEWAY_MODE] = "Node in gateway mode",
+		[SD_RES_INVALID_VNODES_STRATEGY] = "Invalid vnodes strategy",
+		[SD_RES_NO_CHECKPOINT_ENTRY] = "Checkpoint entry not found",
 	};
 
 	if (!(0 <= err && err < ARRAY_SIZE(descs)) || descs[err] == NULL) {
