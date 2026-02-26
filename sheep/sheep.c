@@ -542,63 +542,54 @@ static int create_work_queues(void)
 		sd_info("# of threads in net workqueue: %d", wq_net_threads);
 		sys->net_wqueue = create_fixed_work_queue("net", wq_net_threads);
 	} else {
-		sd_info("net workqueue is created as dynamic");
 		sys->net_wqueue = create_work_queue("net", WQ_DYNAMIC);
 	}
 	if (wq_gway_threads) {
 		sd_info("# of threads in gway workqueue: %d", wq_gway_threads);
 		sys->gateway_wqueue = create_fixed_work_queue("gway", wq_gway_threads);
 	} else {
-		sd_info("gway workqueue is created as dynamic");
 		sys->gateway_wqueue = create_work_queue("gway", WQ_DYNAMIC);
 	}
 	if (wq_io_threads) {
 		sd_info("# of threads in io workqueue: %d", wq_io_threads);
 		sys->io_wqueue = create_fixed_work_queue("io", wq_io_threads);
 	} else {
-		sd_info("io workqueue is created as dynamic");
 		sys->io_wqueue = create_work_queue("io", WQ_DYNAMIC);
 	}
 	if (wq_peer_threads) {
 		sd_info("# of threads in peer workqueue: %d", wq_peer_threads);
 		sys->peer_wqueue = create_fixed_work_queue("peer", wq_peer_threads);
 	} else {
-		sd_info("peer workqueue is created as dynamic");
 		sys->peer_wqueue = create_work_queue("peer", WQ_DYNAMIC);
 	}
 	if (wq_reclaim_threads) {
 		sd_info("# of threads in reclaim workqueue: %d", wq_reclaim_threads);
 		sys->reclaim_wqueue = create_fixed_work_queue("reclaim", wq_reclaim_threads);
 	} else {
-		sd_info("reclaim workqueue is created as dynamic");
 		sys->reclaim_wqueue = create_work_queue("reclaim", WQ_DYNAMIC);
 	}
 	if (wq_gway_fwd_threads) {
 		sd_info("# of threads in gway_fwd workqueue: %d", wq_gway_fwd_threads);
 		sys->gateway_fwd_wqueue = create_fixed_work_queue("gway_fwd", wq_gway_fwd_threads);
 	} else {
-		sd_info("gway_fwd workqueue is created as dynamic");
 		sys->gateway_fwd_wqueue = create_work_queue("gway_fwd", WQ_DYNAMIC);
 	}
 	if (wq_remove_threads) {
 		sd_info("# of threads in remove workqueue: %d", wq_remove_threads);
 		sys->remove_wqueue = create_fixed_work_queue("remove", wq_remove_threads);
 	} else {
-		sd_info("remove workqueue is created as dynamic");
 		sys->remove_wqueue = create_work_queue("remove", WQ_DYNAMIC);
 	}
 	if (wq_remove_peer_threads) {
 		sd_info("# of threads in remove_peer workqueue: %d", wq_remove_peer_threads);
 		sys->remove_peer_wqueue = create_fixed_work_queue("remove_peer", wq_remove_peer_threads);
 	} else {
-		sd_info("remove_peer workqueue is created as dynamic");
 		sys->remove_peer_wqueue = create_work_queue("remove_peer", WQ_DYNAMIC);
 	}
 	if (wq_recovery_threads) {
 		sd_info("# of threads in rw workqueue: %d", wq_recovery_threads);
 		sys->recovery_wqueue = create_fixed_work_queue("rw", wq_recovery_threads);
 	} else {
-		sd_info("recovery workqueue is created as dynamic");
 		sys->recovery_wqueue = create_work_queue("rw", WQ_DYNAMIC);
 	}
 	sys->deletion_wqueue = create_ordered_work_queue("deletion");
@@ -608,7 +599,6 @@ static int create_work_queues(void)
 		sd_info("# of threads in async_req workqueue: %d", wq_async_threads);
 		sys->areq_wqueue = create_fixed_work_queue("async_req", wq_async_threads);
 	} else {
-		sd_info("async_req workqueue is created as dynamic");
 		sys->areq_wqueue = create_work_queue("async_req", WQ_DYNAMIC);
 	}
 	if (!sys->gateway_wqueue || !sys->io_wqueue || !sys->recovery_wqueue ||
