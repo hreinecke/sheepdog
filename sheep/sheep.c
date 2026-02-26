@@ -246,7 +246,7 @@ static void signal_handler(int listen_fd, int events, void *data)
 	sd_debug("signal %d, ssi pid %d", siginfo.ssi_signo, siginfo.ssi_pid);
 	switch (siginfo.ssi_signo) {
 	case SIGTERM:
-		sys->cinfo.status = SD_STATUS_KILLED;
+		sys_set_status(SD_STATUS_KILLED);
 		break;
 	default:
 		sd_err("signal %d unhandled", siginfo.ssi_signo);
@@ -1235,9 +1235,9 @@ int main(int argc, char **argv)
 	sd_info("sheepdog daemon (version %s) started", PACKAGE_VERSION);
 
 	while ((num = uatomic_read(&sys->nr_outstanding_reqs)) != 0 ||
-	       (sys->cinfo.status != SD_STATUS_KILLED &&
-		sys->cinfo.status != SD_STATUS_SHUTDOWN)) {
-		if (sys->cinfo.status == SD_STATUS_SHUTDOWN && num)
+	       (sys_get_status() != SD_STATUS_KILLED &&
+		sys_get_status() != SD_STATUS_SHUTDOWN)) {
+		if (sys_get_status() == SD_STATUS_SHUTDOWN && num)
 			sd_debug("%d outstanding requests", num);
 		event_loop(1000);
 	}

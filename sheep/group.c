@@ -494,7 +494,7 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 {
 	if (!cluster_ctime_check(cinfo)) {
 		sd_debug("joining node is invalid");
-		return sys->cinfo.status;
+		return sys_get_status();
 	}
 
 	if (cinfo->epoch > sys->cinfo.epoch) {
@@ -511,7 +511,7 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 	    enough_nodes_gathered(&sys->cinfo, joining, nroot, nr_nodes))
 		return SD_STATUS_OK;
 
-	return sys->cinfo.status;
+	return sys_get_status();
 }
 
 static int get_vdis_from(struct sd_node *node)
@@ -572,7 +572,7 @@ static void do_get_vdis(struct work *work)
 			 node_to_str(&w->joined));
 		ret = get_vdis_from(&w->joined);
 		if (ret != SD_RES_SUCCESS) {
-			if (sys->cinfo.status == SD_STATUS_OK)
+			if (sys_get_status() == SD_STATUS_OK)
 				/*
 				 * SD_STATUS_OK means enough zones are gathered,
 				 * so failed vdi bitmap collection isn't
@@ -1120,12 +1120,12 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 		return false;
 	}
 
-	sd_debug("check %s, %d", node_to_str(joining), sys->cinfo.status);
+	sd_debug("check %s, %d", node_to_str(joining), sys_get_status());
 
-	if (sys->cinfo.status == SD_STATUS_WAIT)
+	if (sys_get_status() == SD_STATUS_WAIT)
 		status = cluster_wait_check(joining, nroot, nr_nodes, cinfo);
 	else
-		status = sys->cinfo.status;
+		status = sys_get_status();
 
 	cluster_info_copy(cinfo, &sys->cinfo);
 	cinfo->status = status;
@@ -1225,7 +1225,7 @@ retry:
 
 main_fn int sd_reconnect_handler(void)
 {
-	sys->cinfo.status = SD_STATUS_WAIT;
+	sys_set_status(SD_STATUS_WAIT);
 	if (sys->cdrv->init(sys->cdrv_option) != 0)
 		return -1;
 	if (send_join_request() != 0)
@@ -1303,7 +1303,7 @@ main_fn void sd_accept_handler(const struct sd_node *joined,
 		sd_debug("%s", node_to_str(n));
 	}
 
-	if (sys->cinfo.status == SD_STATUS_SHUTDOWN)
+	if (sys_get_status() == SD_STATUS_SHUTDOWN)
 		return;
 
 	update_cluster_info(cinfo, joined, nroot, nr_nodes);
@@ -1346,7 +1346,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 		sd_debug("%s", node_to_str(n));
 	}
 
-	if (sys->cinfo.status == SD_STATUS_SHUTDOWN)
+	if (sys_get_status() == SD_STATUS_SHUTDOWN)
 		return;
 
 	if (node_is_local(left))
@@ -1359,7 +1359,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	 */
 	old_vnode_info = main_thread_get(current_vnode_info);
 	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
-	if (sys->cinfo.status == SD_STATUS_OK) {
+	if (sys_get_status() == SD_STATUS_OK) {
 		if (is_gateway_only_cluster(nroot)) {
 			sd_info("only gateway nodes are remaining, exiting");
 			exit(0);
@@ -1484,7 +1484,7 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 		}
 	}
 
-	sys->cinfo.status = SD_STATUS_WAIT;
+	sys_set_status(SD_STATUS_WAIT);
 
 	main_thread_set(pending_block_list,
 			  xzalloc(sizeof(struct list_head)));

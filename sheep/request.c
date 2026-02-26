@@ -466,9 +466,9 @@ void queue_request(struct request *req)
 		goto done;
 	}
 
-	sd_debug("%s, %d", op_name(req->op), sys->cinfo.status);
+	sd_debug("%s, %d", op_name(req->op), sys_get_status());
 
-	switch (sys->cinfo.status) {
+	switch (sys_get_status()) {
 	case SD_STATUS_KILLED:
 		rsp->result = SD_RES_KILLED;
 		goto done;
@@ -1050,7 +1050,7 @@ static void listen_handler(int listen_fd, int events, void *data)
 	struct client_info *ci;
 	bool is_inet_socket = *(bool *)data;
 
-	if (sys->cinfo.status == SD_STATUS_SHUTDOWN) {
+	if (sys_get_status() == SD_STATUS_SHUTDOWN) {
 		sd_debug("unregistering connection %d", listen_fd);
 		unregister_event(listen_fd);
 		return;
