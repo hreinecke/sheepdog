@@ -336,6 +336,16 @@ static inline uint32_t sys_epoch(void)
 	return uatomic_read(&sys->cinfo.epoch);
 }
 
+static inline int sys_get_status(void)
+{
+	return sys->cinfo.status;
+}
+
+static inline void sys_set_status(int status)
+{
+	sys->cinfo.status = status;
+}
+
 static inline bool is_aligned_to_pagesize(void *p)
 {
 	return ((uintptr_t)p & (getpagesize() - 1)) == 0;
