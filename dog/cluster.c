@@ -350,17 +350,16 @@ retry:
 			}
 			printf("%s with %s redundancy policy\n",
 			       logs->drv_name, copy);
-
-			/* show vnode strategy */
-			if (!raw_output)
-				printf("Cluster vnodes strategy: ");
-			if (logs->flags & SD_CLUSTER_FLAG_AUTO_VNODES)
-				printf("auto\n");
-			else
-				printf("fixed\n");
-
 		} else
 			printf("%s\n", sd_strerror(rsp->result));
+
+		/* show vnode strategy */
+		if (!raw_output)
+			printf("Cluster vnodes strategy: ");
+		if (logs->flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+			printf("auto\n");
+		else
+			printf("fixed\n");
 
 		/* show vnode mode (node or disk) for cluster */
 		if (!raw_output)
