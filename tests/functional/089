@@ -13,6 +13,7 @@ _uninit()
 
 _need_to_be_root
 
+[ -z "BC_PROG" ] && _notrun "Require bc to be installed"
 which nginx > /dev/null || _notrun "Require nginx but it's not running"
 pkill nginx > /dev/null
 sleep 2
