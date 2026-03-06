@@ -166,7 +166,8 @@ _cleanup()
 
 _count_sheep_processes()
 {
-    pgrep -f "$SHEEP_PROG $STORE/" $PGREP_OPTIONS | awk '{ $1=""; print }' | sort | uniq | wc -l
+    pgrep -f "$SHEEP_PROG $STORE/" $PGREP_OPTIONS | \
+	sed -n 's/.* -p \([0-9]*\) .*/\1/p' | sort | uniq | wc -l
 }
 
 # Wait for the specified sheep to be stopped.  If no argument is
