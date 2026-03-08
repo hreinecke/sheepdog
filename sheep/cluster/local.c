@@ -93,6 +93,16 @@ enum local_event_type {
 	EVENT_UPDATE_NODE,
 };
 
+#define DECLARE_EVENT(e) [e] = #e
+static const char *event_names[] = {
+	DECLARE_EVENT(EVENT_JOIN),
+	DECLARE_EVENT(EVENT_LEAVE),
+	DECLARE_EVENT(EVENT_GATEWAY),
+	DECLARE_EVENT(EVENT_BLOCK),
+	DECLARE_EVENT(EVENT_NOTIFY),
+	DECLARE_EVENT(EVENT_UPDATE_NODE),
+};
+
 struct local_event {
 	enum local_event_type type;
 	struct local_node sender;
@@ -321,7 +331,8 @@ static int add_event(enum local_event_type type, struct local_node *lnode,
 		abort();
 	}
 
-	sd_debug("type = %d, sender = %s", ev.type, lnode_to_str(&ev.sender));
+	sd_debug("type = %s, sender = %s",
+		 event_names[ev.type], lnode_to_str(&ev.sender));
 	for (int i = 0; i < ev.nr_lnodes; i++)
 		sd_debug("%d: %s", i, lnode_to_str(ev.lnodes + i));
 
@@ -430,7 +441,8 @@ static bool local_process_event(void)
 	if (!ev)
 		return false;
 
-	sd_debug("type = %d, sender = %s", ev->type, lnode_to_str(&ev->sender));
+	sd_debug("type = %s, sender = %s",
+		 event_names[ev->type], lnode_to_str(&ev->sender));
 	sd_debug("callbacked = %d, removed = %d", ev->callbacked, ev->removed);
 
 	if (ev->removed)
