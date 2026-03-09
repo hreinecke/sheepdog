@@ -190,6 +190,9 @@ static inline const char *sd_strerror(int err)
 	return descs[err];
 }
 
+const char *sd_status_to_string(enum sd_status status);
+enum sd_status sd_string_to_status(const char *str);
+
 static inline int oid_cmp(const uint64_t *oid1, const uint64_t *oid2)
 {
 	return intcmp(*oid1, *oid2);
