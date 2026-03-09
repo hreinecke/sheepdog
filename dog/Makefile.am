@@ -37,7 +37,7 @@ if BUILD_NFS
 dog_SOURCES		+= nfs.c
 endif
 
-dog_LDADD		= ../lib/libsd.a ../lib/libisa.a -luuid -lpthread
+dog_LDADD		= ../lib/libsd.a ../lib/libisa.a -luuid -lpthread -ljson-c
 dog_DEPENDENCIES	= ../lib/libsd.a ../lib/libisa.a
 
 noinst_HEADERS		= treeview.h dog.h farm/farm.h
