@@ -624,7 +624,8 @@ static void do_get_vdis(struct work *work)
 
 		sd_debug("try to get vdi bitmap from %s", node_to_str(n));
 		ret = get_vdis_from(n);
-		if (ret != SD_RES_SUCCESS)
+		if (ret != SD_RES_SUCCESS) {
+			enum sd_status status = sys_get_status();
 			/*
 			 * It means this sheep has missing vdi bitmap, and
 			 * reading bitmap from other sheep cannot be guaranteed
@@ -633,9 +634,12 @@ static void do_get_vdis(struct work *work)
 			 * Inconsistency of vdi bitmap between nodes is deathly
 			 * critical, so dying here is safer.
 			 */
-			panic("failed to get vdi bitmap from %s",
-			      node_to_str(n));
-
+			if (status == SD_STATUS_OK)
+				panic("failed to get vdi bitmap from node %s",
+				      node_to_str(n));
+			else
+				sd_alert("failed to get vdi bitmap from node %s, state %s", node_to_str(n), sd_status_to_string(status));
+		}
 		/*
 		 * TODO: If the target node has a valid vdi bitmap (the node has
 		 * already called do_get_vdis against all the nodes), we can
