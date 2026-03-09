@@ -338,6 +338,7 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 	sd_mutex_unlock(&pending_block_mutex);
 	if (!req) {
 		sd_warn("empty block list");
+		cluster_op_running = false;
 		return false;
 	}
 	req->work.fn = do_process_work;
