@@ -810,13 +810,14 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 	}
 }
 
-int main(int argc, char **argv)
+int main(int argc, char **argv, char **envp)
 {
 	int ch, longindex, ret, port = SD_LISTEN_PORT, io_port = SD_LISTEN_PORT;
 	int rc = 1, num;
 	const char *dirp = DEFAULT_OBJECT_DIR, *short_options;
 	char *dir, *pid_file = NULL, *bindaddr = NULL, log_path[PATH_MAX],
-	     *argp = NULL;
+		*argp = NULL, *base_dir = NULL, *log_options = NULL;
+	const char *cdrv_options = NULL, *opt = NULL;
 	bool explicit_addr = false;
 	bool daemonize = true;
 	int32_t nr_vnodes = -1;
@@ -842,6 +843,22 @@ int main(int argc, char **argv)
 
 	install_sighandler(SIGHUP, sighup_handler, false);
 
+	cdrv_options = getenv("SHEEP_CLUSTER_DRIVER");
+	log_options = getenv("SHEEP_LOGGGING");
+	pid_file = getenv("SHEEP_PID_FILE");
+	base_dir = getenv("SHEEP_BASE_DIR");
+	if ((bindaddr = getenv("SHEEP_BINDADDR"))) {
+		if (!inetaddr_is_valid(bindaddr))
+			bindaddr = NULL;
+	}
+	if ((opt = getenv("SHEEP_PORT"))) {
+		port = str_to_u16(opt);
+		if (errno != 0 || port < 1) {
+			sd_err("Invalide port number '%s'", opt);
+			port = -1;
+		}
+	}
+
 	long_options = build_long_options(sheep_options);
 	short_options = build_short_options(sheep_options);
 	while ((ch = getopt_long(argc, argv, short_options, long_options,
@@ -863,8 +880,7 @@ int main(int argc, char **argv)
 			break;
 #endif
 		case 'l':
-			if (option_parse(optarg, ",", log_parsers) < 0)
-				exit(1);
+			log_options = optarg;
 			break;
 		case 'n':
 			sys->nosync = true;
@@ -903,14 +919,7 @@ int main(int argc, char **argv)
 			sys->upgrade = true;
 			break;
 		case 'c':
-			sys->cdrv = find_cdrv(optarg);
-			if (!sys->cdrv) {
-				sd_err("Invalid cluster driver '%s'", optarg);
-				show_features(0);
-				exit(1);
-			}
-
-			sys->cdrv_option = get_cdrv_option(sys->cdrv, optarg);
+			cdrv_options = optarg;
 			break;
 		case 'i':
 			if (option_parse(optarg, ",", ionic_parsers) < 0)
@@ -1010,6 +1019,24 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (!cdrv_options) {
+		sd_err("No cluster driver options specified");
+		show_features(0);
+		exit(1);
+	}
+	sys->cdrv = find_cdrv(cdrv_options);
+	if (!sys->cdrv) {
+		sd_err("Invalid cluster driver '%s'", cdrv_options);
+		show_features(0);
+		exit(1);
+	}
+	sys->cdrv_option = get_cdrv_option(sys->cdrv, cdrv_options);
+
+	if (log_options) {
+		if (option_parse(log_options, ",", log_parsers) < 0)
+			exit(1);
+	}
+
 	#ifdef HAVE_DISKVNODES
 	sys->cinfo.flags |= SD_CLUSTER_FLAG_DISKMODE;
 	#endif
@@ -1023,9 +1050,11 @@ int main(int argc, char **argv)
 	} else if (nr_vnodes == -1)
 		nr_vnodes = SD_DEFAULT_VNODES;
 
-	if (optind != argc) {
-		argp = strdup(argv[optind]);
-		dirp = strtok(argv[optind], ",");
+	if (optind != argc)
+		base_dir = argv[optind];
+	if (base_dir) {
+		argp = strdup(base_dir);
+		dirp = strtok(base_dir, ",");
 	}
 
 	ret = sd_inode_actor_init(sheep_bnode_writer, sheep_bnode_reader);
