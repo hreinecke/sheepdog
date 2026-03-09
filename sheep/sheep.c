@@ -858,6 +858,41 @@ int main(int argc, char **argv, char **envp)
 			port = -1;
 		}
 	}
+	if ((opt = getenv("SHEEP_OPTS"))) {
+		int o;
+		char *p = strtok((char *)opt, ",");
+		do {
+			for (o = 0; o < ARRAY_SIZE(sheep_options); o++) {
+				if (sheep_options[o].has_arg)
+					continue;
+				if (strncmp(p, sheep_options[o].name,
+					    strlen(sheep_options[o].name)))
+					continue;
+				switch (sheep_options[o].ch) {
+				case 'n':
+					sys->nosync = true;
+					break;
+				case 'D':
+					sys->backend_dio = true;
+					break;
+				case 'f':
+					daemonize = true;
+					break;
+				case 'g':
+					nr_vnodes = 0;
+					break;
+				case 'u':
+					sys->upgrade = true;
+					break;
+				case 'W':
+					wildcard_recovery = true;
+					break;
+				default:
+					break;
+				}
+			}
+		} while ((p = strtok(NULL, ",")));
+	}
 
 	long_options = build_long_options(sheep_options);
 	short_options = build_short_options(sheep_options);

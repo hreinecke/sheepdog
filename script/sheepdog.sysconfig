@@ -1,3 +1,55 @@
+## Path: Applications/sheep
+## Description: sheepdog distributed object storage
+#
 # sheepdog service script configuration file
 # see sheep(8) for details.
-SHEEP_OPTS="--cluster local --log dst=syslog --upgrade /var/lib/sheepdog"
+
+## Type: string
+## Default: "local"
+#
+# Cluster driver options
+#
+SHEEP_CLUSTER_DRIVER="local"
+
+## Type: string
+## Default: ""
+#
+# Logging options
+#
+SHEEP_LOGGING="dst=syslog"
+
+## Type: string
+## Default: ""
+#
+# Additional options, separate by comma.
+# Possible values: directio,foreground,gateway,nosync,upgrade,wildcard-recovery
+#
+SHEEP_OPTS="upgrade"
+
+## Type: string
+## Default: ""
+#
+# sheepdog base working directory
+#
+SHEEP_BASE_DIR="/var/lib/sheepdog"
+
+## Type: string
+## Default: ""
+#
+# sheep PID file
+#
+# SHEEP_PID_FILE="/run/sheep.pid"
+
+## Type: string
+## Default: "localhost"
+#
+# Network address for sheep
+#
+# SHEEP_BINDADDR="localhost"
+
+## Type: int
+## Default: 7000
+#
+# Network port for sheep
+#
+# SHEEP_PORT=7000
