@@ -826,10 +826,9 @@ static int cluster_check(int argc, char **argv)
 
 static int cluster_alter_copy(int argc, char **argv)
 {
-	int ret, log_length;
+	int ret, nr_copies;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-	struct epoch_log *logs;
 
 	if (cluster_cmd_data.copy_policy != 0) {
 		sd_err("Changing redundancy level of erasure coded vdi "
@@ -851,27 +850,25 @@ static int cluster_alter_copy(int argc, char **argv)
 		confirm(info);
 	}
 
-	log_length = sizeof(struct epoch_log);
-	logs = xmalloc(log_length);
-	sd_init_req(&hdr, SD_OP_STAT_CLUSTER);
-	hdr.data_length = log_length;
-	ret = dog_exec_req(&sd_nid, &hdr, logs);
+	sd_init_req(&hdr, SD_OP_CLUSTER_STATUS);
+	ret = dog_exec_req(&sd_nid, &hdr, NULL);
 	if (ret < 0)
-		goto failure;
+		return EXIT_FAILURE;
 
 	if (rsp->result != SD_RES_SUCCESS) {
 		sd_err("Response's result: %s", sd_strerror(rsp->result));
-		goto failure;
+		return EXIT_FAILURE;
 	}
-	if (logs->copy_policy) {
+	if (rsp->cluster.copy_policy) {
 		sd_err("The cluster's copy policy is erasure code, "
 			   "changing it is not supported yet.");
-		goto failure;
+		return EXIT_FAILURE;
 	}
-	if (logs->nr_copies == cluster_cmd_data.copies) {
+	nr_copies = rsp->cluster.nr_copies;
+	if (nr_copies == cluster_cmd_data.copies) {
 		sd_err("The cluster's redundancy level is already set to %d, "
 			   "nothing changed.", cluster_cmd_data.copies);
-		goto failure;
+		return EXIT_FAILURE;
 	}
 
 	if (!cluster_cmd_data.force)
@@ -881,22 +878,14 @@ static int cluster_alter_copy(int argc, char **argv)
 	hdr.cluster.copies = cluster_cmd_data.copies;
 	hdr.cluster.copy_policy = cluster_cmd_data.copy_policy;
 	ret = send_light_req(&sd_nid, &hdr);
-	if (ret == 0) {
-		sd_info("The cluster's redundancy level is set to %d, "
-				"the old one was %d.",
-				cluster_cmd_data.copies, logs->nr_copies);
-		goto success;
-	} else {
+	if (ret != 0) {
 		sd_err("Changing the cluster's redundancy level failure.");
-		goto failure;
+		return EXIT_FAILURE;
 	}
-
-success:
-	free(logs);
+	sd_info("The cluster's redundancy level is set to %d, "
+		"the old one was %d.",
+		cluster_cmd_data.copies, nr_copies);
 	return EXIT_SUCCESS;
-failure:
-	free(logs);
-	return EXIT_FAILURE;
 }
 
 static struct subcommand cluster_cmd[] = {
