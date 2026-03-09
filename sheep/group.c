@@ -37,6 +37,34 @@ static main_thread(struct list_head *) pending_notify_list;
 
 bool wildcard_recovery;
 
+static const char *sd_status_names[] = {
+	[SD_STATUS_OK] = "ok",
+	[SD_STATUS_WAIT] = "wait",
+	[SD_STATUS_SHUTDOWN] = "shutdown",
+	[SD_STATUS_KILLED] = "killed",
+	[SD_STATUS_INVALID] = "invalid",
+};
+
+const char *sd_status_to_string(enum sd_status status)
+{
+	if (status < ARRAY_SIZE(sd_status_names))
+		return sd_status_names[status];
+	return NULL;
+}
+
+enum sd_status sd_string_to_status(const char *str)
+{
+	int s;
+
+	for (s = 0; s < ARRAY_SIZE(sd_status_names); s++) {
+		if (!sd_status_names[s])
+			continue;
+		if (!strcmp(sd_status_names[s], str))
+			return s;
+	}
+	return SD_STATUS_INVALID;
+}
+
 static int get_zones_nr_from(struct rb_root *nroot)
 {
 	int nr_zones = 0, j;
@@ -493,8 +521,10 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 					 struct cluster_info *cinfo)
 {
 	if (!cluster_ctime_check(cinfo)) {
-		sd_debug("joining node is invalid");
-		return sys_get_status();
+		enum sd_status status = sys_get_status();
+		sd_debug("joining node is invalid, status %s",
+			 sd_status_to_string(status));
+		return status;
 	}
 
 	if (cinfo->epoch > sys->cinfo.epoch) {
@@ -957,7 +987,8 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 {
 	struct vnode_info *old_vnode_info;
 
-	sd_debug("status = %d, epoch = %d", cinfo->status, cinfo->epoch);
+	sd_debug("status = %s, epoch = %d",
+		 sd_status_to_string(cinfo->status), cinfo->epoch);
 
 	if (!sys->gateway_only)
 		setup_backend_store(cinfo);
@@ -1120,9 +1151,11 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 		return false;
 	}
 
-	sd_debug("check %s, %d", node_to_str(joining), sys_get_status());
+	status = sys_get_status();
+	sd_debug("check %s, status %s", node_to_str(joining),
+		 sd_status_to_string(status));
 
-	if (sys_get_status() == SD_STATUS_WAIT)
+	if (status == SD_STATUS_WAIT)
 		status = cluster_wait_check(joining, nroot, nr_nodes, cinfo);
 	else
 		status = sys_get_status();
@@ -1131,9 +1164,9 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 	cinfo->status = status;
 	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 
-	sd_debug("%s: cluster_status = 0x%x",
+	sd_debug("%s: cluster_status = %s",
 		 addr_to_str(joining->nid.addr, joining->nid.port),
-		 cinfo->status);
+		 sd_status_to_string(cinfo->status));
 
 	return true;
 }

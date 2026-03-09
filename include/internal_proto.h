@@ -162,7 +162,8 @@
 #define SD_CLUSTER_FLAG_AVOID_DISKFULL	0x0020 /* Avoid disk full by recovery */
 
 enum sd_status {
-	SD_STATUS_OK = 1,
+	SD_STATUS_INVALID = 0,
+	SD_STATUS_OK,
 	SD_STATUS_WAIT,
 	SD_STATUS_SHUTDOWN,
 	SD_STATUS_KILLED,
