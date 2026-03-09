@@ -31,6 +31,7 @@
 #include <sys/sem.h>
 #include <pthread.h>
 #include <libgen.h>
+#include <json-c/json.h>
 #include <sys/time.h>
 #include <execinfo.h>
 #include <linux/limits.h>
@@ -213,47 +214,48 @@ static int default_log_formatter(char *buff, size_t size,
 static int json_log_formatter(char *buff, size_t size,
 			      const struct logmsg *msg, bool print_time)
 {
-	char *p = buff;
+	char *msg_str;
+	const char *p, *worker = "main";
+	struct json_object *obj, *user_info_obj, *body_obj;
 	ssize_t len;
 
 	sd_assert(logger_user_info);
 
-	len = snprintf(p, size, "{ \"user_info\": "
-		       "{\"program_name\": \"%s\", \"port\": %d},"
-		       "\"body\": {"
-		       "\"second\": %lu, \"usecond\": %lu, "
-		       "\"worker_name\": \"%s\", \"worker_idx\": %d, "
-		       "\"func\": \"%s\", \"line\": %d, "
-		       "\"msg\": \"",
-		       log_name, logger_user_info->port,
-		       msg->tv.tv_sec, msg->tv.tv_usec,
-		       msg->worker_name[0] ? msg->worker_name : "main",
-		       msg->worker_idx, msg->func, msg->line);
-	if (len < 0)
-		return 0;
-	len = min((size_t)len, size - 1);
-	p += len;
-	size -= len;
+	msg_str = xzalloc(msg->str_len + 1);
+	memcpy(msg_str, msg->str, msg->str_len);
+	obj = json_object_new_object();
+	user_info_obj = json_object_new_object();
+	json_object_object_add(user_info_obj, "program_name",
+			       json_object_new_string(log_name));
+	json_object_object_add(user_info_obj, "port",
+			       json_object_new_int(logger_user_info->port));
+	json_object_object_add(obj, "user_info", user_info_obj);
+	body_obj = json_object_new_object();
+	json_object_object_add(body_obj, "second",
+			       json_object_new_uint64(msg->tv.tv_sec));
+	json_object_object_add(body_obj, "usecond",
+			       json_object_new_uint64(msg->tv.tv_usec));
+	if (strlen(msg->worker_name))
+		worker = msg->worker_name;
+	json_object_object_add(body_obj, "worker_name",
+			       json_object_new_string(worker));
+	json_object_object_add(body_obj, "worker_idx",
+			       json_object_new_int(msg->worker_idx));
+	json_object_object_add(body_obj, "func",
+			       json_object_new_string(msg->func));
+	json_object_object_add(body_obj, "line",
+			       json_object_new_int(msg->line));
+	json_object_object_add(body_obj, "msg",
+			       json_object_new_string(msg_str));
+	json_object_object_add(obj, "body", body_obj);
 
-	for (int i = 0; i < msg->str_len; i++) {
-		if (size <= 1)
-			break;
+	p = json_object_to_json_string(obj);
+	len = min(strlen(p), size - 1);
+	strncpy(buff, p, len);
+	free(msg_str);
+	json_object_put(obj);
 
-		if (msg->str[i] == '"') {
-			*p++ = '\\';
-			size--;
-		}
-
-		if (size <= 1)
-			break;
-		*p++ = msg->str[i];
-		size--;
-	}
-
-	pstrcpy(p, size, "\"} }");
-	p += strlen(p);
-
-	return p - buff;
+	return len;
 }
 
 static void log_format_register(const char *name, formatter_fn formatter)
