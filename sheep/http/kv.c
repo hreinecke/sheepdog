@@ -556,7 +556,11 @@ int kv_create_bucket(const char *account, const char *bucket)
 		return ret;
 	}
 
-	sys->cdrv->lock(account_vid);
+	ret = sys->cdrv->lock(account_vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to lock account '%s'", account);
+		return ret;
+	}
 	snprintf(vdi_name, SD_MAX_VDI_LEN, "%s/%s", account, bucket);
 	ret = sd_lookup_vdi(vdi_name, &vid);
 	if (ret == SD_RES_SUCCESS) {
