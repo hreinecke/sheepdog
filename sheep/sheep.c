@@ -20,6 +20,10 @@
 #include "xio.h"
 #endif
 
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-daemon.h>
+#endif
+
 #define EPOLL_SIZE 4096
 #define DEFAULT_OBJECT_DIR "/tmp"
 #define LOG_FILE_NAME "sheep.log"
@@ -804,6 +808,10 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 		fprintf(stdout, " trace");
 		have_feats = 1;
 #endif
+#ifdef HAVE_SYSTEMD
+		fprintf(stdout, " systemd");
+		have_feats = 1;
+#endif
 		if (!have_feats)
 			fprintf(stdout, " none");
 		fprintf(stdout, "\n");
@@ -1343,6 +1351,12 @@ int main(int argc, char **argv, char **envp)
 		sys_get_status() != SD_STATUS_SHUTDOWN)) {
 		if (sys_get_status() == SD_STATUS_SHUTDOWN && num)
 			sd_debug("%d outstanding requests", num);
+#ifdef HAVE_SYSTEMD
+		sd_notifyf(0, "READY=1\n"
+			   "STATUS=Processing events...\n"
+			   "MAINPID=%lu",
+			   (unsigned long)getpid());
+#endif
 		event_loop(1000);
 	}
 	rc = 0;

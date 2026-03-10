@@ -73,12 +73,15 @@ if BUILD_TRACE
 sheep_LDADD		+= -lbfd -liberty -lsframe -lz
 endif
 
+if BUILD_SYSTEMD
+sheep_LDADD		+= -lsystemd
+endif
+
 if BUILD_ETCD
 sheep_LDADD		+= -lneon
 endif
 
 sheep_DEPENDENCIES	= ../lib/libsd.a ../lib/libisa.a
-
 
 noinst_HEADERS		= sheep_priv.h cluster.h http/http.h trace/trace.h \
 			  nfs/nfs.h nfs/fs.h

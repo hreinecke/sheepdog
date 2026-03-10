@@ -13,6 +13,10 @@
 
 #include "sheep_priv.h"
 
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-daemon.h>
+#endif
+
 #ifdef HAVE_ACCELIO
 #include "xio.h"
 #endif
@@ -1132,7 +1136,19 @@ void unregister_listening_fds(void)
 int create_listen_port(const char *bindaddr, int port)
 {
 	static bool is_inet_socket = true;
+#ifdef HAVE_SYSTEMD
+	int num_fds, i, ret = 0;
 
+	num_fds = sd_listen_fds(0);
+	for (i = 0; i < num_fds; i++) {
+		ret = create_listen_port_fn(SD_LISTEN_FDS_START + i,
+					    &is_inet_socket);
+		if (ret)
+			return ret;
+	}
+	if (num_fds)
+		return ret;
+#endif
 	return create_listen_ports(bindaddr, port, create_listen_port_fn,
 				   &is_inet_socket);
 }

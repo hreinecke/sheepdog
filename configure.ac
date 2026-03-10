@@ -291,6 +291,7 @@ AC_ARG_ENABLE([lttng-ust],
 AM_CONDITIONAL(BUILD_LTTNG_UST, test x$enable_lttng_ust = xyes)
 
 AC_ARG_ENABLE(systemd, AS_HELP_STRING([--enable-systemd],[enable systemd support]),enable_systemd=$enableval,enable_systemd="no")
+AM_CONDITIONAL(BUILD_SYSTEMD, test x$enable_systemd = xyes)
 
 AC_ARG_ENABLE([accelio],
 	[  --enable-accelio         : enable accelio (default no)],,
@@ -308,6 +309,7 @@ fi
 
 if test x$have_systemd = xyes; then
     AC_DEFINE(HAVE_SYSTEMD,1,[Have systemd])
+    PACKAGE_FEATURES="$PACKAGE_FEATURES systemd"
 fi
 
 if test x$enable_systemd = xyes -a x$have_systemd != xyes ; then
