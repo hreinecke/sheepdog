@@ -22,12 +22,11 @@ m4_define([git_version],
 	m4_esyscmd([git describe --tags --dirty 2> /dev/null | sed 's/^v//' \
 | tr '-' '_' | tr -d '\n']))
 
-AC_INIT([sheepdog], m4_default(git_version, sheepdog_version),
-	[sheepdog@lists.wpkg.org])
+AC_INIT([sheepdog],[m4_default(git_version, sheepdog_version)],[sheepdog@lists.wpkg.org])
 AM_INIT_AUTOMAKE([-Wno-portability, subdir-objects])
 
 AC_CONFIG_SRCDIR([dog/dog.c])
-AC_CONFIG_HEADER([include/config.h])
+AC_CONFIG_HEADERS([include/config.h])
 
 AC_CANONICAL_HOST
 
@@ -79,7 +78,7 @@ if ! ${MAKE-make} --version /cannot/make/this >/dev/null 2>&1; then
 fi
 
 AC_PROG_CC
-AC_PROG_LIBTOOL
+LT_INIT
 AM_PROG_AS
 AC_PROG_INSTALL
 AC_PROG_LN_S
@@ -114,7 +113,8 @@ AC_CHECK_LIB([rt], [clock_gettime], , AC_MSG_ERROR(librt not found))
 # Checks for header files.
 AC_FUNC_ALLOCA
 AC_HEADER_DIRENT
-AC_HEADER_STDC
+AC_CHECK_INCLUDES_DEFAULT
+AC_PROG_EGREP
 AC_HEADER_SYS_WAIT
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stdint.h \
 		  stdlib.h string.h sys/ioctl.h sys/param.h sys/socket.h \
@@ -135,7 +135,6 @@ AC_C_CONST
 AC_TYPE_UID_T
 AC_C_INLINE
 AC_TYPE_SIZE_T
-AC_HEADER_TIME
 AC_C_VOLATILE
 
 AC_CHECK_SIZEOF(short)
@@ -161,12 +160,10 @@ AC_FUNC_CLOSEDIR_VOID
 AC_FUNC_ERROR_AT_LINE
 AC_REPLACE_FNMATCH
 AC_FUNC_FORK
-AC_PROG_GCC_TRADITIONAL
 AC_FUNC_MALLOC
 AC_FUNC_MEMCMP
 AC_FUNC_REALLOC
 AC_FUNC_SELECT_ARGTYPES
-AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([alarm alphasort atexit bzero dup2 endgrent endpwent fcntl \
 		getcwd getpeerucred getpeereid gettimeofday inet_ntoa memmove \
