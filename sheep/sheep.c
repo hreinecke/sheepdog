@@ -808,6 +808,10 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 		fprintf(stdout, " trace");
 		have_feats = 1;
 #endif
+#ifdef HAVE_SYSTEMD
+		fprintf(stdout, " systemd");
+		have_feats = 1;
+#endif
 		if (!have_feats)
 			fprintf(stdout, " none");
 		fprintf(stdout, "\n");

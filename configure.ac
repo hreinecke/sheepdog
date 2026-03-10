@@ -321,6 +321,7 @@ fi
 
 if test x$have_systemd = xyes; then
     AC_DEFINE(HAVE_SYSTEMD,1,[Have systemd])
+    PACKAGE_FEATURES="$PACKAGE_FEATURES systemd"
 fi
 
 if test x$enable_systemd = xyes -a x$have_systemd != xyes ; then
@@ -443,7 +444,7 @@ if test "x${enable_sheepfs}" = xyes; then
 fi
 
 if test "x${enable_http}" = xyes; then
-	AC_CHECK_HEADERS([fcgiapp.h],,
+	AC_CHECK_HEADERS([fastcgi/fcgiapp.h],,
 		AC_MSG_ERROR(fcgiapp.h header not found))
 	AC_CHECK_LIB([fcgi], [FCGX_Accept],,
 		AC_MSG_ERROR(libfcgi not found))
