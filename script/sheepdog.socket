@@ -1,0 +1,8 @@
+[Unit]
+Description=Sheepdog activation socket
+
+[Socket]
+ListenStream=127.0.0.1:7000
+
+[Install]
+WantedBy=sockets.target
