@@ -8,10 +8,12 @@ EnvironmentFile=-@SYSCONFDIR@/conf.d/sheepdog.conf
 EnvironmentFile=-@SYSCONFDIR@/sysconfig/sheepdog
 EnvironmentFile=-@SYSCONFDIR@/default/sheepdog
 ExecStart=@SBINDIR@/sheep --foreground
-Type=exec
+Type=notify
+NotifyAccess=exec
 Restart=on-failure
 StartLimitInterval=10s
 StartLimitBurst=3
+WatchdogSec=30s
 LimitNOFILE=32768
 
 [Install]

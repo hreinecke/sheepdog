@@ -10,9 +10,12 @@
  */
 
 #include <netinet/tcp.h>
-#include <systemd/sd-daemon.h>
 
 #include "sheep_priv.h"
+
+#ifdef HAVE_SYSTEMD
+#include <systemd/sd-daemon.h>
+#endif
 
 #ifdef HAVE_ACCELIO
 #include "xio.h"
