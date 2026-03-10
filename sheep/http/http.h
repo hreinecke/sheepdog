@@ -11,7 +11,7 @@
 #ifndef __SHEEP_HTTP_H__
 #define __SHEEP_HTTP_H__
 
-#include <fcgiapp.h>
+#include <fastcgi/fcgiapp.h>
 
 #include "sheepdog_proto.h"
 #include "sheep.h"
