@@ -76,18 +76,18 @@ struct etcd_cluster_info {
 	uint8_t default_store[STORE_LEN];
 };
 
-struct etcd_cluster_lock {
+static struct sd_mutex etcd_block_mutex = SD_MUTEX_INITIALIZER;
+static LIST_HEAD(etcd_block_list);
+static struct rb_root etcd_node_root = RB_ROOT;
+static struct etcd_cluster_info etcd_cinfo = {};
+
+struct etcd_lock_entry {
 	struct rb_node rb;
 	uint32_t lock_id;
 	uint32_t lock_tag;
 	sem_t wait_wakeup;
 	char key[MAX_NODE_STR_LEN];
 };
-
-static struct sd_mutex etcd_block_mutex = SD_MUTEX_INITIALIZER;
-static LIST_HEAD(etcd_block_list);
-static struct rb_root etcd_node_root = RB_ROOT;
-static struct etcd_cluster_info etcd_cinfo = {};
 
 static struct rb_root etcd_lock_tree = RB_ROOT;
 static struct sd_mutex etcd_lock_mutex = SD_MUTEX_INITIALIZER;
@@ -1568,17 +1568,17 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 	return msg;
 }
 
-static int lock_cmp(struct etcd_cluster_lock *a, struct etcd_cluster_lock *b)
+static int lock_cmp(struct etcd_lock_entry *a, struct etcd_lock_entry *b)
 {
 	uint64_t a_id = (uint64_t)a->lock_id << 32 | a->lock_tag;
 	uint64_t b_id = (uint64_t)b->lock_id << 32 | b->lock_tag;
 	return intcmp(a_id, b_id);
 }
 
-static struct etcd_cluster_lock *etcd_lock_lookup(uint32_t lock_id,
+static struct etcd_lock_entry *etcd_lock_lookup(uint32_t lock_id,
 						  uint32_t lock_tag)
 {
-	struct etcd_cluster_lock l, *lock = NULL;
+	struct etcd_lock_entry l, *lock = NULL;
 
 	sd_mutex_lock(&etcd_lock_mutex);
 	l.lock_id = lock_id;
@@ -1613,7 +1613,7 @@ static void etcd_lock_wakeup(struct etcd_ctx *ctx, bool deleted)
 	num_kvs = ret;
 	for (i = 0; i < num_kvs; i++) {
 		struct etcd_kv *kv = &kvs[i];
-		struct etcd_cluster_lock l, *lock;
+		struct etcd_lock_entry l, *lock;
 
 		ret = sscanf(kv->key, DEFAULT_BASE LOCK_ZNODE "%u/%u",
 			     &l.lock_id, &l.lock_tag);
@@ -2042,34 +2042,35 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 	etcd_kick_block_event();
 }
 
-static int etcd_lock(uint32_t lock_id, uint32_t lock_owner)
+static uint32_t etcd_lock(uint32_t lock_id)
 {
-	struct etcd_cluster_lock *lock = NULL;
-		etcd_lock_lookup(lock_id, lock_owner);
+	uint32_t lock_tag = random();
+	struct etcd_lock_entry *lock =
+		etcd_lock_lookup(lock_id, lock_tag);
 	int ret;
 
 	if (!lock) {
 		sd_err("failed to acquire lock entry for '%u'", lock_id);
-		return SD_RES_CLUSTER_ERROR;
+		return 0;
 	}
 
 	ret = etcd_kv_new(this_ctx, lock->key, this_node.node_id,
 			 strlen(this_node.node_id));
 	if (ret < 0) {
 		sd_err("failed to create lock '%u/%u', error %d",
-		       lock_id, lock_owner, ret);
-		return SD_RES_CLUSTER_ERROR;
+		       lock->lock_id, lock->lock_tag, ret);
+		return 0;
 	}
 
 	sd_debug("waiting for lock '%u/%u", lock->lock_id, lock->lock_tag);
 	sem_wait(&lock->wait_wakeup);
 	sd_debug("granted lock '%u/%u'", lock->lock_id, lock->lock_tag);
-	return 0;
+	return lock_tag;
 }
 
 static void etcd_unlock(uint32_t lock_id, uint32_t lock_tag)
 {
-	struct etcd_cluster_lock l, *lock = NULL;
+	struct etcd_lock_entry l, *lock = NULL;
 	int ret;
 
 	sd_mutex_lock(&etcd_lock_mutex);

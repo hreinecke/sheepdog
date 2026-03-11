@@ -681,9 +681,10 @@ static struct lock_entry *lock_tree_add(struct lock_entry *new)
 	return rb_insert(&lock_tree_root, new, rb, lock_cmp);
 }
 
-static int local_lock(uint32_t lock_id, uint32_t lock_tag)
+static uint32_t local_lock(uint32_t lock_id)
 {
 	struct lock_entry *entry;
+	uint32_t lock_tag = random();
 
 	sd_mutex_lock(global_lock);
 
@@ -697,6 +698,7 @@ static int local_lock(uint32_t lock_id, uint32_t lock_tag)
 		if (!entry)
 			return SD_RES_NO_MEM;
 		entry->lock_id = lock_id;
+		entry->lock_tag = lock_tag;
 		entry->mutex = get_shared_lock(path, &fd);
 		entry->fd = fd;
 		entry->ref = 0;
@@ -708,7 +710,7 @@ static int local_lock(uint32_t lock_id, uint32_t lock_tag)
 	sd_mutex_unlock(global_lock);
 
 	sd_mutex_lock(entry->mutex);
-	return SD_RES_SUCCESS;
+	return lock_tag;
 }
 
 static void local_unlock(uint32_t lock_id, uint32_t lock_tag)

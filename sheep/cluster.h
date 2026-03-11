@@ -118,21 +118,23 @@ struct cluster_driver {
 	 * This function use 'lock_id' as the id of this distributed lock.
 	 * A thread can acquire many locks with different lock_id in one
 	 * sheep daemon.
-	 * The 'lock_tag' is the identifier of the calling instance, to
-	 * differentiate between several instances of the sheep daemon.
+	 * The function returns a 'lock_tag' to identify the instance of
+	 * this lock or '0' if no lock could be acquired.
 	 *
 	 * The cluster lock referenced by 'lock' shall be locked by calling
 	 * cluster->lock(). If the cluster lock is already locked, the calling
 	 * thread shall block until the cluster lock becomes available.
 	 */
-	int (*lock)(uint32_t lock_id, uint32_t lock_tag);
+	uint32_t (*lock)(uint32_t lock_id);
 
 	/*
 	 * Release the distributed lock.
 	 *
 	 * If the owner of the cluster lock release it (or the owner is
 	 * killed by accident), zookeeper will trigger zk_watch() which will
-	 * wake up all waiting threads to compete new owner of the lock
+	 * wake up all waiting threads to compete new owner of the lock.
+	 * The argument 'lock_tag' is the return value from the corresponding
+	 * call to 'lock()'.
 	 *
 	 * After all thread unlock, all the resource of this distributed lock
 	 * will be released.

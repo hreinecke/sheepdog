@@ -153,6 +153,7 @@
 #define SD_RES_INVALID_VNODES_STRATEGY 0x98 /* Invalid vnodes strategy */
 /* Node doesn't have a required entry of checkpoint */
 #define SD_RES_NO_CHECKPOINT_ENTRY 0x99
+#define SD_RES_LOCK_FAILED       0x9A /* locking failed */
 
 #define SD_CLUSTER_FLAG_STRICT		0x0001 /* Strict mode for write */
 #define SD_CLUSTER_FLAG_DISKMODE	0x0002 /* Disk mode for cluster */
