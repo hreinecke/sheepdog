@@ -45,7 +45,8 @@ static struct sd_mutex *global_lock;
 struct lock_entry {
 	struct rb_node rb;
 	int fd;
-	uint64_t lock_id;
+	uint32_t lock_id;
+	uint32_t lock_tag;
 	uint64_t ref;
 	struct sd_mutex *mutex;
 };
@@ -654,7 +655,7 @@ static int lock_cmp(struct lock_entry *a, struct lock_entry *b)
 	return intcmp(a->lock_id, b->lock_id);
 }
 
-static struct lock_entry *lock_tree_lookup(uint64_t lock_id)
+static struct lock_entry *lock_tree_lookup(uint32_t lock_id)
 {
 	struct lock_entry entry = {
 		.lock_id = lock_id,
@@ -668,9 +669,10 @@ static struct lock_entry *lock_tree_add(struct lock_entry *new)
 	return rb_insert(&lock_tree_root, new, rb, lock_cmp);
 }
 
-static void local_lock(uint64_t lock_id)
+static uint32_t local_lock(uint32_t lock_id)
 {
 	struct lock_entry *entry;
+	uint32_t lock_tag = random();
 
 	sd_mutex_lock(global_lock);
 
@@ -679,9 +681,12 @@ static void local_lock(uint64_t lock_id)
 		char path[PATH_MAX];
 		int fd;
 
-		snprintf(path, sizeof(path), "%s%016"PRIx64, lockdir, lock_id);
+		snprintf(path, sizeof(path), "%s%08"PRIx32, lockdir, lock_id);
 		entry = xmalloc(sizeof(*entry));
+		if (!entry)
+			return SD_RES_NO_MEM;
 		entry->lock_id = lock_id;
+		entry->lock_tag = lock_tag;
 		entry->mutex = get_shared_lock(path, &fd);
 		entry->fd = fd;
 		entry->ref = 0;
@@ -693,9 +698,10 @@ static void local_lock(uint64_t lock_id)
 	sd_mutex_unlock(global_lock);
 
 	sd_mutex_lock(entry->mutex);
+	return lock_tag;
 }
 
-static void local_unlock(uint64_t lock_id)
+static void local_unlock(uint32_t lock_id, uint32_t lock_tag)
 {
 	struct lock_entry *entry;
 
@@ -703,7 +709,7 @@ static void local_unlock(uint64_t lock_id)
 
 	entry = lock_tree_lookup(lock_id);
 	if (!entry)
-		panic("can't find fd for lock %"PRIx64, lock_id);
+		panic("can't find fd for lock %"PRIx32, lock_id);
 
 	sd_mutex_unlock(entry->mutex);
 

@@ -179,6 +179,7 @@ static inline const char *sd_strerror(int err)
 		[SD_RES_GATEWAY_MODE] = "Node in gateway mode",
 		[SD_RES_INVALID_VNODES_STRATEGY] = "Invalid vnodes strategy",
 		[SD_RES_NO_CHECKPOINT_ENTRY] = "Checkpoint entry not found",
+		[SD_RES_LOCK_FAILED] = "Locking failed",
 	};
 
 	if (!(0 <= err && err < ARRAY_SIZE(descs)) || descs[err] == NULL) {
