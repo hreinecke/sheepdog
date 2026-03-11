@@ -558,7 +558,7 @@ int kv_create_bucket(const char *account, const char *bucket)
 	}
 
 	lock_tag = sys->cdrv->lock(account_vid);
-	if (!ret) {
+	if (!lock_tag) {
 		sd_err("Failed to lock account '%s'", account);
 		return SD_RES_LOCK_FAILED;
 	}
