@@ -118,12 +118,14 @@ struct cluster_driver {
 	 * This function use 'lock_id' as the id of this distributed lock.
 	 * A thread can acquire many locks with different lock_id in one
 	 * sheep daemon.
+	 * The 'lock_tag' is the identifier of the calling instance, to
+	 * differentiate between several instances of the sheep daemon.
 	 *
 	 * The cluster lock referenced by 'lock' shall be locked by calling
 	 * cluster->lock(). If the cluster lock is already locked, the calling
 	 * thread shall block until the cluster lock becomes available.
 	 */
-	void (*lock)(uint64_t lock_id);
+	int (*lock)(uint32_t lock_id, uint32_t lock_tag);
 
 	/*
 	 * Release the distributed lock.
@@ -135,7 +137,7 @@ struct cluster_driver {
 	 * After all thread unlock, all the resource of this distributed lock
 	 * will be released.
 	 */
-	void (*unlock)(uint64_t lock_id);
+	void (*unlock)(uint32_t lock_id, uint32_t lock_tag);
 
 	/*
 	 * Update the specific node in the driver's private copy of nodes

@@ -126,15 +126,20 @@ static inline int inode_create(struct inode *inode, uint32_t vid,
 			       const char *name)
 {
 	struct inode_data *id = prepare_inode_data(inode, vid, name);
+	uint32_t lock_tag = random()
 	int ret;
 
-	sys->cdrv->lock(vid);
+	ret = sys->cdrv->lock(vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock %s", name);
+		return ret;
+	}
 	ret = inode_lookup(id);
 	if (ret == SD_RES_SUCCESS)
 		ret = inode_do_create(id);
 	else
 		sd_err("failed to lookup %s", name);
-	sys->cdrv->unlock(vid);
+	sys->cdrv->unlock(vid, lock_tag);
 	finish_inode_data(id);
 	return ret;
 }
@@ -151,12 +156,16 @@ static void dentry_add(struct inode *parent, struct dentry *dentry)
 int fs_create_dir(struct inode *inode, const char *name, struct inode *parent)
 {
 	uint64_t myino, pino = parent->ino;
-	uint32_t vid = oid_to_vid(pino);
+	uint32_t vid = oid_to_vid(pino), lock_tag = random();
 	struct inode_data *id = prepare_inode_data(inode, vid, name);
 	struct dentry *entry;
 	int ret;
 
-	sys->cdrv->lock(vid);
+	ret = sys->cdrv->lock(vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock %s", name);
+		return ret;
+	}
 	ret = inode_lookup(id);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to lookup %s", name);
@@ -194,7 +203,7 @@ int fs_create_dir(struct inode *inode, const char *name, struct inode *parent)
 		goto out;
 	ret = fs_write_inode_full(parent);
 out:
-	sys->cdrv->unlock(vid);
+	sys->cdrv->unlock(vid, lock_tag);
 	finish_inode_data(id);
 	return ret;
 }

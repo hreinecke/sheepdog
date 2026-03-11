@@ -547,6 +547,7 @@ out:
 int kv_create_bucket(const char *account, const char *bucket)
 {
 	uint32_t account_vid, vid;
+	uint32_t lock_tag = random();
 	char vdi_name[SD_MAX_VDI_LEN];
 	int ret;
 
@@ -556,7 +557,7 @@ int kv_create_bucket(const char *account, const char *bucket)
 		return ret;
 	}
 
-	ret = sys->cdrv->lock(account_vid);
+	ret = sys->cdrv->lock(account_vid, lock_tag);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to lock account '%s'", account);
 		return ret;
@@ -573,7 +574,7 @@ int kv_create_bucket(const char *account, const char *bucket)
 
 	ret = bucket_create(account, account_vid, bucket);
 out:
-	sys->cdrv->unlock(account_vid);
+	sys->cdrv->unlock(account_vid, lock_tag);
 	return ret;
 }
 
@@ -612,6 +613,7 @@ int kv_update_bucket(const char *account, const char *bucket)
 int kv_delete_bucket(const char *account, const char *bucket)
 {
 	uint32_t account_vid, vid;
+	uint32_t lock_tag = random();
 	char vdi_name[SD_MAX_VDI_LEN];
 	int ret;
 
@@ -621,7 +623,11 @@ int kv_delete_bucket(const char *account, const char *bucket)
 		return ret;
 	}
 
-	sys->cdrv->lock(account_vid);
+	ret = sys->cdrv->lock(account_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to lock account %s", account);
+		return ret;
+	}
 	snprintf(vdi_name, SD_MAX_VDI_LEN, "%s/%s", account, bucket);
 
 	ret = sd_lookup_vdi(vdi_name, &vid);
@@ -629,7 +635,7 @@ int kv_delete_bucket(const char *account, const char *bucket)
 		goto out;
 	ret = bucket_delete(account, account_vid, bucket);
 out:
-	sys->cdrv->unlock(account_vid);
+	sys->cdrv->unlock(account_vid, lock_tag);
 	return ret;
 }
 
@@ -637,7 +643,7 @@ int kv_iterate_bucket(const char *account, bucket_iter_cb cb, void *opaque)
 {
 	struct sd_inode *account_inode;
 	struct bucket_iterater_arg arg = {opaque, cb, 0, 0, 0};
-	uint32_t account_vid;
+	uint32_t account_vid, lock_tag = random();
 	uint64_t oid;
 	int ret;
 
@@ -649,7 +655,11 @@ int kv_iterate_bucket(const char *account, bucket_iter_cb cb, void *opaque)
 
 	account_inode = xmalloc(sizeof(*account_inode));
 	oid = vid_to_vdi_oid(account_vid);
-	sys->cdrv->lock(account_vid);
+	ret = sys->cdrv->lock(account_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock account %s", account);
+		return ret;
+	}
 	ret = sd_read_object(oid, (char *)account_inode,
 			     sizeof(struct sd_inode), 0);
 	if (ret != SD_RES_SUCCESS) {
@@ -659,7 +669,7 @@ int kv_iterate_bucket(const char *account, bucket_iter_cb cb, void *opaque)
 
 	sd_inode_index_walk(account_inode, bucket_iterater, &arg);
 out:
-	sys->cdrv->unlock(account_vid);
+	sys->cdrv->unlock(account_vid, lock_tag);
 	free(account_inode);
 	return ret;
 }
@@ -722,6 +732,7 @@ static int onode_allocate_extents(struct kv_onode *onode,
 	uint64_t start = 0, count, reserv_len = 0;
 	int ret = SD_RES_SUCCESS;
 	uint32_t data_vid = onode->data_vid, idx = onode->nr_extent;
+	uint32_t lock_tag = random();
 
 	/* if the previous o_extent[] has some extra space, use it */
 	if (idx) {
@@ -738,18 +749,26 @@ static int onode_allocate_extents(struct kv_onode *onode,
 			onode->o_extent[idx - 1].data_len += reserv_len;
 	}
 	count = DIV_ROUND_UP((req->data_length - reserv_len), SD_DATA_OBJ_SIZE);
-	sys->cdrv->lock(data_vid);
+	ret = sys->cdrv->lock(data_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock %s", onode->name);
+		return ret;
+	}
 	ret = oalloc_new_prepare(data_vid, &start, count);
-	sys->cdrv->unlock(data_vid);
+	sys->cdrv->unlock(data_vid, lock_tag);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("oalloc_new_prepare failed for %s, %s", onode->name,
 		       sd_strerror(ret));
 		goto out;
 	}
 
-	sys->cdrv->lock(data_vid);
+	ret = sys->cdrv->lock(data_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock %s", onode->name);
+		return ret;
+	}
 	ret = oalloc_new_finish(data_vid, start, count);
-	sys->cdrv->unlock(data_vid);
+	sys->cdrv->unlock(data_vid, lock_tag);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("oalloc_new_finish failed for %s, %s", onode->name,
 		       sd_strerror(ret));
@@ -1038,12 +1057,16 @@ out:
 
 static int onode_free_data(struct kv_onode *onode)
 {
-	uint32_t data_vid = onode->data_vid;
+	uint32_t data_vid = onode->data_vid, lock_tag = random();
 	int ret = SD_RES_SUCCESS, i;
 
 	/* it don't need to free data for inlined onode */
 	if (!onode->inlined) {
-		sys->cdrv->lock(data_vid);
+		ret = sys->cdrv->lock(data_vid, lock_tag);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("failed to lock data %08x", data_vid);
+			return ret;
+		}
 		for (i = 0; i < onode->nr_extent; i++) {
 			ret = oalloc_free(data_vid, onode->o_extent[i].start,
 					  onode->o_extent[i].count);
@@ -1054,7 +1077,7 @@ static int onode_free_data(struct kv_onode *onode)
 				       onode->o_extent[i].count,
 				       onode->name);
 		}
-		sys->cdrv->unlock(data_vid);
+		sys->cdrv->unlock(data_vid, lock_tag);
 	}
 	return ret;
 }
@@ -1162,11 +1185,14 @@ out:
 
 static int onode_lookup(struct kv_onode *onode, uint32_t ovid, const char *name)
 {
+	uint32_t lock_tag = random()
 	int ret;
 
-	sys->cdrv->lock(ovid);
-	ret = onode_lookup_nolock(onode, ovid, name);
-	sys->cdrv->unlock(ovid);
+	ret = sys->cdrv->lock(ovid, lock_tag);
+	if (ret == SD_RES_SUCCESS) {
+		ret = onode_lookup_nolock(onode, ovid, name);
+		sys->cdrv->unlock(ovid, lock_tag);
+	}
 
 	return ret;
 }
@@ -1264,10 +1290,14 @@ static int onode_allocate_space(struct http_request *req, const char *account,
 				const char *name, struct kv_onode *onode)
 {
 	char vdi_name[SD_MAX_VDI_LEN];
-	uint32_t data_vid;
+	uint32_t data_vid, lock_tag = random();
 	int ret;
 
-	sys->cdrv->lock(bucket_vid);
+	ret = sys->cdrv->lock(bucket_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock bucket %08x", bucket_vid);
+		return ret;
+	}
 	ret = onode_lookup_nolock(onode, bucket_vid, name);
 	if (ret == SD_RES_SUCCESS) {
 		/* if the exists onode has not been uploaded complete */
@@ -1311,7 +1341,7 @@ static int onode_allocate_space(struct http_request *req, const char *account,
 	ret = onode_create_and_update_bnode(req, account, bucket_vid, bucket,
 					    data_vid, onode);
 out:
-	sys->cdrv->unlock(bucket_vid);
+	sys->cdrv->unlock(bucket_vid, lock_tag);
 	return ret;
 }
 
@@ -1320,12 +1350,16 @@ static int onode_append_space(struct http_request *req, const char *account,
 			      const char *name, struct kv_onode *onode)
 {
 	char vdi_name[SD_MAX_VDI_LEN];
-	uint32_t data_vid;
+	uint32_t data_vid, lock_tag = random();
 	uint64_t len;
 	int ret;
 	bool object_exists = false;
 
-	sys->cdrv->lock(bucket_vid);
+	ret = sys->cdrv->lock(bucket_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock bucket %08x", bucket_vid);
+		return ret;
+	}
 	ret = onode_lookup_nolock(onode, bucket_vid, name);
 
 	if (ret == SD_RES_SUCCESS) {
@@ -1371,7 +1405,7 @@ static int onode_append_space(struct http_request *req, const char *account,
 		}
 	}
 out:
-	sys->cdrv->unlock(bucket_vid);
+	sys->cdrv->unlock(bucket_vid, lock_tag);
 	return ret;
 }
 
@@ -1380,7 +1414,7 @@ int kv_complete_object(struct http_request *req, const char *account,
 {
 	char vdi_name[SD_MAX_VDI_LEN];
 	struct kv_onode *onode = NULL;
-	uint32_t bucket_vid;
+	uint32_t bucket_vid, lock_tag = random();
 	int ret;
 
 	snprintf(vdi_name, SD_MAX_VDI_LEN, "%s/%s", account, bucket);
@@ -1390,7 +1424,11 @@ int kv_complete_object(struct http_request *req, const char *account,
 
 	onode = xzalloc(sizeof(*onode));
 
-	sys->cdrv->lock(bucket_vid);
+	ret = sys->cdrv->lock(bucket_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock bucket %08x", bucket_vid);
+		return ret;
+	}
 	ret = onode_lookup_nolock(onode, bucket_vid, object);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to lookup onode %s (%s)", object,
@@ -1408,7 +1446,7 @@ int kv_complete_object(struct http_request *req, const char *account,
 		goto out;
 	}
 out:
-	sys->cdrv->unlock(bucket_vid);
+	sys->cdrv->unlock(bucket_vid, lock_tag);
 	return ret;
 }
 
@@ -1610,7 +1648,7 @@ int kv_iterate_object(const char *account, const char *bucket,
 		      object_iter_cb cb, void *opaque)
 {
 	char vdi_name[SD_MAX_VDI_LEN];
-	uint32_t bucket_vid;
+	uint32_t bucket_vid, lock_tag = random();
 	int ret;
 
 	snprintf(vdi_name, SD_MAX_VDI_LEN, "%s/%s", account, bucket);
@@ -1618,9 +1656,13 @@ int kv_iterate_object(const char *account, const char *bucket,
 	if (ret != SD_RES_SUCCESS)
 		return ret;
 
-	sys->cdrv->lock(bucket_vid);
+	ret = sys->cdrv->lock(bucket_vid, lock_tag);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to lock bucket %08x", bucket_vid);
+		return ret;
+	}
 	ret = bucket_iterate_object(bucket_vid, cb, opaque);
-	sys->cdrv->unlock(bucket_vid);
+	sys->cdrv->unlock(bucket_vid, lock_tag);
 
 	return ret;
 }

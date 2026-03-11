@@ -76,10 +76,21 @@ struct etcd_cluster_info {
 	uint8_t default_store[STORE_LEN];
 };
 
+struct etcd_cluster_lock {
+	struct rb_node rb;
+	uint32_t lock_id;
+	uint32_t lock_tag;
+	sem_t wait_wakeup;
+	char key[MAX_NODE_STR_LEN];
+};
+
 static struct sd_mutex etcd_block_mutex = SD_MUTEX_INITIALIZER;
 static LIST_HEAD(etcd_block_list);
 static struct rb_root etcd_node_root = RB_ROOT;
 static struct etcd_cluster_info etcd_cinfo = {};
+
+static struct rb_root etcd_lock_tree = RB_ROOT;
+static struct sd_mutex etcd_lock_mutex = SD_MUTEX_INITIALIZER;
 
 static int etcd_node_cmp(const struct etcd_node *a, const struct etcd_node *b)
 {
@@ -1557,100 +1568,70 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 	return msg;
 }
 
-static struct etcd_cluster_lock *etcd_lock_lookup(uint64_t lock_id)
+static int lock_cmp(struct etcd_cluster_lock *a, struct etcd_cluster_lock *b)
 {
-	uint64_t hval = sd_hash_64(lock_id) % HASH_BUCKET_NR;
-	struct etcd_cluster_lock *l, *lock = NULL;
-	int ret = SD_RES_OK;
+	uint64_t a_id = (uint64_t)a->lock_id << 32 | a->lock_tag;
+	uint64_t b_id = (uint64_t)b->lock_id << 32 | b->lock_tag;
+	return intcmp(a_id, b_id);
+}
+
+static struct etcd_cluster_lock *etcd_lock_lookup(uint32_t lock_id,
+						  uint32_t lock_tag)
+{
+	struct etcd_cluster_lock l, *lock = NULL;
 
 	sd_mutex_lock(&etcd_lock_mutex);
-	hlist_for_each_entry(l, iter, cluster_locks_table + hval, hnode) {
-		if (l->id = lock_id) {
-			lock = l;
-			lock->ref++;
-			break;
-		}
-	}
+	l.lock_id = lock_id;
+	l.lock_tag = lock_tag;
+	lock = rb_search(&etcd_lock_tree, &l, rb, lock_cmp);
 	if (!lock) {
-		lock = zxalloc(sizeof(*lock));
-		lock->id = lock_id;
-		lock->ref = 1;
+		lock = xzalloc(sizeof(*lock));
+		lock->lock_id = lock_id;
+		lock->lock_tag = lock_tag;
 		snprintf(lock->key, MAX_NODE_STR_LEN,
-			 DEFAULT_BASE LOCK_ZNODE "%lu", lock_id);
+			 DEFAULT_BASE LOCK_ZNODE "%u/%u", lock_id, lock_tag);
 		sem_init(&lock->wait_wakeup, 0, 1);
-		hlist_add_head(&(lock->hnode), cluster_locks_table + hval);
-		ret = SD_RES_OK;
+		rb_insert(&etcd_lock_tree, lock, rb, lock_cmp);
 	}
-	sd_mutex_unlock(table_locks + hval);
-		
+	sd_mutex_unlock(&etcd_lock_mutex);
+
 	return lock;
 }
 
-static int etcd_lock_wakeup(uint64_t lock_id, const char *owner, bool deleted)
+static void etcd_lock_wakeup(struct etcd_ctx *ctx, bool deleted)
 {
+	struct etcd_kv *kvs;
 	char key[256];
-	int num_kvs = 0, ret;
+	int num_kvs = 0, ret, i;
 
-	if (!deleted) {
-		struct etcd_cluster_lock *lock =
-			etcd_lock_lookup(lock_id);
-		if (!lock) {
-			sd_debug("lock '%lu' not found", lock_id);
-			return SD_RES_NOT_FOUND;
-		}
-		if (strcmp(owner, this_node.node_id)) {
-			sd_debug("lock '%lu' owned by '%s'", lock->id, owner);
-			return SD_RES_LOCK_CONFLICT;
-		}
-		/* We have found a lock entry, wake up waiters */
-		sem_post(&lock->wait_wakeup);
-		return 0;
+	strcpy(key, DEFAULT_BASE LOCK_ZNODE);
+	ret = etcd_kv_range(this_ctx, key, &kvs);
+	if (ret < 0) {
+		sd_err("failed to lookup lock range, error %d", ret);
+		return;
 	}
-	/* lock entry has been deleted, try to get the lock */
-	rc = etcd_kv_txn_update(this_ctx, lock->key, old_val,
-				this_node.node_id, cur_val);
-	if (rc < 0) {
-		sd_err("failed to create lock '%lu', error %d",
-		       lock_id, rc);
-		return SD_RES_LOCK_CONFLICT;
-	}
-	sd_debug("waking up lock id '%lu'", lock->id);
-	sem_post(&lock->wait_wakeup);
-	return 0;
-}
+	num_kvs = ret;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		struct etcd_cluster_lock l, *lock;
 
-		
-static void etcd_lock_release(uint64_t lock_id)
-{
-	uint64_t hval = sd_hash_64(lock_id) % HASH_BUCKET_NR;
-	struct etcd_cluster_lock *l, *lock = NULL;
-
-	sd_mutex_lock(&etcd_lock_mutex);
-	hlist_for_each_entry(l, iter, cluster_locks_table + hval, hnode) {
-		if (l->id == lock_id) {
-			lock = l;
-			break;
+		ret = sscanf(kv->key, DEFAULT_BASE LOCK_ZNODE "%u/%u",
+			     &l.lock_id, &l.lock_tag);
+		if (ret != 2) {
+			sd_err("parsing error on lock '%s'", kv->key);
+			return;
 		}
+		sd_mutex_lock(&etcd_lock_mutex);
+		lock = rb_search(&etcd_lock_tree, &l, rb, lock_cmp);
+		if (lock) {
+			sd_debug("wakeup lock '%u/%u'",
+				 lock->lock_id, lock->lock_tag);
+			sem_post(&lock->wait_wakeup);
+		}
+		sd_mutex_unlock(&etcd_lock_mutex);
+		break;
 	}
-	if (!lock) {
-		sd_debug("no lock found for '%lu'", lock_id);
-		goto out_unlock;
-	}
-	rc = etcd_kv_delete(lock->key);
-	if (rc) {
-		sd_err("Failed to delete lock entry '%s', error %d",
-		       lock->key, rc);
-		goto out_unlock;
-	}
-	sd_debug("deleted lock entry '%s'", lock->key);
-	lock->key[0] = '\0';
-	lock->ref --;
-	if (!lock->ref) {
-		hlist_del(iter);
-		sem_destroy(lock->wait_wakeup);
-		free(lock);
-	}
-	sd_mutex_unlock(&etcd_lock_mutex);
+	etcd_kv_free(kvs, num_kvs);
 }
 
 static int etcd_notify(void *msg, size_t msg_len)
@@ -1952,17 +1933,17 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
 	int i;
 
+	if (!strncmp(kv->key, DEFAULT_BASE LOCK_ZNODE,
+		     strlen(DEFAULT_BASE LOCK_ZNODE))) {
+		etcd_lock_wakeup(ctx, kv->deleted);
+		return;
+	}
 	key = strrchr(kv->key, '/');
 	if (!key) {
 		sd_debug("skipping updates to '%s'", kv->key);
 		return;
 	}
 	key++;
-	if (i = sscanf(kv->key, DEFAULT_BASE LOCK_ZNODE "/%" PRIu64,
-		       &lock_id) > 0) {
-		ret = etcd_lock_wakeup(lock_id, kv->value, kv->deleted);
-		return;
-	}
 	if (strcmp(key, EV_ZNODE)) {
 		unsigned long val;
 
@@ -2061,53 +2042,55 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 	etcd_kick_block_event();
 }
 
-static int etcd_lock(uint64_t lock_id)
+static int etcd_lock(uint32_t lock_id, uint32_t lock_owner)
 {
-	struct etcd_cluster_lock *lock =
-		etcd_lock_lookup(lock_id);
+	struct etcd_cluster_lock *lock = NULL;
+		etcd_lock_lookup(lock_id, lock_owner);
+	int ret;
 
 	if (!lock) {
-		sd_err("failed to acquire lock entry '%lu'", lock_id);
+		sd_err("failed to acquire lock entry for '%u'", lock_id);
 		return SD_RES_CLUSTER_ERROR;
-	}
-retry:
-	rc = etcd_kv_txn_update(this_ctx, lock->key, old_val,
-				this_node.node_id, cur_val);
-	if (rc < 0) {
-		sd_err("failed to create lock '%lu', error %d",
-		       lock_id, rc);
-		return SD_RES_CLUSTER_ERROR;
-	}
-	if (strcmp(cur_val, this_node.node_id)) {
-		sd_debug("lock owned by '%s', waiting", cur_val);
-		sem_wait(&lock->wait_wakeup);
-		sd_debug("retrying creating lock '%lu'", lock_id);
-		memset(cur_val, 0, sizeof(cur_val));
-		goto retry;
 	}
 
-	sd_debug("waiting for lock '%lu'", lock->id);
+	ret = etcd_kv_new(this_ctx, lock->key, this_node.node_id,
+			 strlen(this_node.node_id));
+	if (ret < 0) {
+		sd_err("failed to create lock '%u/%u', error %d",
+		       lock_id, lock_owner, ret);
+		return SD_RES_CLUSTER_ERROR;
+	}
+
+	sd_debug("waiting for lock '%u/%u", lock->lock_id, lock->lock_tag);
 	sem_wait(&lock->wait_wakeup);
-	sd_debug("granted lock '%lu', lock->id);
+	sd_debug("granted lock '%u/%u'", lock->lock_id, lock->lock_tag);
 	return 0;
 }
 
-static void etcd_unlock(uint64_t lock_id)
+static void etcd_unlock(uint32_t lock_id, uint32_t lock_tag)
 {
-	struct etcd_cluster_lock *lock =
-		etcd_lock_lookup(lock_id);
+	struct etcd_cluster_lock l, *lock = NULL;
+	int ret;
 
+	sd_mutex_lock(&etcd_lock_mutex);
+	l.lock_id = lock_id;
+	l.lock_tag = lock_tag;
+	lock = rb_search(&etcd_lock_tree, &l, rb, lock_cmp);
+	if (lock)
+		rb_erase(&lock->rb, &etcd_lock_tree);
+	sd_mutex_unlock(&etcd_lock_mutex);
 	if (!lock) {
-		sd_err("failed to lookup lock_entry '%lu'", lock_id);
+		sd_err("failed to lookup lock '%u/%u'", lock_id, lock_tag);
 		return;
 	}
-	rc = etcd_kv_delete(this_ctx, lock->key);
-	if (rc) {
+	ret = etcd_kv_delete(this_ctx, lock->key);
+	if (ret) {
 		sd_err("failed to delete lock '%s', error %d",
-		       lock->key, rc);
+		       lock->key, ret);
 		return;
 	}
-	etcd_lock_release(lock);
+	sem_destroy(&lock->wait_wakeup);
+	free(lock);
 }
 
 static void delete_conn(void *arg)
