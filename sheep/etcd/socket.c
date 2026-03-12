@@ -89,8 +89,6 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 	ne_req = ne_request_create(ne_sess, "POST", uri);
 	ne_add_request_header(ne_req, "Accept", "*/*");
 	ne_add_request_header(ne_req, "Content-Type", "application/json");
-	ne_print_request_header(ne_req, "Host", "%s:%d",
-				conn->ctx->host, conn->ctx->port);
 	ne_set_request_body_buffer(ne_req, post, postlen);
 
 	if (http_debug)
@@ -112,6 +110,8 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 			 ne_get_status(ne_req)->code,
 			 ne_get_status(ne_req)->reason_phrase);
 		ret = ne_discard_response(ne_req);
+		if (ret == NE_OK)
+			ret = NE_ERROR;
 	} else {
 		ret = ne_read_response_to_fd(ne_req, fd);
 		if (ret != NE_OK)
@@ -170,6 +170,8 @@ done:
 
 int etcd_conn_init(struct etcd_conn_ctx *conn)
 {
+	ne_session *ne_sess;
+
 	conn->sockfd = connect_to(conn->ctx->host, conn->ctx->port);
 	if (conn->sockfd < 0) {
 		sd_err("failed to connect to %s:%u, error %d\n",
@@ -177,14 +179,17 @@ int etcd_conn_init(struct etcd_conn_ctx *conn)
 		return -errno;
 	}
 
-	conn->priv = ne_session_create(conn->ctx->proto,
-				       conn->ctx->host,
-				       conn->ctx->port);
-	if (!conn->priv) {
+	ne_sess = ne_session_create(conn->ctx->proto,
+				    conn->ctx->host,
+				    conn->ctx->port);
+	if (!ne_sess) {
 		sd_err("failed to initialize session");
 		close(conn->sockfd);
 		return -EHOSTUNREACH;
 	}
+	/* Disable persistent sessions */
+	ne_set_session_flag(ne_sess, NE_SESSFLAG_PERSIST, 0);
+	conn->priv = ne_sess;
 	return 0;
 }
 
