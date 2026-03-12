@@ -137,10 +137,17 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		sd_warn("failed to access response file, error %d", errno);
 		goto done;
 	}
+	ret = lseek(fd, SEEK_SET, 0);
+	if (ret < 0) {
+		sd_warn("could not rewind response buffer, error %d", errno);
+		ret = -errno;
+		goto done;
+	}
 	data = xzalloc(st.st_size + 1);
 	if (!data) {
 		sd_warn("could not allocate %lu bytes response buffer",
 			st.st_size);
+		ret = -ENOMEM;
 		goto done;
 	}
 	ret = read(fd, data, st.st_size);
