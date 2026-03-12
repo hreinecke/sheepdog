@@ -77,6 +77,10 @@ if BUILD_SYSTEMD
 sheep_LDADD		+= -lsystemd
 endif
 
+if BUILD_ETCD
+sheep_LDADD		+= -lneon
+endif
+
 sheep_DEPENDENCIES	= ../lib/libsd.a
 
 

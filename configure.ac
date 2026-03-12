@@ -328,6 +328,10 @@ if test x$enable_systemd = xyes -a x$have_systemd != xyes ; then
     AC_MSG_ERROR([Explicitly requested systemd support, but systemd not found])
 fi
 
+if test x$enable_etcd = xyes ; then
+    PKG_CHECK_MODULES([neon],[neon],[have_neon=yes])
+fi
+
 ##### systemd unit files
 AC_ARG_WITH([systemdsystemunitdir],
 AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files]),
