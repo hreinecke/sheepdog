@@ -217,7 +217,7 @@ retry:
 
 done:
 	free(post);
-	return ret;
+	return ret < 0 ? ret : 0;
 }
 
 int etcd_conn_init(struct etcd_conn_ctx *conn)
