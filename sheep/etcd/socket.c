@@ -161,8 +161,7 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 		if (http_debug)
 			sd_debug("%ld bytes read", result_size);
 
-		ret = parse_json(data, result, result_size);
-		if (!ret) {
+		if (!parse_json(data, result, result_size)) {
 			sd_info("No bytes processed: %s", result);
 			break;
 		}
