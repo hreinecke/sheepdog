@@ -91,17 +91,16 @@ static int send_http(ne_session *ne_sess, ne_request *ne_req,
 		return ne_status_to_errno(ret);
 	}
 	is_ok = ne_get_status(ne_req)->klass == 2;
-	if (!is_ok) {
-		sd_debug("response status %d (%s)",
-			 ne_get_status(ne_req)->code,
-			 ne_get_status(ne_req)->reason_phrase);
-		ret = ne_discard_response(ne_req);
-		if (ret == NE_OK)
-			ret = NE_ERROR;
-		if (ret != NE_OK)
-			ret = ne_status_to_errno(ret);
-	}
-	return ret;
+	if (is_ok)
+		return 0;
+
+	sd_debug("response status %d (%s)",
+		 ne_get_status(ne_req)->code,
+		 ne_get_status(ne_req)->reason_phrase);
+	ret = ne_discard_response(ne_req);
+	if (ret == NE_OK)
+		ret = NE_ERROR;
+	return ne_status_to_errno(ret);
 }
 
 static int parse_json(struct etcd_parse_data *data,
