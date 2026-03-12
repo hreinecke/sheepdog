@@ -72,7 +72,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 	ne_request *ne_req;
 	char *post, *data = NULL;
 	size_t postlen;
-	struct json_object *ne_json;
+	struct json_object *ne_json = NULL;
 	int fd, ret = 0;
 	struct stat st;
 	bool is_ok = false;
@@ -97,8 +97,6 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		sd_debug("%s", post);
 
 	ret = ne_begin_request(ne_req);
-	free(post);
-
 	if (ret != NE_OK) {
 		if (ret == NE_ERROR)
 			sd_warn("failed to dispatch request: %s",
@@ -110,7 +108,9 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 	}
 	is_ok = ne_get_status(ne_req)->klass == 2;
 	if (!is_ok) {
-		sd_debug("response status %d", ne_get_status(ne_req)->code);
+		sd_debug("response status %d (%s)",
+			 ne_get_status(ne_req)->code,
+			 ne_get_status(ne_req)->reason_phrase);
 		ret = ne_discard_response(ne_req);
 	} else {
 		ret = ne_read_response_to_fd(ne_req, fd);
@@ -162,6 +162,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 	}
 	free(data);
 done:
+	free(post);
 	close(fd);
 	unlink(tmpname);
 	return ret;
