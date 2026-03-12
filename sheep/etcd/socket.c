@@ -117,7 +117,7 @@ static int parse_json(struct etcd_parse_data *data,
 				    body, len);
 	if (json_tokener_get_error(data->tokener) ==
 	    json_tokener_continue)
-		return 0;
+		return len;
 
 	if (http_debug) {
 		sd_debug("http data (%ld bytes)", len);
