@@ -132,6 +132,8 @@ static int parse_json(struct etcd_parse_data *data,
 		sd_warn("no parse callback");
 
 	json_object_put(obj);
+	json_tokener_reset(data->tokener);
+
 	return parsed;
 }
 
@@ -168,7 +170,7 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 			sd_info("No bytes processed: %s", result);
 			break;
 		}
-		if (result_size < alloc_size)
+		if (result_size < alloc_size && !data->persistent)
 			break;
 		memset(result, 0, alloc_size);
 		if (http_debug)
@@ -180,7 +182,8 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 
 int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		 struct json_object *post_obj,
-		 etcd_parse_cb parse_cb, void *parse_arg)
+		 etcd_parse_cb parse_cb, void *parse_arg,
+		 bool persistent)
 {
 	ne_session *ne_sess = conn->priv;
 	struct etcd_parse_data parse_data;
@@ -199,6 +202,8 @@ retry:
 	if (!ne_req)
 		return -ENOMEM;
 	ne_set_request_body_buffer(ne_req, post, postlen);
+	if (persistent)
+		ne_set_session_flag(ne_sess, NE_SESSFLAG_PERSIST, 1);	
 
 	ret = send_http(ne_sess, ne_req, post, postlen);
 	if (ret)
@@ -208,11 +213,11 @@ retry:
 	parse_data.parse_arg = parse_arg;
 	parse_data.tokener = json_tokener_new_ex(10);
 	parse_data.uri = strdup(uri);
+	parse_data.persistent = persistent;
 
 	ret = recv_http(ne_req, &parse_data);
 
 	if (ne_end_request(ne_req) == NE_RETRY) {
-		json_tokener_reset(parse_data.tokener);
 		sd_debug("retrying request %s", uri);
 		goto retry;
 	}

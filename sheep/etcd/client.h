@@ -22,6 +22,7 @@ struct etcd_parse_data {
 	char *uri;
 	char *data;
 	size_t len;
+	bool persistent;
 };
 
 struct etcd_ctx {
@@ -84,7 +85,8 @@ void etcd_ev_free(struct etcd_kv_event *ev);
 
 int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		 struct json_object *post_obj,
-		 etcd_parse_cb parse_cb, void *parse_arg);
+		 etcd_parse_cb parse_cb, void *parse_arg,
+		 bool persistent);
 
 int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv);
 

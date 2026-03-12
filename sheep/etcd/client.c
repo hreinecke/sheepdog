@@ -148,7 +148,7 @@ int etcd_kv_put(struct etcd_ctx *ctx, struct etcd_kv *kv)
 				       json_object_new_int64(kv->lease));
 	}
 	ret = etcd_kv_exec(conn, "/v3/kv/put", post_obj,
-			   etcd_parse_set_response, &ev);
+			   etcd_parse_set_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0)
 			ret = ev.error;
@@ -270,7 +270,7 @@ int etcd_kv_get(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_string(encoded_key));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
-			   etcd_parse_kvs_response, &ev);
+			   etcd_parse_kvs_response, &ev, false);
 	if (ret)
 		goto out_free;
 	if (ev.error < 0) {
@@ -340,7 +340,7 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_string("CREATE"));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/range", post_obj,
-			   etcd_parse_kvs_response, &ev);
+			   etcd_parse_kvs_response, &ev, false);
 	if (!ret) {
 		ret = ev.error;
 	}
@@ -428,7 +428,7 @@ int etcd_kv_delete_range(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(conn, "/v3/kv/deleterange", post_obj,
-			   etcd_parse_delete_response, &ev);
+			   etcd_parse_delete_response, &ev, false);
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
 	}
@@ -585,7 +585,7 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 	json_object_object_add(post_obj, "failure", fail_obj);
 
 	ret = etcd_kv_exec(conn, "/v3/kv/txn", post_obj,
-			   etcd_parse_txn_response, &ev);
+			   etcd_parse_txn_response, &ev, false);
 	if (!ret && ev.error < 0) {
 		ret = ev.error;
 	}
@@ -749,7 +749,7 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(conn, "/v3/watch", post_obj,
-			   parse_watch_response, ev);
+			   parse_watch_response, ev, true);
 	if (ret < 0) {
 		sd_err("%s: error %d executing watch request",
 		       __func__, ret);
@@ -820,7 +820,7 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 			       json_object_new_int(ctx->ttl));
 
 	ret = etcd_kv_exec(conn, "/v3/lease/grant", post_obj,
-			   etcd_parse_lease_response, &ev);
+			   etcd_parse_lease_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0) {
 			sd_err("lease error %d", ret);
@@ -921,7 +921,7 @@ int etcd_lease_keepalive(struct etcd_ctx *ctx)
 			       json_object_new_int(ctx->ttl));
 
 	ret = etcd_kv_exec(conn, "/v3/lease/keepalive", post_obj,
-			   etcd_parse_keepalive_response, &ev);
+			   etcd_parse_keepalive_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0) {
 			sd_err("%s: etcd error %d",
@@ -966,7 +966,7 @@ int etcd_lease_timetolive(struct etcd_ctx *ctx)
 			       json_object_new_int64(ctx->lease));
 
 	ret = etcd_kv_exec(conn, "/v3/lease/timetolive", post_obj,
-			   etcd_parse_keepalive_response, &ev);
+			   etcd_parse_keepalive_response, &ev, false);
 	if (!ret) {
 		if (ev.error < 0) {
 			ret = ev.error;
@@ -1024,7 +1024,7 @@ int etcd_lease_revoke(struct etcd_ctx *ctx)
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
 	ret = etcd_kv_exec(conn, "/v3/lease/revoke", post_obj,
-			   etcd_parse_revoke_response, &ev);
+			   etcd_parse_revoke_response, &ev, false);
 	if (!ret && ev.error < 0)
 		ret = ev.error;
 
@@ -1128,7 +1128,7 @@ static int etcd_member_id(struct etcd_ctx *ctx)
 			       json_object_new_boolean(true));
 
 	ret = etcd_kv_exec(conn, "/v3/cluster/member/list", post_obj,
-			   etcd_parse_member_response, ctx);
+			   etcd_parse_member_response, ctx, false);
 
 	if (!ret && !ctx->node_id)
 		ret = -ENOENT;
