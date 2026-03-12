@@ -534,6 +534,7 @@ static int etcd_cinfo_download(struct etcd_ctx *ctx,
 	num_kvs = etcd_kv_range(ctx, key, &kvs);
 	if (num_kvs < 0)
 		return num_kvs;
+	sd_assert(kvs != NULL);
 	for (i = 0; i < num_kvs; i++) {
 		const char *attr;
 		unsigned long val;

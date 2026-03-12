@@ -176,6 +176,12 @@ etcd_parse_kvs(struct json_object *resp, struct etcd_kv_event *ev)
 	}
 
 	ev->num_kvs = json_object_array_length(kvs_obj);
+	if (ev->num_kvs == 0) {
+		sd_warn("empty kvs array");
+		ev->num_kvs = 0;
+		ev->kvs = NULL;
+		return;
+	}
 	ev->kvs = malloc(sizeof(struct etcd_kv) * ev->num_kvs);
 	if (!ev->kvs) {
 		sd_err("failed to allocate kvs");
