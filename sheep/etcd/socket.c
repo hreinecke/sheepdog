@@ -229,19 +229,11 @@ int etcd_conn_init(struct etcd_conn_ctx *conn)
 {
 	ne_session *ne_sess;
 
-	conn->sockfd = connect_to(conn->ctx->host, conn->ctx->port);
-	if (conn->sockfd < 0) {
-		sd_err("failed to connect to %s:%u, error %d\n",
-		       conn->ctx->host, conn->ctx->port, errno);
-		return -errno;
-	}
-
 	ne_sess = ne_session_create(conn->ctx->proto,
 				    conn->ctx->host,
 				    conn->ctx->port);
 	if (!ne_sess) {
 		sd_err("failed to initialize session");
-		close(conn->sockfd);
 		return -EHOSTUNREACH;
 	}
 	/* Disable persistent sessions */
@@ -257,10 +249,5 @@ void etcd_conn_exit(struct etcd_conn_ctx *conn)
 	if (ne_sess) {
 		ne_session_destroy(ne_sess);
 		conn->priv = NULL;
-	}
-
-	if (conn->sockfd > 0) {
-		close(conn->sockfd);
-		conn->sockfd = -1;
 	}
 }
