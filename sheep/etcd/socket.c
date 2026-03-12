@@ -107,6 +107,7 @@ static int parse_json(struct etcd_parse_data *data,
 		      const char *body, size_t len)
 {
 	json_object *obj;
+	size_t parsed;
 
 	if (!len) {
 		if (http_debug)
@@ -118,9 +119,9 @@ static int parse_json(struct etcd_parse_data *data,
 	if (json_tokener_get_error(data->tokener) ==
 	    json_tokener_continue)
 		return len;
-
+	parsed = json_tokener_get_parse_end(data->tokener);
 	if (http_debug) {
-		sd_debug("http data (%ld bytes)", len);
+		sd_debug("http data (%ld of %ld bytes)", parsed, len);
 		sd_debug("%s\n%s", data->uri,
 			 json_object_to_json_string(obj));
 	}
@@ -130,7 +131,7 @@ static int parse_json(struct etcd_parse_data *data,
 		sd_warn("no parse callback");
 
 	json_object_put(obj);
-	return len;
+	return parsed;
 }
 
 static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
@@ -161,13 +162,16 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 		if (http_debug)
 			sd_debug("%ld bytes read", result_size);
 
-		if (!parse_json(data, result, result_size)) {
+		ret = parse_json(data, result, result_size);
+		if (ret <= 0) {
 			sd_info("No bytes processed: %s", result);
 			break;
 		}
 		if (result_size < alloc_size)
 			break;
 		memset(result, 0, alloc_size);
+		if (http_debug)
+			sd_debug("restarting, %d bytes parsed", ret);
 	}
 	free(result);
 	return ret;
