@@ -63,36 +63,23 @@ static int ne_status_to_errno(int ne_status)
 	return ret;
 }
 
-int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
-		 struct json_object *post_obj,
-		 etcd_parse_cb parse_cb, void *parse_arg)
+static ne_request *format_hdr(struct etcd_conn_ctx *conn, const char *uri)
 {
-	char tmpname[PATH_MAX];
-	ne_session *ne_sess = conn->priv;
 	ne_request *ne_req;
-	char *post, *data = NULL;
-	size_t postlen;
-	struct json_object *ne_json = NULL;
-	int fd, ret = 0;
-	struct stat st;
-	bool is_ok = false;
 
-	strcpy(tmpname, "sheep-XXXXXX");
-	fd = mkstemp(tmpname);
-	if (!fd) {
-		sd_warn("cannot open temporary files, error %d", errno);
-		return -errno;
-	}
-	post = strdup(json_object_to_json_string(post_obj));
-	postlen = strlen(post);
-
-	ne_req = ne_request_create(ne_sess, "POST", uri);
+	ne_req = ne_request_create(conn->priv, "POST", uri);
+	if (!ne_req)
+		return NULL;
 	ne_add_request_header(ne_req, "Accept", "*/*");
 	ne_add_request_header(ne_req, "Content-Type", "application/json");
-	ne_set_request_body_buffer(ne_req, post, postlen);
+	return ne_req;
+}
 
-	if (http_debug)
-		sd_debug("%s", post);
+static int send_http(ne_session *ne_sess, ne_request *ne_req,
+		     const char *post, size_t postlen)
+{
+	int ret;
+	bool is_ok;
 
 	ret = ne_begin_request(ne_req);
 	if (ret != NE_OK) {
@@ -101,8 +88,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 				ne_get_error(ne_sess));
 		else
 			sd_warn("failed to dispatch request: %d", ret);
-		ret = ne_status_to_errno(ret);
-		goto done;
+		return ne_status_to_errno(ret);
 	}
 	is_ok = ne_get_status(ne_req)->klass == 2;
 	if (!is_ok) {
@@ -112,66 +98,124 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		ret = ne_discard_response(ne_req);
 		if (ret == NE_OK)
 			ret = NE_ERROR;
-	} else {
-		ret = ne_read_response_to_fd(ne_req, fd);
 		if (ret != NE_OK)
-			sd_warn("failed to read response, status %d", ret);
-	}
-	if (ret == NE_OK) {
-		ret = ne_end_request(ne_req);
-		if (ret != NE_OK) {
-			sd_warn("failed to complete response, status %d",
-				ret);
 			ret = ne_status_to_errno(ret);
-		}
-		ret = 0;
-	} else
-		ret = ne_status_to_errno(ret);
+	}
+	return ret;
+}
 
-	ne_request_destroy(ne_req);
+static int parse_json(struct etcd_parse_data *data,
+		      const char *body, size_t len)
+{
+	json_object *obj;
+
+	if (!len) {
+		if (http_debug)
+			sd_debug("no data to parse");
+		return 0;
+	}
+	obj = json_tokener_parse_ex(data->tokener,
+				    body, len);
+	if (json_tokener_get_error(data->tokener) ==
+	    json_tokener_continue)
+		return 0;
+
+	if (http_debug) {
+		sd_debug("http data (%ld bytes)", len);
+		sd_debug("%s\n%s", data->uri,
+			 json_object_to_json_string(obj));
+	}
+	if (data->parse_cb)
+		data->parse_cb(obj, data->parse_arg);
+
+	json_object_put(obj);
+	return len;
+}
+
+static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
+{
+	size_t alloc_size = 1024, result_size = 0;
+	char *result;
+	int ret = 0;
+
+	result = malloc(alloc_size);
+	if (!result)
+		return -ENOMEM;
+	memset(result, 0, alloc_size);
+
+	while (true) {
+		ret = ne_read_response_block(ne_req, result, alloc_size);
+		if (ret < 0) {
+			sd_err("error %d during read, %ld bytes read",
+			       ret, result_size);
+			ret = ne_status_to_errno(ret);
+			break;
+		}
+		if (ret == 0) {
+			sd_err("socket closed during read, %ld bytes read",
+			       result_size);
+			break;
+		}
+		result_size = ret;
+		if (http_debug)
+			sd_debug("%ld bytes read", result_size);
+
+		ret = parse_json(data, result, result_size);
+		if (!ret) {
+			sd_info("No bytes processed: %s", result);
+			break;
+		}
+		if (result_size < alloc_size)
+			break;
+		memset(result, 0, alloc_size);
+	}
+	free(result);
+	return ret;
+}
+
+int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
+		 struct json_object *post_obj,
+		 etcd_parse_cb parse_cb, void *parse_arg)
+{
+	ne_session *ne_sess = conn->priv;
+	struct etcd_parse_data parse_data;
+	ne_request *ne_req;
+	char *post;
+	size_t postlen;
+	int ret = 0;
+
+	post = strdup(json_object_to_json_string(post_obj));
+	postlen = strlen(post);
+
+	if (http_debug)
+		sd_debug("%s", post);
+retry:
+	ne_req = format_hdr(conn, uri);
+	if (ne_req)
+		return -ENOMEM;
+	ne_set_request_body_buffer(ne_req, post, postlen);
+
+	ret = send_http(ne_sess, ne_req, post, postlen);
 	if (ret)
 		goto done;
 
-	ret = fstat(fd, &st);
-	if (ret < 0) {
-		sd_warn("failed to access response file, error %d", errno);
-		goto done;
+	parse_data.parse_cb = parse_cb;
+	parse_data.parse_arg = parse_arg;
+	parse_data.tokener = json_tokener_new_ex(10);
+	parse_data.uri = strdup(uri);
+
+	ret = recv_http(ne_req, &parse_data);
+
+	if (ne_end_request(ne_req) == NE_RETRY) {
+		sd_debug("retrying request %s", uri);
+		goto retry;
 	}
-	ret = lseek(fd, SEEK_SET, 0);
-	if (ret < 0) {
-		sd_warn("could not rewind response buffer, error %d", errno);
-		ret = -errno;
-		goto done;
-	}
-	data = xzalloc(st.st_size + 1);
-	if (!data) {
-		sd_warn("could not allocate %lu bytes response buffer",
-			st.st_size);
-		ret = -ENOMEM;
-		goto done;
-	}
-	ret = read(fd, data, st.st_size);
-	if (ret < 0) {
-		sd_warn("could not read response buffer, error %d", errno);
-		free(data);
-		ret = -errno;
-		goto done;
-	}
-	if (ret < st.st_size)
-		sd_warn("read only %u of %lu bytes of response buffer",
-			ret, st.st_size);
-	ne_json = json_tokener_parse(data);
-	if (!ne_json) {
-		sd_warn("failed to parse JSON payload '%s'", data);
-	} else {
-		parse_cb(ne_json, parse_arg);
-		json_object_put(ne_json);
-	}
-	free(data);
+
+	free(parse_data.uri);
+	json_tokener_free(parse_data.tokener);
+
 done:
 	free(post);
-	close(fd);
-	unlink(tmpname);
 	return ret;
 }
 
