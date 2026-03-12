@@ -126,6 +126,8 @@ static int parse_json(struct etcd_parse_data *data,
 	}
 	if (data->parse_cb)
 		data->parse_cb(obj, data->parse_arg);
+	else
+		sd_warn("no parse callback");
 
 	json_object_put(obj);
 	return len;
@@ -206,6 +208,7 @@ retry:
 	ret = recv_http(ne_req, &parse_data);
 
 	if (ne_end_request(ne_req) == NE_RETRY) {
+		json_tokener_reset(parse_data.tokener);
 		sd_debug("retrying request %s", uri);
 		goto retry;
 	}

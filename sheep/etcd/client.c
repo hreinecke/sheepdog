@@ -170,6 +170,7 @@ etcd_parse_kvs(struct json_object *resp, struct etcd_kv_event *ev)
 
 	kvs_obj = json_object_object_get(resp, "kvs");
 	if (!kvs_obj) {
+		sd_warn("no kv entries");
 		ev->num_kvs = 0;
 		return;
 	}
@@ -177,7 +178,7 @@ etcd_parse_kvs(struct json_object *resp, struct etcd_kv_event *ev)
 	ev->num_kvs = json_object_array_length(kvs_obj);
 	ev->kvs = malloc(sizeof(struct etcd_kv) * ev->num_kvs);
 	if (!ev->kvs) {
-		sd_err("%s: failed to allocate kvs", __func__);
+		sd_err("failed to allocate kvs");
 		ev->error = -ENOMEM;
 		ev->num_kvs = 0;
 		return;
@@ -337,7 +338,12 @@ int etcd_kv_range(struct etcd_ctx *ctx, const char *key,
 	if (!ret) {
 		ret = ev.error;
 	}
-	if (!ret && ev.num_kvs) {
+	if (!ret) {
+		if (ev.num_kvs && !ev.kvs) {
+			sd_warn("empty kvs returned (should be %d)",
+				ev.num_kvs);
+			ev.num_kvs = 0;
+		}
 		*ret_kvs = ev.kvs;
 		ret = ev.num_kvs;
 	} else
