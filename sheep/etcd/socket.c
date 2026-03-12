@@ -190,7 +190,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 		sd_debug("%s", post);
 retry:
 	ne_req = format_hdr(conn, uri);
-	if (ne_req)
+	if (!ne_req)
 		return -ENOMEM;
 	ne_set_request_body_buffer(ne_req, post, postlen);
 
