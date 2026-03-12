@@ -9,21 +9,9 @@
 #define _ETCD_CLIENT_H
 
 #include <json-c/json.h>
-#ifdef _USE_CURL
-#include <curl/curl.h>
-#include <curl/easy.h>
-#endif
 
 #define CLUSTER_MAX_SIZE 65520
 #define CLUSTER_DEFAULT_SIZE 16
-
-#define ANA_NODE_SPACING 0x1000
-
-#define PORT_NODE_SHIFT 8
-#define PORT_ID_MASK 0xff
-
-#define PORTID_TO_NODE(p) ((p) >> PORT_NODE_SHIFT)
-#define PORTID_TO_ID(p) ((p) & PORT_NODE_MASK)
 
 typedef void (*etcd_parse_cb)(struct json_object *obj, void *arg);
 
