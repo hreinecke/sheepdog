@@ -209,6 +209,7 @@ retry:
 	if (ret)
 		goto done;
 
+	memset(&parse_data, 0, sizeof(parse_data));
 	parse_data.parse_cb = parse_cb;
 	parse_data.parse_arg = parse_arg;
 	parse_data.tokener = json_tokener_new_ex(10);
