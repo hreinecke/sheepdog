@@ -117,14 +117,15 @@ static int parse_json(struct etcd_parse_data *data,
 	obj = json_tokener_parse_ex(data->tokener,
 				    body, len);
 	if (json_tokener_get_error(data->tokener) ==
-	    json_tokener_continue)
+	    json_tokener_continue) {
+		data->len += len;
 		return len;
-	parsed = json_tokener_get_parse_end(data->tokener);
-	if (http_debug) {
-		sd_debug("http data (%ld of %ld bytes)", parsed, len);
-		sd_debug("%s\n%s", data->uri,
-			 json_object_to_json_string(obj));
 	}
+	parsed = json_tokener_get_parse_end(data->tokener);
+	data->len += parsed;
+	if (http_debug)
+		sd_debug("http data (%ld bytes parsed)", data->len);
+
 	if (data->parse_cb)
 		data->parse_cb(obj, data->parse_arg);
 	else
