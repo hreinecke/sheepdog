@@ -1,8 +1,6 @@
-FROM ubuntu:14.04
-RUN apt-get -qq update
-RUN apt-get -qq install -y gcc autoconf yasm pkg-config libtool make
-RUN apt-get -qq install -y corosync libcorosync-dev crmsh
-RUN apt-get -qq install -y liburcu-dev libqb-dev
+FROM registry.suse.com/bci/gcc:15
+RUN zypper --non-interactive in automake
+RUN zypper --non-interactive in autoconf
 ENV SHEEPSRC /usr/src/sheepdog
 ENV SHEEPPORT 7000
 ENV SHEEPSTORE /store
