@@ -28,10 +28,10 @@ static int get_store_path(uint64_t oid, uint8_t ec_index, char *path)
 
 static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char *path)
 {
-	char tmp_path[PATH_MAX];
+	char tmp_path[PATH_MAX - 4];
 
 	get_store_path(oid, ec_index, path);
-	memcpy(tmp_path, path, PATH_MAX);
+	memcpy(tmp_path, path, sizeof(tmp_path));
 	return snprintf(path, PATH_MAX, "%s.tmp", tmp_path);
 }
 

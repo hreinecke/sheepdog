@@ -21,13 +21,13 @@ static inline int get_tree_directory(uint64_t oid)
 
 static int get_store_path(uint64_t oid, uint8_t ec_index, char *path)
 {
-	char tree_path[PATH_MAX];
+	char tree_path[PATH_MAX - 33];
 
 	if (is_vdi_obj(oid) || is_vmstate_obj(oid) || is_vdi_attr_obj(oid)) {
-		snprintf(tree_path, PATH_MAX, "%s/meta",
+		snprintf(tree_path, sizeof(tree_path), "%s/meta",
 			 md_get_object_dir(oid));
 	} else {
-		snprintf(tree_path, PATH_MAX, "%s/%02x",
+		snprintf(tree_path, sizeof(tree_path), "%s/%02x",
 			 md_get_object_dir(oid), get_tree_directory(oid));
 	}
 
@@ -43,10 +43,10 @@ static int get_store_path(uint64_t oid, uint8_t ec_index, char *path)
 
 static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char *path)
 {
-	char tmp_path[PATH_MAX];
+	char tmp_path[PATH_MAX - 4];
 
 	get_store_path(oid, ec_index, path);
-	memcpy(tmp_path, path, PATH_MAX);
+	memcpy(tmp_path, path, sizeof(tmp_path));
 	return snprintf(path, PATH_MAX, "%s.tmp", tmp_path);
 }
 
@@ -162,7 +162,7 @@ out:
 static int make_tree_dir(const char *path)
 {
 	int i;
-	char p[PATH_MAX];
+	char p[PATH_MAX + 5];
 
 	snprintf(p, PATH_MAX, "%s/meta", path);
 	if (xmkdir(p, sd_def_dmode) < 0) {
@@ -458,7 +458,7 @@ out:
 
 int tree_link(uint64_t oid, uint32_t tgt_epoch)
 {
-	char path[PATH_MAX], stale_path[PATH_MAX], tree_path[PATH_MAX];
+	char path[PATH_MAX + 34], stale_path[PATH_MAX], tree_path[PATH_MAX];
 
 	if (is_vdi_obj(oid) || is_vmstate_obj(oid) || is_vdi_attr_obj(oid)) {
 		snprintf(tree_path, PATH_MAX, "%s/meta",
@@ -471,7 +471,7 @@ int tree_link(uint64_t oid, uint32_t tgt_epoch)
 	sd_debug("try link %016"PRIx64" from snapshot with epoch %d", oid,
 		 tgt_epoch);
 
-	snprintf(path, PATH_MAX, "%s/%016"PRIx64, tree_path, oid);
+	snprintf(path, sizeof(path), "%s/%016"PRIx64, tree_path, oid);
 	get_store_stale_path(oid, tgt_epoch, 0, stale_path);
 
 	if (link(stale_path, path) < 0) {
@@ -526,28 +526,29 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 				    uint32_t epoch, uint8_t ec_index,
 				    struct vnode_info *vinfo, void *arg)
 {
-	char path[PATH_MAX], stale_path[PATH_MAX], tree_path[PATH_MAX];
+	char path[PATH_MAX], stale_path[PATH_MAX], tree_path[PATH_MAX - 33];
 	uint32_t tgt_epoch = *(uint32_t *)arg;
 
 	if (is_vdi_obj(oid) || is_vmstate_obj(oid) || is_vdi_attr_obj(oid)) {
-		snprintf(tree_path, PATH_MAX, "%s/meta",
+		snprintf(tree_path, sizeof(tree_path), "%s/meta",
 			 md_get_object_dir(oid));
 	} else {
-		snprintf(tree_path, PATH_MAX, "%s/%02x",
+		snprintf(tree_path, sizeof(tree_path), "%s/%02x",
 			 md_get_object_dir(oid), get_tree_directory(oid));
 	}
 
 	/* ec_index from md.c is reliable so we can directly use it */
 	if (ec_index < SD_MAX_COPIES) {
-		snprintf(path, PATH_MAX, "%s/%016"PRIx64"_%d",
+		snprintf(path, sizeof(path), "%s/%016"PRIx64"_%d",
 			 tree_path, oid, ec_index);
-		snprintf(stale_path, PATH_MAX,
+		snprintf(stale_path, sizeof(stale_path),
 			 "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
 			 md_get_object_dir(oid), oid, ec_index, tgt_epoch);
 	} else {
-		snprintf(path, PATH_MAX, "%s/%016" PRIx64,
+		snprintf(path, sizeof(path), "%s/%016" PRIx64,
 			 tree_path, oid);
-		snprintf(stale_path, PATH_MAX, "%s/.stale/%016"PRIx64".%"PRIu32,
+		snprintf(stale_path, sizeof(stale_path),
+			 "%s/.stale/%016"PRIx64".%"PRIu32,
 			 md_get_object_dir(oid), oid, tgt_epoch);
 	}
 
@@ -633,13 +634,13 @@ static int set_object_sha1(const char *path, const uint8_t *sha1)
 static int get_object_path(uint64_t oid, uint32_t epoch, char *path,
 			   size_t size)
 {
-	char tree_path[PATH_MAX];
+	char tree_path[PATH_MAX - 33];
 
 	if (is_vdi_obj(oid) || is_vmstate_obj(oid) || is_vdi_attr_obj(oid)) {
-		snprintf(tree_path, PATH_MAX, "%s/meta",
+	  snprintf(tree_path, sizeof(tree_path), "%s/meta",
 			 md_get_object_dir(oid));
 	} else {
-		snprintf(tree_path, PATH_MAX, "%s/%02x",
+		snprintf(tree_path, sizeof(tree_path), "%s/%02x",
 			 md_get_object_dir(oid), get_tree_directory(oid));
 	}
 
