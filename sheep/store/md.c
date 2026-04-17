@@ -744,8 +744,10 @@ bool md_exist(uint64_t oid, uint8_t ec_index, char *path)
 }
 
 int md_get_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
-		      char *path)
+		      char **path)
 {
+	int ret = SD_RES_SUCCESS;
+
 	if (unlikely(!epoch))
 		panic("invalid 0 epoch");
 
@@ -753,18 +755,23 @@ int md_get_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
 		if (unlikely(ec_index >= SD_MAX_COPIES))
 			panic("invalid ec index %d", ec_index);
 
-		snprintf(path, PATH_MAX, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
+		ret = asprintf(path, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
 			 md_get_object_dir(oid), oid, ec_index, epoch);
 	} else
-		snprintf(path, PATH_MAX, "%s/.stale/%016"PRIx64".%"PRIu32,
+		ret = asprintf(path, "%s/.stale/%016"PRIx64".%"PRIu32,
 			 md_get_object_dir(oid), oid, epoch);
 
-	if (md_access(path))
+	if (ret < 0)
+		return SD_RES_NO_MEM;
+
+	if (md_access(*path))
 		return SD_RES_SUCCESS;
 
 	if (scan_wd(oid, epoch, ec_index) == SD_RES_SUCCESS)
 		return SD_RES_SUCCESS;
 
+	free(*path);
+	*path = NULL;
 	return SD_RES_NO_OBJ;
 }
 

@@ -604,7 +604,7 @@ uint64_t md_init_space(void);
 const char *md_get_object_dir(uint64_t oid);
 int md_handle_eio(const char *);
 bool md_exist(uint64_t oid, uint8_t ec_index, char *path);
-int md_get_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index, char *);
+int md_get_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index, char **);
 uint32_t md_get_info(struct sd_md_info *info);
 int md_plug_disks(char *disks);
 int md_unplug_disks(char *disks);
