@@ -28,25 +28,20 @@ libsd_a_DEPENDENCIES =
 
 noinst_LIBRARIES	=
 
-if ASM_AVX2_SUPPORT
 noinst_LIBRARIES	+= libisa.a
-endif
 
 noinst_LIBRARIES	+= libsd.a
 
-if ASM_AVX2_SUPPORT
 libisa_a_SOURCES	= $(shell find isa-l/ -type f -regex ".*\.\(c\|h\|asm\)") \
 			  isa-l/erasure_code/Makefile \
 			  isa-l/Makefile \
 			  isa-l/Makefile.nmake \
 			  isa-l/make.inc
-endif
 
 libsd_a_SOURCES		= event.c logger.c net.c util.c rbtree.c strbuf.c \
 			  sha1.c option.c work.c sockfd_cache.c fec.c \
 			  sd_inode.c common.c json.c
 
-if ASM_AVX2_SUPPORT
 libsd_a_LIBADD_		= isa-l/bin/ec_base.o \
 			  isa-l/bin/ec_highlevel_func.o \
 			  isa-l/bin/ec_multibinary.o \
@@ -70,13 +65,10 @@ libsd_a_LIBADD_		= isa-l/bin/ec_base.o \
 			  isa-l/bin/gf_5vect_dot_prod_avx2.o \
 			  isa-l/bin/gf_6vect_dot_prod_avx2.o \
 			  isa-l/bin/gf_vect_dot_prod_avx2.o
-endif
 
-if ASM_AVX2_SUPPORT
 libsd_a_LIBADD_32	= isa-l/bin/ec_base.o \
 			  isa-l/bin/ec_highlevel_func.o \
 			  isa-l/bin/ec_multibinary.o
-endif
 
 if !X86_64
 arch = 32

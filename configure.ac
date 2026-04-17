@@ -84,8 +84,8 @@ AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 AC_CHECK_PROGS([GROFF], [groff])
-
 AM_MISSING_PROG(AUTOM4TE, autom4te, $missing_dir)
+AC_CONFIG_MACRO_DIRS([m4])
 
 # Check for programs
 if [[[ $host = *x86_64* ]]]; then
@@ -93,11 +93,8 @@ if [[[ $host = *x86_64* ]]]; then
   if test "$HAVE_NASM" = "no"; then
     AC_MSG_ERROR([nasm is required.])
   fi
-  asm_avx2_support=yes
   AC_DEFINE_UNQUOTED([ENABLE_ISAL], 1, [enable isal])
-  AC_MSG_RESULT([yes])
 fi
-AM_CONDITIONAL(ASM_AVX2_SUPPORT, test "$asm_avx2_support" = "yes")
 
 # Checks for libraries.
 AC_CHECK_LIB([socket], [socket])
