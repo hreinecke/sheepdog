@@ -1,6 +1,8 @@
-FROM registry.suse.com/bci/gcc:15
+FROM registry.opensuse.org/opensuse/bci/gcc
 RUN zypper --non-interactive in automake
 RUN zypper --non-interactive in autoconf
+RUN zypper --non-interactive in libtool
+RUN zypper --non-interactive in nasm
 ENV SHEEPSRC /usr/src/sheepdog
 ENV SHEEPPORT 7000
 ENV SHEEPSTORE /store

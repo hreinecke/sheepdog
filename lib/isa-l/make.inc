@@ -39,7 +39,7 @@
 #	clean - remove object files
 
 CC  ?= gcc
-AS  = yasm
+AS  = nasm
 SIM = sde $(SIMFLAGS) --
 
 DEBUG      = -g
