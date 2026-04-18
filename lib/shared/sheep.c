@@ -459,7 +459,7 @@ struct sd_cluster *sd_connect(char *host)
 	c = xzalloc(sizeof(*c));
 	c->sockfd = fd;
 	c->port = port;
-	memcpy(c->addr, &addr.sin_addr, INET_ADDRSTRLEN);
+	memcpy(c->addr, &addr.sin_addr, sizeof(addr.sin_addr));
 	ret = init_cluster_handlers(c);
 	if (ret < 0) {
 		free(c);
