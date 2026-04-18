@@ -1405,8 +1405,8 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 	uint32_t i;
 	const char *name = iocb->name;
 
-	inode = malloc(offsetof(struct sd_inode, btree_counter));
-	if (!inode) {
+	inode = malloc(sizeof(struct sd_inode));
+	if (!inode_buf) {
 		sd_err("failed to allocate memory");
 		ret = SD_RES_NO_MEM;
 		goto out;
