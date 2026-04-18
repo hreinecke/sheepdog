@@ -90,22 +90,12 @@ AM_MISSING_PROG(AUTOM4TE, autom4te, $missing_dir)
 
 # Check for programs
 if [[[ $host = *x86_64* ]]]; then
-  AC_CHECK_PROG(HAVE_YASM, yasm, yes, no)
-  if test "$HAVE_YASM" = "no"; then
-    AC_MSG_ERROR([yasm not found as required.])
+  AC_CHECK_PROG(HAVE_NASM, nasm, yes, no)
+  if test "$HAVE_NASM" = "no"; then
+    AC_MSG_ERROR([nasm is required.])
   fi
-  AC_MSG_CHECKING([checking yasm version])
-  AC_LANG_CONFTEST([AC_LANG_SOURCE([[vextracti128 xmm0, ymm0, 0;]])])
-  if yasm -f elf64 -i lib/isa-l/include lib/isa-l/erasure_code/gf_vect_dot_prod_avx2.asm -o /dev/null 2> /dev/null ; then
-    yasm_avx2_support=yes
-    AC_DEFINE_UNQUOTED([ENABLE_ISAL], 1, [enable isal])
-    AC_MSG_RESULT([yes])
-  else
-    yasm_avx2_support=no
-    AC_MSG_NOTICE([avx2 requires yasm 1.2.0 or higher])
-  fi
+  AC_DEFINE_UNQUOTED([ENABLE_ISAL], 1, [enable isa-l])
 fi
-AM_CONDITIONAL(YASM_AVX2_SUPPORT, test "$yasm_avx2_support" = "yes")
 
 # Checks for libraries.
 AC_CHECK_LIB([socket], [socket])
@@ -161,12 +151,10 @@ AC_FUNC_CLOSEDIR_VOID
 AC_FUNC_ERROR_AT_LINE
 AC_REPLACE_FNMATCH
 AC_FUNC_FORK
-AC_PROG_GCC_TRADITIONAL
 AC_FUNC_MALLOC
 AC_FUNC_MEMCMP
 AC_FUNC_REALLOC
 AC_FUNC_SELECT_ARGTYPES
-AC_TYPE_SIGNAL
 AC_FUNC_VPRINTF
 AC_CHECK_FUNCS([alarm alphasort atexit bzero dup2 endgrent endpwent fcntl \
 		getcwd getpeerucred getpeereid gettimeofday inet_ntoa memmove \
@@ -578,6 +566,8 @@ LDFLAGS="$ENV_LDFLAGS $COVERAGE_LDFLAGS $OS_LDFLAGS"
 AC_SUBST([OS_DYFLAGS])
 
 AM_CONDITIONAL(BUILD_HTML_DOCS, test -n "${GROFF}")
+
+AC_CONFIG_SUBDIRS([lib/isa-l])
 
 AC_SUBST([INITDDIR])
 AC_SUBST([LINT_FLAGS])
