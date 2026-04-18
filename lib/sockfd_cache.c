@@ -683,10 +683,10 @@ static void *monitor_sd_node_connectivity(void *ignored)
 					}
 				} else {
 					list_del(&work->w_list);
-					free(work);
 					sd_err("entry for node %s not exists",
 						addr_to_str(nid->addr,
 							nid->port));
+					free(work);
 					if (fd > 0)
 						close(fd);
 				}
