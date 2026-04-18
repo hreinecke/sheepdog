@@ -155,16 +155,23 @@ static void unblock_sighup(void)
 		syslog(LOG_ERR, "unblock SIGHUP failed\n");
 }
 
-static const char *format_thread_name(char *str, size_t size, const char *name,
-				      int idx)
+static char *format_thread_name(const char *name, int idx, size_t *len)
 {
-	if (name && name[0] && idx)
-		snprintf(str, size, "%s %d", name, idx);
-	else if (name && name[0])
-		snprintf(str, size, "%s", name);
-	else
-		snprintf(str, size, "main");
+	char *str;
+	int ret;
 
+	if (name && name[0] && idx)
+		ret = asprintf(&str, "%s %d", name, idx);
+	else if (name && name[0])
+		ret = asprintf(&str, "%s", name);
+	else
+		ret = asprintf(&str, "main");
+
+	if (ret < 0) {
+		*len = 0;
+		return NULL;
+	}
+	*len = ret;
 	return str;
 }
 
@@ -174,7 +181,8 @@ static int server_log_formatter(char *buff, size_t size,
 	char *p = buff;
 	struct tm tm;
 	ssize_t len;
-	char thread_name[MAX_THREAD_NAME_LEN];
+	size_t thread_name_len;
+	char *thread_name;
 
 	if (print_time) {
 		localtime_r(&msg->tv.tv_sec, &tm);
@@ -184,12 +192,15 @@ static int server_log_formatter(char *buff, size_t size,
 		size -= len;
 	}
 
+	thread_name = format_thread_name(msg->worker_name, msg->worker_idx,
+					 &thread_name_len);
+	if (!thread_name)
+		thread_name = strdup("main");
 	len = snprintf(p, size, "%s%6s %s[%s] %s(%d) %s%s%s",
 		       colorize ? log_color[msg->prio] : "",
 		       log_prio_str[msg->prio],
 		       colorize ? TEXT_YELLOW : "",
-		       format_thread_name(thread_name, sizeof(thread_name),
-					  msg->worker_name, msg->worker_idx),
+		       thread_name,
 		       msg->func, msg->line,
 		       colorize ? log_color[msg->prio] : "",
 		       msg->str, colorize ? TEXT_NORMAL : "");
@@ -197,6 +208,8 @@ static int server_log_formatter(char *buff, size_t size,
 		len = 0;
 	p += min((size_t)len, size - 1);
 
+	if (thread_name_len)
+		free(thread_name);
 	return p - buff;
 }
 
@@ -746,7 +759,16 @@ void set_thread_name(const char *name, bool show_idx)
 
 void get_thread_name(char *name)
 {
-	format_thread_name(name, MAX_THREAD_NAME_LEN, worker_name, worker_idx);
+	char *str;
+	size_t len;
+
+	str = format_thread_name(worker_name, worker_idx, &len);
+	if (str) {
+		strcpy(name, str);
+		free(str);
+	} else {
+		strcpy(name, "main");
+	}
 }
 
 
