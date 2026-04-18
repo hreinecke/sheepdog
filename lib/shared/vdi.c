@@ -88,7 +88,7 @@ struct sd_vdi *sd_vdi_open(struct sd_cluster *c, char *name)
 		goto out_unlock;
 	}
 
-	if (vdi_is_snapshot(new->inode)) {
+	if (vdi_is_snapshot(&new->inode->header)) {
 		errno = SD_RES_INVALID_PARMS;
 		goto out_unlock;
 	}
@@ -296,21 +296,32 @@ static int find_vdi(struct sd_cluster *c, char *name,
 	return SD_RES_SUCCESS;
 }
 
-static int vdi_read_inode(struct sd_cluster *c, char *name,
-		char *tag, struct sd_inode *inode, bool onlyheader)
+static int vdi_read_inode_header(struct sd_cluster *c, char *name,
+				 char *tag, struct sd_inode_header *inode)
 {
 	int ret;
 	uint32_t vid = 0;
-	size_t len;
+	size_t len = sizeof(*inode);
 
 	ret = find_vdi(c, name, tag, &vid);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
 
-	if (onlyheader)
-		len = SD_INODE_HEADER_SIZE;
-	else
-		len = SD_INODE_SIZE;
+	ret = read_object(c, vid_to_vdi_oid(vid), inode, len, 0, true);
+
+	return SD_RES_SUCCESS;
+}
+
+static int vdi_read_inode(struct sd_cluster *c, char *name,
+		char *tag, struct sd_inode *inode)
+{
+	int ret;
+	uint32_t vid = 0;
+	size_t len = sizeof(*inode);
+
+	ret = find_vdi(c, name, tag, &vid);
+	if (ret != SD_RES_SUCCESS)
+		return ret;
 
 	ret = read_object(c, vid_to_vdi_oid(vid), inode, len, 0, true);
 
@@ -320,8 +331,7 @@ static int vdi_read_inode(struct sd_cluster *c, char *name,
 /** FIXME: tgtd multi-path support **/
 int sd_vdi_snapshot(struct sd_cluster *c, char *name, char *snap_tag)
 {
-	char buf[SD_INODE_HEADER_SIZE];
-	struct sd_inode *inode = (struct sd_inode *)buf;
+	struct sd_inode_header inode;
 	int ret = 0;
 
 	if (!name || *name == '\0') {
@@ -340,7 +350,7 @@ int sd_vdi_snapshot(struct sd_cluster *c, char *name, char *snap_tag)
 			return SD_RES_INVALID_PARMS;
 
 	} else if (ret == SD_RES_NO_TAG) {
-		ret = vdi_read_inode(c, name, NULL, inode, true);
+		ret = vdi_read_inode_header(c, name, NULL, &inode);
 		if (ret != SD_RES_SUCCESS)
 			return ret;
 
@@ -350,25 +360,27 @@ int sd_vdi_snapshot(struct sd_cluster *c, char *name, char *snap_tag)
 		return ret;
 	}
 
-	if (sd_store_policy_is_hyper(inode)) {
+	if (sd_store_policy_is_hyper(&inode)) {
 		fprintf(stderr, "Creating a snapshot of hypervolume"
 				" is not supported\n");
 		return SD_RES_INVALID_PARMS;
 	}
 
-	ret = write_object(c, vid_to_vdi_oid(inode->vdi_id), 0, snap_tag,
-			SD_MAX_VDI_TAG_LEN, offsetof(struct sd_inode, tag), 0,
-			inode->nr_copies, inode->copy_policy, false, false);
+	ret = write_object(c, vid_to_vdi_oid(inode.vdi_id), 0, snap_tag,
+			   SD_MAX_VDI_TAG_LEN,
+			   offsetof(struct sd_inode_header, tag), 0,
+			   inode.nr_copies, inode.copy_policy,
+			   false, false);
 	if (ret != SD_RES_SUCCESS) {
 		fprintf(stderr, "Failed to write object: %s\n",
 				sd_strerror(ret));
 		goto out;
 	}
 
-	ret = do_vdi_create(c, inode->name, inode->vdi_size,
-			inode->vdi_id, true, inode->nr_copies,
-			inode->copy_policy, inode->store_policy,
-			inode->block_size_shift);
+	ret = do_vdi_create(c, inode.name, inode.vdi_size,
+			    inode.vdi_id, true, inode.nr_copies,
+			    inode.copy_policy, inode.store_policy,
+			    inode.block_size_shift);
 	if (ret != SD_RES_SUCCESS) {
 		fprintf(stderr, "Failed to create VDI: %s\n", sd_strerror(ret));
 		goto out;
@@ -448,13 +460,15 @@ int sd_vdi_clone(struct sd_cluster *c, char *srcname,
 	}
 
 	inode = xmalloc(sizeof(struct sd_inode));
-	ret = vdi_read_inode(c, srcname, srctag, inode, false);
+	ret = vdi_read_inode(c, srcname, srctag, inode);
 	if (ret != SD_RES_SUCCESS)
 		goto out;
 
-	ret = do_vdi_create(c, dstname, inode->vdi_size, inode->vdi_id, false,
-			   inode->nr_copies, inode->copy_policy,
-			   inode->store_policy, inode->block_size_shift);
+	ret = do_vdi_create(c, dstname, inode->header.vdi_size,
+			    inode->header.vdi_id, false,
+			    inode->header.nr_copies, inode->header.copy_policy,
+			    inode->header.store_policy,
+			    inode->header.block_size_shift);
 	if (ret != SD_RES_SUCCESS)
 		fprintf(stderr, "Clone VDI failed: %s\n", sd_strerror(ret));
 
@@ -496,13 +510,13 @@ int sd_vdi_delete(struct sd_cluster *c, char *name, char *tag)
 	}
 
 	inode = xmalloc(sizeof(*inode));
-	ret = vdi_read_inode(c, name, tag, inode, false);
+	ret = vdi_read_inode(c, name, tag, inode);
 	if (ret != SD_RES_SUCCESS) {
 		fprintf(stderr, "Failed to read inode : %s\n",
 				sd_strerror(ret));
 		goto out;
 	}
-	int i = 0, nr_obj = count_data_objs(inode);
+	int i = 0, nr_obj = count_data_objs(&inode->header);
 	while (i < nr_obj) {
 		int start_idx, filled_idx;
 		while (i < nr_obj && !inode->data_vdi_id[i])
@@ -520,15 +534,16 @@ int sd_vdi_delete(struct sd_cluster *c, char *name, char *tag)
 		}
 
 		ret = write_object(c, vid_to_vdi_oid(vid), 0,
-				&inode->data_vdi_id[start_idx],
-				(i - start_idx) * sizeof(uint32_t),
-				offsetof(struct sd_inode,
-				data_vdi_id[start_idx]),
-				0, inode->nr_copies, inode->copy_policy,
-				false, true);
+				   &inode->data_vdi_id[start_idx],
+				   (i - start_idx) * sizeof(uint32_t),
+				   offsetof(struct sd_inode,
+					    data_vdi_id[start_idx]),
+				   0, inode->header.nr_copies,
+				   inode->header.copy_policy,
+				   false, true);
 		if (ret != SD_RES_SUCCESS) {
 			fprintf(stderr,
-					"failed to update inode for discarding\n");
+				"failed to update inode for discarding\n");
 			goto out;
 		}
 	}
@@ -554,8 +569,7 @@ out:
 int sd_vdi_rollback(struct sd_cluster *c, char *name, char *tag)
 {
 	int ret;
-	char buf[SD_INODE_HEADER_SIZE];
-	struct sd_inode *inode = (struct sd_inode *)buf;
+	struct sd_inode_header inode;
 
 	if (!tag || *tag == '\0') {
 		fprintf(stderr, "Snapshot tag can NOT be null for rollback\n");
@@ -579,7 +593,7 @@ int sd_vdi_rollback(struct sd_cluster *c, char *name, char *tag)
 		return SD_RES_INVALID_PARMS;
 	}
 
-	ret = vdi_read_inode(c, name, tag, inode, true);
+	ret = vdi_read_inode_header(c, name, tag, &inode);
 	if (ret != SD_RES_SUCCESS) {
 		fprintf(stderr, "Read inode for VDI %s failed: %s\n",
 				name, sd_strerror(ret));
@@ -593,9 +607,9 @@ int sd_vdi_rollback(struct sd_cluster *c, char *name, char *tag)
 		return ret;
 	}
 
-	ret = do_vdi_create(c, name, inode->vdi_size, inode->vdi_id,
-			false, inode->nr_copies, inode->copy_policy,
-			inode->store_policy, inode->block_size_shift);
+	ret = do_vdi_create(c, name, inode.vdi_size, inode.vdi_id,
+			false, inode.nr_copies, inode.copy_policy,
+			inode.store_policy, inode.block_size_shift);
 
 	if (ret != SD_RES_SUCCESS) {
 		fprintf(stderr, "Failed to rollback VDI: %s\n",

@@ -350,7 +350,7 @@ struct recovery_throttling {
 #define SD_UUID_POLICY_MASK 0x80
 #define SD_STORE_POLICY_MASK 0x7f
 
-struct sd_inode {
+struct sd_inode_header {
 	char name[SD_MAX_VDI_LEN];
 	char tag[SD_MAX_VDI_TAG_LEN];
 	uint64_t create_time;
@@ -365,6 +365,10 @@ struct sd_inode {
 	uint32_t snap_id;
 	uint32_t vdi_id;
 	uint32_t parent_vdi_id;
+};
+
+struct sd_inode {
+	struct sd_inode_header header;
 
 	uint32_t btree_counter;
 	uint32_t __unused[OLD_MAX_CHILDREN - 1];
@@ -386,7 +390,7 @@ struct sd_indirect_idx {
 #define SD_INODE_STORE_POLICY(i) ((i)->store_policy & SD_STORE_POLICY_MASK)
 #define SD_INODE_USE_UUID(i) ((i)->store_policy & SD_UUID_POLICY_MASK)
 
-static inline bool sd_store_policy_is_hyper(const struct sd_inode *inode)
+static inline bool sd_store_policy_is_hyper(const struct sd_inode_header *inode)
 {
 	uint8_t policy = inode->store_policy & SD_STORE_POLICY_MASK;
 	return policy == SD_HYPER_STORE_POLICY;
@@ -613,7 +617,7 @@ static inline uint64_t vid_to_vmstate_oid(uint32_t vid, uint32_t idx)
 	return VMSTATE_BIT | ((uint64_t)vid << VDI_SPACE_SHIFT) | idx;
 }
 
-static inline bool vdi_is_snapshot(const struct sd_inode *inode)
+static inline bool vdi_is_snapshot(const struct sd_inode_header *inode)
 {
 	return !!inode->snap_ctime;
 }

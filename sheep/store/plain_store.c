@@ -214,7 +214,7 @@ int default_cleanup(void)
 static int init_vdi_state(uint64_t oid, const char *wd, uint32_t epoch)
 {
 	int ret;
-	struct sd_inode *inode = xzalloc(SD_INODE_HEADER_SIZE);
+	struct sd_inode_header *inode = xzalloc(SD_INODE_HEADER_SIZE);
 	struct siocb iocb = {
 		.epoch = epoch,
 		.buf = inode,

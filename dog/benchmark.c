@@ -131,10 +131,10 @@ static int benchmark_io(int argc, char **argv)
 		return EXIT_SYSFAIL;
 	}
 
-	buf_len = 1 << inode->block_size_shift;
+	buf_len = 1 << inode->header.block_size_shift;
 	buf = xzalloc(buf_len);
 
-	nr_objects = inode->vdi_size / (1 << inode->block_size_shift);
+	nr_objects = inode->header.vdi_size / (1 << inode->header.block_size_shift);
 	for (int i = 0; i < nr_objects; i++) {
 		if (inode->data_vdi_id[i] != vid) {
 			sd_err("VDI %s has unallocated data", vdiname);
@@ -155,8 +155,8 @@ static int benchmark_io(int argc, char **argv)
 		w->buf = buf;
 		w->buf_len = buf_len;
 		w->offset = offset;
-		w->nr_copies = inode->nr_copies;
-		w->copy_policy = inode->copy_policy;
+		w->nr_copies = inode->header.nr_copies;
+		w->copy_policy = inode->header.copy_policy;
 
 		w->work.fn = benchmark_io_worker;
 		w->work.done = benchmark_io_main;

@@ -110,7 +110,7 @@ int dog_bnode_reader(uint64_t oid, void **mem, unsigned int len,
 		     uint64_t offset);
 
 int read_vdi_obj(const char *vdiname, int snapid, const char *tag,
-			uint32_t *pvid, struct sd_inode *inode, size_t size);
+			uint32_t *pvid, void *inode, size_t size);
 
 struct timespec get_time_tick(void);
 double get_time_interval(const struct timespec *start,
