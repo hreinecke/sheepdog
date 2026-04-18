@@ -6,6 +6,8 @@ EXTRA_DIST		= autogen.sh
 
 AUTOMAKE_OPTIONS	= foreign
 
+ACLOCAL_AMFLAGS		= -I m4
+
 MAINTAINERCLEANFILES	= Makefile.in aclocal.m4 configure depcomp	\
 			  config.guess config.sub missing install-sh	\
 			  autoheader automake autoconf config.status	\

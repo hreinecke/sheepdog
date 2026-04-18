@@ -103,7 +103,6 @@ AC_CHECK_LIB([rt], [clock_gettime], , AC_MSG_ERROR(librt not found))
 # Checks for header files.
 AC_FUNC_ALLOCA
 AC_HEADER_DIRENT
-AC_CHECK_INCLUDES_DEFAULT
 AC_PROG_EGREP
 AC_HEADER_SYS_WAIT
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stdint.h \
@@ -576,6 +575,8 @@ LDFLAGS="$ENV_LDFLAGS $COVERAGE_LDFLAGS $OS_LDFLAGS"
 AC_SUBST([OS_DYFLAGS])
 
 AM_CONDITIONAL(BUILD_HTML_DOCS, test -n "${GROFF}")
+
+AC_CONFIG_SUBDIRS([lib/isa-l])
 
 AC_SUBST([INITDDIR])
 AC_SUBST([LINT_FLAGS])

@@ -62,7 +62,7 @@ if BUILD_ACCELIO
 sheep_SOURCES		+= xio_server.c xio_client.c
 endif
 
-sheep_LDADD	  	= ../lib/libsd.a -luuid -lpthread -lm -ljson-c \
+sheep_LDADD	  	= ../lib/libsd.a ../lib/libisa.a -luuid -lpthread -lm -ljson-c \
 			  $(libacrd_LIBS) $(corosync_LIBS) $(LIBS)
 
 if BUILD_NFS
@@ -81,7 +81,7 @@ if BUILD_ETCD
 sheep_LDADD		+= -lneon
 endif
 
-sheep_DEPENDENCIES	= ../lib/libsd.a
+sheep_DEPENDENCIES	= ../lib/libsd.a ../lib/libisa.a
 
 
 noinst_HEADERS		= sheep_priv.h cluster.h http/http.h trace/trace.h \

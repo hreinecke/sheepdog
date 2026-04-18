@@ -1,3 +1,5 @@
+SUBDIRS			= isa-l
+
 MAINTAINERCLEANFILES    = Makefile.in
 
 AM_CPPFLAGS                = -I$(top_builddir)/include -I$(top_srcdir)/include
@@ -32,43 +34,9 @@ noinst_LIBRARIES	+= libisa.a
 
 noinst_LIBRARIES	+= libsd.a
 
-libisa_a_SOURCES	= $(shell find isa-l/ -type f -regex ".*\.\(c\|h\|asm\)") \
-			  isa-l/erasure_code/Makefile \
-			  isa-l/Makefile \
-			  isa-l/Makefile.nmake \
-			  isa-l/make.inc
-
 libsd_a_SOURCES		= event.c logger.c net.c util.c rbtree.c strbuf.c \
 			  sha1.c option.c work.c sockfd_cache.c fec.c \
 			  sd_inode.c common.c json.c
-
-libsd_a_LIBADD_		= isa-l/bin/ec_base.o \
-			  isa-l/bin/ec_highlevel_func.o \
-			  isa-l/bin/ec_multibinary.o \
-			  isa-l/bin/gf_2vect_dot_prod_sse.o \
-		  	  isa-l/bin/gf_3vect_dot_prod_sse.o \
-		  	  isa-l/bin/gf_4vect_dot_prod_sse.o \
-			  isa-l/bin/gf_5vect_dot_prod_sse.o \
-			  isa-l/bin/gf_6vect_dot_prod_sse.o \
-			  isa-l/bin/gf_vect_dot_prod_sse.o \
-			  isa-l/bin/gf_2vect_dot_prod_avx.o \
-		  	  isa-l/bin/gf_3vect_dot_prod_avx.o \
-		  	  isa-l/bin/gf_4vect_dot_prod_avx.o \
-			  isa-l/bin/gf_5vect_dot_prod_avx.o \
-			  isa-l/bin/gf_6vect_dot_prod_avx.o \
-			  isa-l/bin/gf_vect_dot_prod_avx.o \
-			  isa-l/bin/gf_vect_mul_avx.o \
-			  isa-l/bin/gf_vect_mul_sse.o \
-			  isa-l/bin/gf_2vect_dot_prod_avx2.o \
-		  	  isa-l/bin/gf_3vect_dot_prod_avx2.o \
-		  	  isa-l/bin/gf_4vect_dot_prod_avx2.o \
-			  isa-l/bin/gf_5vect_dot_prod_avx2.o \
-			  isa-l/bin/gf_6vect_dot_prod_avx2.o \
-			  isa-l/bin/gf_vect_dot_prod_avx2.o
-
-libsd_a_LIBADD_32	= isa-l/bin/ec_base.o \
-			  isa-l/bin/ec_highlevel_func.o \
-			  isa-l/bin/ec_multibinary.o
 
 if !X86_64
 arch = 32
@@ -100,7 +68,7 @@ check-style:
 	@$(CHECK_STYLE) $(libsd_a_SOURCES)
 
 libisa.a:
-	cd isa-l/ && $(MAKE) arch=$(arch) && cd ..
+	cp ./isa-l/.libs/libisal.a libisa.a
 
 clean-local:
 	rm -f *.o gmon.out *.da *.bb *.bbg
