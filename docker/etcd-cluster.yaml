@@ -20,6 +20,24 @@ services:
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
       - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  sheep1:
+    image: sheepdog
+    hostname: ${SHEEP1_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: $(SHEEP1_IP}
+    volumes:
+      - sheep1-data:/var/lib/sheep
+    expose:
+       - "7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER="etcd:${NODE1_IP}"
+      - SHEEP_LOGGING="level=debug,dst=stdout"
+      - SHEEP_BASE_DIR="/var/lib/sheep"
+    depends_on:
+      - etcd1
+    build:
+      dockerfile: ../Dockerfile
   etcd2:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE2_NAME}
@@ -41,6 +59,24 @@ services:
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
       - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  sheep2:
+    image: sheepdog
+    hostname: ${SHEEP2_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: $(SHEEP2_IP}
+    volumes:
+      - sheep2-data:/var/lib/sheep
+    expose:
+       - "7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER="etcd:${NODE2_IP}"
+      - SHEEP_LOGGING="level=debug,dst=stdout"
+      - SHEEP_BASE_DIR="/var/lib/sheep"
+    depends_on:
+      - etcd2
+    build:
+      dockerfile: ../Dockerfile
   etcd3:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE3_NAME}
@@ -62,6 +98,24 @@ services:
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
       - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  sheep3:
+    image: sheepdog
+    hostname: ${SHEEP3_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: $(SHEEP3_IP}
+    volumes:
+      - sheep3-data:/var/lib/sheep
+    expose:
+       - "7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER="etcd:${NODE3_IP}"
+      - SHEEP_LOGGING="level=debug,dst=stdout"
+      - SHEEP_BASE_DIR="/var/lib/sheep"
+    depends_on:
+      - etcd3
+    build:
+      dockerfile: ../Dockerfile
   etcd4:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE4_NAME}
@@ -83,12 +137,34 @@ services:
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
       - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  sheep4:
+    image: sheepdog
+    hostname: ${SHEEP4_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: $(SHEEP4_IP}
+    volumes:
+      - sheep4-data:/var/lib/sheep
+    expose:
+       - "7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER="etcd:${NODE4_IP}"
+      - SHEEP_LOGGING="level=debug,dst=stdout"
+      - SHEEP_BASE_DIR="/var/lib/sheep"
+    depends_on:
+      - etcd4
+    build:
+      dockerfile: ../Dockerfile
 
 volumes:
   etcd1-data:
   etcd2-data:
   etcd3-data:
   etcd4-data:
+  sheep1-data:
+  sheep2-data:
+  sheep3-data:
+  sheep4-data:
 
 networks:
   etcd-br:
