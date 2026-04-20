@@ -37,9 +37,9 @@ services:
     expose:
        - "7000"
     environment:
-      - SHEEP_CLUSTER_DRIVER="etcd:${NODE1_IP}"
-      - SHEEP_LOGGING="dst=default,level=debug"
-      - SHEEP_BASE_DIR="/var/lib/sheep"
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
+      - SHEEP_LOGGING=dst=default,level=debug
+      - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd1
   etcd2:
@@ -75,9 +75,9 @@ services:
     expose:
        - "7000"
     environment:
-      - SHEEP_CLUSTER_DRIVER="etcd:${NODE2_IP}"
-      - SHEEP_LOGGING="level=debug,dst=stdout"
-      - SHEEP_BASE_DIR="/var/lib/sheep"
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd2
   etcd3:
@@ -113,9 +113,9 @@ services:
     expose:
        - "7000"
     environment:
-      - SHEEP_CLUSTER_DRIVER="etcd:${NODE3_IP}"
-      - SHEEP_LOGGING="level=debug,dst=stdout"
-      - SHEEP_BASE_DIR="/var/lib/sheep"
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd3
   etcd4:
@@ -151,9 +151,9 @@ services:
     expose:
        - "7000"
     environment:
-      - SHEEP_CLUSTER_DRIVER="etcd:${NODE4_IP}"
-      - SHEEP_LOGGING="level=debug,dst=stdout"
-      - SHEEP_BASE_DIR="/var/lib/sheep"
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd4
 
