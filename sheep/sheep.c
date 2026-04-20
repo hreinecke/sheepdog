@@ -852,12 +852,27 @@ int main(int argc, char **argv, char **envp)
 	install_sighandler(SIGHUP, sighup_handler, false);
 
 	cdrv_options = getenv("SHEEP_CLUSTER_DRIVER");
+	if (cdrv_options)
+		sd_err("Using SHEEP_CLUSTER_DRIVER='%s'",
+		       cdrv_options);
 	log_options = getenv("SHEEP_LOGGGING");
+	if (log_options)
+		sd_err("Using SHEEP_LOGGING='%s'",
+		       log_options);
 	pid_file = getenv("SHEEP_PID_FILE");
+	if (pid_file)
+		sd_err("Using SHEEP_PID_FILE='%s'",
+		       pid_file);
 	base_dir = getenv("SHEEP_BASE_DIR");
+	if (base_dir)
+		sd_err("Using SHEEP_BASE_DIR='%s'",
+		       base_dir);
 	if ((bindaddr = getenv("SHEEP_BINDADDR"))) {
 		if (!inetaddr_is_valid(bindaddr))
 			bindaddr = NULL;
+		if (bindaddr)
+			sd_err("Using SHEEP_BINDADDR='%s'",
+			       bindaddr);
 	}
 	if ((opt = getenv("SHEEP_PORT"))) {
 		port = str_to_u16(opt);
@@ -865,6 +880,8 @@ int main(int argc, char **argv, char **envp)
 			sd_err("Invalide port number '%s'", opt);
 			port = -1;
 		}
+		if (port > 0)
+			sd_err("Using SHEEP_PORT='%u'", port);
 	}
 	if ((opt = getenv("SHEEP_OPTS"))) {
 		int o;
