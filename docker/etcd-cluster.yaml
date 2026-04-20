@@ -25,7 +25,7 @@ services:
     hostname: ${SHEEP1_NAME}
     networks:
       etcd-br:
-        ipv4_address: $(SHEEP1_IP}
+        ipv4_address: ${SHEEP1_IP}
     volumes:
       - sheep1-data:/var/lib/sheep
     expose:
@@ -36,8 +36,7 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd1
-    build:
-      dockerfile: ../Dockerfile
+    build: ../
   etcd2:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE2_NAME}
@@ -64,7 +63,7 @@ services:
     hostname: ${SHEEP2_NAME}
     networks:
       etcd-br:
-        ipv4_address: $(SHEEP2_IP}
+        ipv4_address: ${SHEEP2_IP}
     volumes:
       - sheep2-data:/var/lib/sheep
     expose:
@@ -75,8 +74,7 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd2
-    build:
-      dockerfile: ../Dockerfile
+    build: ../
   etcd3:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE3_NAME}
@@ -103,7 +101,7 @@ services:
     hostname: ${SHEEP3_NAME}
     networks:
       etcd-br:
-        ipv4_address: $(SHEEP3_IP}
+        ipv4_address: ${SHEEP3_IP}
     volumes:
       - sheep3-data:/var/lib/sheep
     expose:
@@ -114,8 +112,7 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd3
-    build:
-      dockerfile: ../Dockerfile
+    build: ../
   etcd4:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE4_NAME}
@@ -142,7 +139,7 @@ services:
     hostname: ${SHEEP4_NAME}
     networks:
       etcd-br:
-        ipv4_address: $(SHEEP4_IP}
+        ipv4_address: ${SHEEP4_IP}
     volumes:
       - sheep4-data:/var/lib/sheep
     expose:
@@ -153,8 +150,7 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd4
-    build:
-      dockerfile: ../Dockerfile
+    build: ../
 
 volumes:
   etcd1-data:
