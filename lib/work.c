@@ -283,7 +283,6 @@ static int create_worker_threads(struct wq_info *wi, size_t nr_threads)
 			return -1;
 		}
 		wi->nr_threads++;
-		sd_debug("create thread %s %zu", wi->name, wi->nr_threads);
 	}
 
 	return 0;
