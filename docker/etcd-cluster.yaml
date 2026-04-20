@@ -3,7 +3,7 @@ services:
   sheep:
     image: sheepdog
     build: ../
-    command: /usr/sbin/sheep -f
+    command: echo sheep container ready
   etcd1:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE1_NAME}
@@ -38,10 +38,11 @@ services:
        - "7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
-      - SHEEP_LOGGING=dst=default,level=debug
+      - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd1
+    command: /usr/sbin/sheep -f
   etcd2:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE2_NAME}
@@ -80,6 +81,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd2
+    command: /usr/sbin/sheep -f
   etcd3:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE3_NAME}
@@ -118,6 +120,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd3
+    command: /usr/sbin/sheep -f
   etcd4:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE4_NAME}
@@ -156,6 +159,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
     depends_on:
       - etcd4
+    command: /usr/sbin/sheep -f
 
 volumes:
   etcd1-data:
