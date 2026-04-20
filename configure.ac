@@ -358,6 +358,7 @@ ENV_LDFLAGS="$LDFLAGS"
 # debug build stuff
 if test "x${enable_debug}" = xyes; then
 	AC_DEFINE_UNQUOTED([DEBUG], [1], [Compiling Debugging code])
+	AC_DEFINE_UNQUOTED([HAVE_GDB], [1],[Enable GDB])
 	OPT_CFLAGS="-O0"
 	PACKAGE_FEATURES="$PACKAGE_FEATURES debug"
 else

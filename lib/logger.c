@@ -773,13 +773,13 @@ void get_thread_name(char *name)
 
 
 #define SD_MAX_STACK_DEPTH 1024
+#define SD_ARG_MAX (sysconf(_SC_ARG_MAX))
 
+#ifdef HAVE_GDB
 static bool check_gdb(void)
 {
 	return system("which gdb > /dev/null") == 0;
 }
-
-#define SD_ARG_MAX (sysconf(_SC_ARG_MAX))
 
 static int gdb_cmd(const char *cmd)
 {
@@ -811,19 +811,28 @@ static int gdb_cmd(const char *cmd)
 
 	return system(cmd_str);
 }
+#endif
 
 int __sd_dump_variable(const char *var)
 {
+#ifdef HAVE_GDB
 	char cmd[256];
 
 	snprintf(cmd, sizeof(cmd), "p %s", var);
 
 	return gdb_cmd(cmd);
+#else
+	return 0;
+#endif
 }
 
 static int dump_stack_frames(void)
 {
+#ifdef HAVE_GDB
 	return gdb_cmd("thread apply all where full");
+#else
+	return 0;
+#endif
 }
 
 __attribute__ ((__noinline__))
@@ -834,7 +843,8 @@ void sd_backtrace(void)
 
 	for (i = 1; i < n; i++) { /* addrs[0] is here, so skip it */
 		void *addr = addrs[i];
-		char cmd[SD_ARG_MAX], info[256], **str;
+		char **str;
+		char cmd[SD_ARG_MAX], info[256];
 		FILE *f;
 
 		/*
