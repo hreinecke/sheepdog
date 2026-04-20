@@ -869,8 +869,6 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 			 * If we only have one node there
 			 * is no master.
 			 */
-			sd_debug("id %s num %d master %s",
-				 id ? id : "<none>", num_nodes, master);
 			if (!master)
 				master = id;
 			num_nodes++;
@@ -1711,19 +1709,18 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 			__func__);
 		return;
 	}
-	sd_debug("JOIN %s", joining.node_id);
-	if (!etcd_node_is_master(&this_node)) {
-		/* Let's await master acking the join-request */
-		sd_debug("node '%s' is not master", this_node.node_id);
-		return;
-	}
-
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes++;
 	}
-	sd_debug("sender: %s, %d nodes", joining.node_id, nr_nodes);
+	sd_debug("JOIN %s, %d nodes", joining.node_id, nr_nodes);
+	if (!etcd_node_is_master(&this_node) && nr_nodes != 2) {
+		/* Let's await master acking the join-request */
+		sd_debug("node '%s' is not master", this_node.node_id);
+		return;
+	}
+
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
 		struct json_object *cinfo_obj;
 
