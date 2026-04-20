@@ -1,4 +1,9 @@
+name: sheepdog-etcd
 services:
+  sheep:
+    image: sheepdog
+    build: ../
+    command: /usr/sbin/sheep -f
   etcd1:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE1_NAME}
@@ -23,6 +28,7 @@ services:
   sheep1:
     image: sheepdog
     hostname: ${SHEEP1_NAME}
+    extends: sheep
     networks:
       etcd-br:
         ipv4_address: ${SHEEP1_IP}
@@ -32,11 +38,10 @@ services:
        - "7000"
     environment:
       - SHEEP_CLUSTER_DRIVER="etcd:${NODE1_IP}"
-      - SHEEP_LOGGING="level=debug,dst=stdout"
+      - SHEEP_LOGGING="dst=default,level=debug"
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd1
-    build: ../
   etcd2:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE2_NAME}
@@ -61,6 +66,7 @@ services:
   sheep2:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
+    extends: sheep
     networks:
       etcd-br:
         ipv4_address: ${SHEEP2_IP}
@@ -74,7 +80,6 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd2
-    build: ../
   etcd3:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE3_NAME}
@@ -99,6 +104,7 @@ services:
   sheep3:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
+    extends: sheep
     networks:
       etcd-br:
         ipv4_address: ${SHEEP3_IP}
@@ -112,7 +118,6 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd3
-    build: ../
   etcd4:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE4_NAME}
@@ -137,6 +142,7 @@ services:
   sheep4:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
+    extends: sheep
     networks:
       etcd-br:
         ipv4_address: ${SHEEP4_IP}
@@ -150,7 +156,6 @@ services:
       - SHEEP_BASE_DIR="/var/lib/sheep"
     depends_on:
       - etcd4
-    build: ../
 
 volumes:
   etcd1-data:
