@@ -1105,8 +1105,8 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 				ctx->node_name = strdup(node_name);
 				ctx->node_id = strdup(node_id);
 			} else
-				sd_debug("%s: %s skipping url %s (default %s)",
-					 __func__, ctx->node_name, url, default_url);
+				sd_debug("%s: skipping url %s (default %s)",
+					 __func__, url, default_url);
 		}
 	}
 	out:
