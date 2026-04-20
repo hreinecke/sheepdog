@@ -855,7 +855,7 @@ int main(int argc, char **argv, char **envp)
 	if (cdrv_options)
 		sd_err("Using SHEEP_CLUSTER_DRIVER='%s'",
 		       cdrv_options);
-	log_options = getenv("SHEEP_LOGGGING");
+	log_options = getenv("SHEEP_LOGGING");
 	if (log_options)
 		sd_err("Using SHEEP_LOGGING='%s'",
 		       log_options);
@@ -1184,6 +1184,8 @@ int main(int argc, char **argv, char **envp)
 	xio_init_main_ctx();
 #endif
 
+	sd_err("init logging (dst: %s, level: %u, path: %s)",
+	       log_dst, log_level, log_path);
 	ret = log_init(program_name, log_dst_type, log_level, log_path);
 	if (ret) {
 		free(argp);
