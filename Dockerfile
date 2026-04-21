@@ -1,18 +1,9 @@
 FROM registry.opensuse.org/opensuse/bci/gcc
-RUN zypper --non-interactive in automake
-RUN zypper --non-interactive in autoconf
-RUN zypper --non-interactive in libtool
-RUN zypper --non-interactive in diffutils
-RUN zypper --non-interactive in nasm
-RUN zypper --non-interactive in liburcu-devel
-RUN zypper --non-interactive in libjson-c-devel
-RUN zypper --non-interactive in libuuid-devel
-RUN zypper --non-interactive in libneon-devel
+RUN zypper --non-interactive in automake autoconf libtool diffutils nasm
+RUN zypper --non-interactive in liburcu-devel libjson-c-devel libuuid-devel libneon-devel
 ENV SHEEPSRC=/usr/src/sheepdog
 
 WORKDIR $SHEEPSRC
 ADD . $SHEEPSRC
 RUN ./autogen.sh
-RUN ./configure --prefix=/usr --enable-etcd --disable-corosync && make && make check && make install
-
-CMD ["/usr/sbin/sheep", "-f"]
+RUN CFLAGS="-fstack-protector -O" ./configure --prefix=/usr --enable-etcd --disable-corosync && make && make install
