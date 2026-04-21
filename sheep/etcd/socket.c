@@ -227,6 +227,7 @@ retry:
 
 done:
 	free(post);
+	ne_request_destroy(ne_req);
 	return ret < 0 ? ret : 0;
 }
 
