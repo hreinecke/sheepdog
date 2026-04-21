@@ -11,7 +11,7 @@ services:
     ipc: "shareable"
     init: true
     networks:
-      etcd-br:
+      local-br:
         ipv4_address: ${SHEEP1_IP}
     volumes:
       - sheep1-data:/var/lib/sheep
@@ -34,7 +34,7 @@ services:
     ipc: "service:sheep1"
     init: true
     networks:
-      etcd-br:
+      local-br:
         ipv4_address: ${SHEEP2_IP}
     volumes:
       - sheep2-data:/var/lib/sheep
@@ -59,7 +59,7 @@ services:
     ipc: "service:sheep1"
     init: true
     networks:
-      etcd-br:
+      local-br:
         ipv4_address: ${SHEEP3_IP}
     volumes:
       - sheep3-data:/var/lib/sheep
@@ -84,7 +84,7 @@ services:
     ipc: "service:sheep1"
     init: true
     networks:
-      etcd-br:
+      local-br:
         ipv4_address: ${SHEEP4_IP}
     volumes:
       - sheep4-data:/var/lib/sheep
@@ -111,7 +111,7 @@ volumes:
   sheep4-data:
 
 networks:
-  etcd-br:
+  local-br:
     driver: bridge
     attachable: true
     internal: true
