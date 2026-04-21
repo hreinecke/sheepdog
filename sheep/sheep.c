@@ -31,6 +31,24 @@
 LIST_HEAD(cluster_drivers);
 static const char program_name[] = "sheep";
 
+struct work_queue *sys_net_wqueue;
+struct work_queue *sys_gateway_wqueue;
+struct work_queue *sys_io_wqueue;
+struct work_queue *sys_peer_wqueue;
+struct work_queue *sys_reclaim_wqueue;
+struct work_queue *sys_gateway_fwd_wqueue;
+struct work_queue *sys_remove_wqueue;
+struct work_queue *sys_remove_peer_wqueue;
+struct work_queue *sys_deletion_wqueue;
+struct work_queue *sys_recovery_wqueue;
+struct work_queue *sys_recovery_notify_wqueue;
+struct work_queue *sys_block_wqueue;
+struct work_queue *sys_md_wqueue;
+struct work_queue *sys_areq_wqueue;
+#ifdef HAVE_HTTP
+struct work_queue *sys_http_wqueue;
+#endif
+
 static const char bind_help[] =
 "Example:\n\t$ sheep -b 192.168.1.1 ...\n"
 "This tries to teach sheep listen to NIC of 192.168.1.1.\n"
@@ -546,71 +564,71 @@ static int create_work_queues(void)
 
 	if (wq_net_threads) {
 		sd_info("# of threads in net workqueue: %d", wq_net_threads);
-		sys->net_wqueue = create_fixed_work_queue("net", wq_net_threads);
+		sys_net_wqueue = create_fixed_work_queue("net", wq_net_threads);
 	} else {
-		sys->net_wqueue = create_work_queue("net", WQ_DYNAMIC);
+		sys_net_wqueue = create_work_queue("net", WQ_DYNAMIC);
 	}
 	if (wq_gway_threads) {
 		sd_info("# of threads in gway workqueue: %d", wq_gway_threads);
-		sys->gateway_wqueue = create_fixed_work_queue("gway", wq_gway_threads);
+		sys_gateway_wqueue = create_fixed_work_queue("gway", wq_gway_threads);
 	} else {
-		sys->gateway_wqueue = create_work_queue("gway", WQ_DYNAMIC);
+		sys_gateway_wqueue = create_work_queue("gway", WQ_DYNAMIC);
 	}
 	if (wq_io_threads) {
 		sd_info("# of threads in io workqueue: %d", wq_io_threads);
-		sys->io_wqueue = create_fixed_work_queue("io", wq_io_threads);
+		sys_io_wqueue = create_fixed_work_queue("io", wq_io_threads);
 	} else {
-		sys->io_wqueue = create_work_queue("io", WQ_DYNAMIC);
+		sys_io_wqueue = create_work_queue("io", WQ_DYNAMIC);
 	}
 	if (wq_peer_threads) {
 		sd_info("# of threads in peer workqueue: %d", wq_peer_threads);
-		sys->peer_wqueue = create_fixed_work_queue("peer", wq_peer_threads);
+		sys_peer_wqueue = create_fixed_work_queue("peer", wq_peer_threads);
 	} else {
-		sys->peer_wqueue = create_work_queue("peer", WQ_DYNAMIC);
+		sys_peer_wqueue = create_work_queue("peer", WQ_DYNAMIC);
 	}
 	if (wq_reclaim_threads) {
 		sd_info("# of threads in reclaim workqueue: %d", wq_reclaim_threads);
-		sys->reclaim_wqueue = create_fixed_work_queue("reclaim", wq_reclaim_threads);
+		sys_reclaim_wqueue = create_fixed_work_queue("reclaim", wq_reclaim_threads);
 	} else {
-		sys->reclaim_wqueue = create_work_queue("reclaim", WQ_DYNAMIC);
+		sys_reclaim_wqueue = create_work_queue("reclaim", WQ_DYNAMIC);
 	}
 	if (wq_gway_fwd_threads) {
 		sd_info("# of threads in gway_fwd workqueue: %d", wq_gway_fwd_threads);
-		sys->gateway_fwd_wqueue = create_fixed_work_queue("gway_fwd", wq_gway_fwd_threads);
+		sys_gateway_fwd_wqueue = create_fixed_work_queue("gway_fwd", wq_gway_fwd_threads);
 	} else {
-		sys->gateway_fwd_wqueue = create_work_queue("gway_fwd", WQ_DYNAMIC);
+		sys_gateway_fwd_wqueue = create_work_queue("gway_fwd", WQ_DYNAMIC);
 	}
 	if (wq_remove_threads) {
 		sd_info("# of threads in remove workqueue: %d", wq_remove_threads);
-		sys->remove_wqueue = create_fixed_work_queue("remove", wq_remove_threads);
+		sys_remove_wqueue = create_fixed_work_queue("remove", wq_remove_threads);
 	} else {
-		sys->remove_wqueue = create_work_queue("remove", WQ_DYNAMIC);
+		sys_remove_wqueue = create_work_queue("remove", WQ_DYNAMIC);
 	}
 	if (wq_remove_peer_threads) {
 		sd_info("# of threads in remove_peer workqueue: %d", wq_remove_peer_threads);
-		sys->remove_peer_wqueue = create_fixed_work_queue("remove_peer", wq_remove_peer_threads);
+		sys_remove_peer_wqueue = create_fixed_work_queue("remove_peer", wq_remove_peer_threads);
 	} else {
-		sys->remove_peer_wqueue = create_work_queue("remove_peer", WQ_DYNAMIC);
+		sys_remove_peer_wqueue = create_work_queue("remove_peer", WQ_DYNAMIC);
 	}
 	if (wq_recovery_threads) {
 		sd_info("# of threads in rw workqueue: %d", wq_recovery_threads);
-		sys->recovery_wqueue = create_fixed_work_queue("rw", wq_recovery_threads);
+		sys_recovery_wqueue = create_fixed_work_queue("rw", wq_recovery_threads);
 	} else {
-		sys->recovery_wqueue = create_work_queue("rw", WQ_DYNAMIC);
+		sys_recovery_wqueue = create_work_queue("rw", WQ_DYNAMIC);
 	}
-	sys->deletion_wqueue = create_ordered_work_queue("deletion");
-	sys->block_wqueue = create_ordered_work_queue("block");
-	sys->md_wqueue = create_ordered_work_queue("md");
+	sys_deletion_wqueue = create_ordered_work_queue("deletion");
+	sys_block_wqueue = create_ordered_work_queue("block");
+	sys_md_wqueue = create_ordered_work_queue("md");
 	if (wq_async_threads) {
 		sd_info("# of threads in async_req workqueue: %d", wq_async_threads);
-		sys->areq_wqueue = create_fixed_work_queue("async_req", wq_async_threads);
+		sys_areq_wqueue = create_fixed_work_queue("async_req", wq_async_threads);
 	} else {
-		sys->areq_wqueue = create_work_queue("async_req", WQ_DYNAMIC);
+		sys_areq_wqueue = create_work_queue("async_req", WQ_DYNAMIC);
 	}
-	if (!sys->gateway_wqueue || !sys->io_wqueue || !sys->recovery_wqueue ||
-	    !sys->deletion_wqueue || !sys->block_wqueue || !sys->md_wqueue ||
-	    !sys->areq_wqueue || !sys->peer_wqueue || !sys->reclaim_wqueue ||
-	    !sys->gateway_fwd_wqueue)
+	if (!sys_gateway_wqueue || !sys_io_wqueue || !sys_recovery_wqueue ||
+	    !sys_deletion_wqueue || !sys_block_wqueue || !sys_md_wqueue ||
+	    !sys_areq_wqueue || !sys_peer_wqueue || !sys_reclaim_wqueue ||
+	    !sys_gateway_fwd_wqueue)
 			return -1;
 
 	util_wq = create_ordered_work_queue("util");

@@ -590,7 +590,7 @@ int md_handle_eio(const char *fault_path)
 	mw = xzalloc(sizeof(*mw));
 	mw->work.done = md_do_recover;
 	pstrcpy(mw->path, PATH_MAX, fault_path);
-	queue_work(sys->md_wqueue, &mw->work);
+	queue_work(sys_md_wqueue, &mw->work);
 
 	/* Fool the requester to retry */
 	return SD_RES_NETWORK_ERROR;

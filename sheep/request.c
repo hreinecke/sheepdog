@@ -305,9 +305,9 @@ static void queue_peer_request(struct request *req)
 	req->work.done = io_op_done;
 
 	if (req->rq.opcode == SD_OP_REMOVE_PEER)
-		queue_work(sys->remove_peer_wqueue, &req->work);
+		queue_work(sys_remove_peer_wqueue, &req->work);
 	else
-		queue_work(sys->peer_wqueue, &req->work);
+		queue_work(sys_peer_wqueue, &req->work);
 }
 
 /*
@@ -353,11 +353,11 @@ static void queue_gateway_request(struct request *req)
 	req->work.done = gateway_op_done;
 
 	if (hdr->opcode == SD_OP_REMOVE_OBJ)
-		queue_work(sys->remove_wqueue, &req->work);
+		queue_work(sys_remove_wqueue, &req->work);
 	else if (hdr->flags & SD_FLAG_CMD_FWD)
-		queue_work(sys->gateway_fwd_wqueue, &req->work);
+		queue_work(sys_gateway_fwd_wqueue, &req->work);
 	else
-		queue_work(sys->gateway_wqueue, &req->work);
+		queue_work(sys_gateway_wqueue, &req->work);
 	return;
 
 end_request:
@@ -370,7 +370,7 @@ static void queue_local_request(struct request *req)
 {
 	req->work.fn = do_process_work;
 	req->work.done = local_op_done;
-	queue_work(sys->io_wqueue, &req->work);
+	queue_work(sys_io_wqueue, &req->work);
 }
 
 static main_fn inline void stat_request_begin(struct request *req)
@@ -661,7 +661,7 @@ worker_fn int exec_local_req_async(struct sd_req *rq, void *data,
 	areq->work.fn = local_req_async_work;
 	areq->work.done = local_req_async_main;
 
-	queue_work(sys->areq_wqueue, &areq->work);
+	queue_work(sys_areq_wqueue, &areq->work);
 
 	iocb->count++;
 
@@ -1019,7 +1019,7 @@ static void client_handler(int fd, int events, void *data)
 		ci->rx_work.fn = rx_work;
 		ci->rx_work.done = rx_main;
 		tracepoint(request, queue_request, fd, &ci->rx_work, 1);
-		queue_work(sys->net_wqueue, &ci->rx_work);
+		queue_work(sys_net_wqueue, &ci->rx_work);
 	}
 
 	if (events & EPOLLOUT) {
@@ -1042,7 +1042,7 @@ static void client_handler(int fd, int events, void *data)
 		ci->tx_work.fn = tx_work;
 		ci->tx_work.done = tx_main;
 		tracepoint(request, queue_request, fd, &ci->tx_work, 0);
-		queue_work(sys->net_wqueue, &ci->tx_work);
+		queue_work(sys_net_wqueue, &ci->tx_work);
 	}
 }
 

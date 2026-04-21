@@ -164,24 +164,6 @@ struct system_info {
 
 	struct recovery_throttling rthrottling;
 
-	struct work_queue *net_wqueue;
-	struct work_queue *gateway_wqueue;
-	struct work_queue *io_wqueue;
-	struct work_queue *peer_wqueue;
-	struct work_queue *reclaim_wqueue;
-	struct work_queue *gateway_fwd_wqueue;
-	struct work_queue *remove_wqueue;
-	struct work_queue *remove_peer_wqueue;
-	struct work_queue *deletion_wqueue;
-	struct work_queue *recovery_wqueue;
-	struct work_queue *recovery_notify_wqueue;
-	struct work_queue *block_wqueue;
-	struct work_queue *md_wqueue;
-	struct work_queue *areq_wqueue;
-#ifdef HAVE_HTTP
-	struct work_queue *http_wqueue;
-#endif
-
 	uatomic_bool use_journal;
 	bool backend_dio;
 	/* upgrade data layout before starting service if necessary*/
@@ -326,6 +308,24 @@ static inline struct store_driver *find_store_driver(const char *name)
 	}
 	return NULL;
 }
+
+extern struct work_queue *sys_net_wqueue;
+extern struct work_queue *sys_gateway_wqueue;
+extern struct work_queue *sys_io_wqueue;
+extern struct work_queue *sys_peer_wqueue;
+extern struct work_queue *sys_reclaim_wqueue;
+extern struct work_queue *sys_gateway_fwd_wqueue;
+extern struct work_queue *sys_remove_wqueue;
+extern struct work_queue *sys_remove_peer_wqueue;
+extern struct work_queue *sys_deletion_wqueue;
+extern struct work_queue *sys_recovery_wqueue;
+extern struct work_queue *sys_recovery_notify_wqueue;
+extern struct work_queue *sys_block_wqueue;
+extern struct work_queue *sys_md_wqueue;
+extern struct work_queue *sys_areq_wqueue;
+#ifdef HAVE_HTTP
+extern struct work_queue *sys_http_wqueue;
+#endif
 
 extern struct system_info *sys;
 extern struct store_driver *sd_store;

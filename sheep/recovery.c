@@ -676,7 +676,7 @@ static inline void direct_queue_recovery_work(uint64_t oid)
 	rw->cur_vinfo = grab_vnode_info(rinfo->cur_vinfo);
 	rw->old_vinfo = grab_vnode_info(rinfo->old_vinfo);
 
-	queue_work(sys->recovery_wqueue, &rw->work);
+	queue_work(sys_recovery_wqueue, &rw->work);
 }
 
 main_fn bool oid_in_recovery(uint64_t oid)
@@ -1419,7 +1419,7 @@ static void queue_recovery_work(struct recovery_info *rinfo)
 	rw->cur_vinfo = grab_vnode_info(rinfo->cur_vinfo);
 	rw->old_vinfo = grab_vnode_info(rinfo->old_vinfo);
 
-	queue_work(sys->recovery_wqueue, &rw->work);
+	queue_work(sys_recovery_wqueue, &rw->work);
 }
 
 void get_recovery_state(struct recovery_state *state)

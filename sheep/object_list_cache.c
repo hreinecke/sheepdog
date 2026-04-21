@@ -203,7 +203,7 @@ int objlist_cache_cleanup(uint32_t vid)
 	ow->vid = vid;
 	ow->work.fn = objlist_deletion_work;
 	ow->work.done = objlist_deletion_done;
-	queue_work(sys->deletion_wqueue, &ow->work);
+	queue_work(sys_deletion_wqueue, &ow->work);
 
 	return SD_RES_SUCCESS;
 }

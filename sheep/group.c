@@ -344,7 +344,7 @@ main_fn bool sd_block_handler(const struct sd_node *sender)
 	req->work.fn = do_process_work;
 	req->work.done = cluster_op_done;
 
-	queue_work(sys->block_wqueue, &req->work);
+	queue_work(sys_block_wqueue, &req->work);
 	req->status = REQUEST_QUEUED;
 	return true;
 }
@@ -758,7 +758,7 @@ static void get_vdis(const struct rb_root *nroot, const struct sd_node *joined)
 
 	w->work.fn = do_get_vdis;
 	w->work.done = get_vdis_done;
-	queue_work(sys->block_wqueue, &w->work);
+	queue_work(sys_block_wqueue, &w->work);
 }
 
 struct cinfo_collection_work {
@@ -917,7 +917,7 @@ static main_fn void cinfo_collection_done(struct work *work)
 	}
 
 	w->next_vid = next_vid;
-	queue_work(sys->block_wqueue, &collect_work->work);
+	queue_work(sys_block_wqueue, &collect_work->work);
 }
 
 static main_fn void collect_cinfo(void)
@@ -944,7 +944,7 @@ static main_fn void collect_cinfo(void)
 
 	collect_work->work.fn = cinfo_collection_work;
 	collect_work->work.done = cinfo_collection_done;
-	queue_work(sys->block_wqueue, &collect_work->work);
+	queue_work(sys_block_wqueue, &collect_work->work);
 }
 
 void wait_get_vdis_done(void)

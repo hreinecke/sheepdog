@@ -1852,7 +1852,7 @@ static int start_deletion(struct request *req, uint32_t vid)
 	dw->work.fn = delete_vdi_work;
 	dw->work.done = delete_vdi_done;
 
-	queue_work(sys->deletion_wqueue, &dw->work);
+	queue_work(sys_deletion_wqueue, &dw->work);
 
 	/*
 	 * the event fd is written by delete_vdi_done(), when all reference
