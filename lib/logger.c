@@ -238,8 +238,9 @@ static int json_log_formatter(char *buff, size_t size,
 	memcpy(msg_str, msg->str, msg->str_len);
 	obj = json_object_new_object();
 	user_info_obj = json_object_new_object();
-	json_object_object_add(user_info_obj, "program_name",
-			       json_object_new_string(log_name));
+	if (log_name)
+		json_object_object_add(user_info_obj, "program_name",
+				       json_object_new_string(log_name));
 	json_object_object_add(user_info_obj, "port",
 			       json_object_new_int(logger_user_info->port));
 	json_object_object_add(obj, "user_info", user_info_obj);
