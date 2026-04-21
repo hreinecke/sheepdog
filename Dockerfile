@@ -15,4 +15,4 @@ ADD . $SHEEPSRC
 RUN ./autogen.sh
 RUN ./configure --prefix=/usr --enable-etcd --disable-corosync && make && make check && make install
 
-CMD /usr/sbin/sheep -f
+CMD ["/usr/sbin/sheep", "-f"]
