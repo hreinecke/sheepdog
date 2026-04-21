@@ -29,6 +29,7 @@ services:
     image: sheepdog
     hostname: ${SHEEP1_NAME}
     extends: sheep
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP1_IP}
@@ -68,6 +69,7 @@ services:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
     extends: sheep
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP2_IP}
@@ -107,6 +109,7 @@ services:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
     extends: sheep
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP3_IP}
@@ -146,6 +149,7 @@ services:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
     extends: sheep
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP4_IP}
