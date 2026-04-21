@@ -2170,7 +2170,7 @@ static void etcd_lease_refresh(void *arg)
 	    etcd_cinfo.status == SD_STATUS_KILLED)
 		return;
 
-	sd_debug("%s: refresh lease\n", __func__);
+	sd_debug("%s: refresh lease", __func__);
 	ret = etcd_lease_keepalive(this_ctx);
 	if (ret < 0) {
 		sd_err("%s: failed to refresh lease, error %d",
