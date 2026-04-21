@@ -1,93 +1,110 @@
 name: sheepdog-local
 services:
+  sheep:
+    image: sheepdog
+    build: ../
+    command: echo sheep container ready
   sheep1:
     image: sheepdog
+    extends: sheep
     hostname: ${SHEEP1_NAME}
     ipc: "shareable"
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP1_IP}
     volumes:
       - sheep1-data:/var/lib/sheep
+      - sheep-shared:/tmp
     expose:
        - ${SHEEP1_PORT}
     ports:
        - "127.0.0.1:${SHEEP1_PORT}:${SHEEP1_PORT}"
     environment:
       - SHEEP_CLUSTER_DRIVER=local
-      - SHEEP_LOGGING=dst=default,level=debug
+      - SHEEP_LOGGING=dst=stdout,level=debug
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_PORT=${SHEEP1_PORT}
-    build: ../
-    command: /usr/sbin/sheep -f -z 1
+      - SHEEP_ZONE=1
+    command: /usr/sbin/sheep -f
   sheep2:
     image: sheepdog
+    extends: sheep
     hostname: ${SHEEP2_NAME}
     ipc: "service:sheep1"
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP2_IP}
     volumes:
       - sheep2-data:/var/lib/sheep
+      - sheep-shared:/tmp
     expose:
        - ${SHEEP2_PORT}
     ports:
        - "127.0.0.1:${SHEEP2_PORT}:${SHEEP2_PORT}"
     environment:
       - SHEEP_CLUSTER_DRIVER=local
-      - SHEEP_LOGGING=dst=default,level=debug
+      - SHEEP_LOGGING=dst=stdout,level=debug
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_PORT=${SHEEP2_PORT}
+      - SHEEP_ZONE=2
     depends_on:
       - sheep1
-    build: ../
-    command: /usr/sbin/sheep -f -z 2
+    command: /usr/sbin/sheep -f
   sheep3:
     image: sheepdog
+    extends: sheep
     hostname: ${SHEEP3_NAME}
     ipc: "service:sheep1"
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP3_IP}
     volumes:
       - sheep3-data:/var/lib/sheep
+      - sheep-shared:/tmp
     expose:
        - ${SHEEP3_PORT}
     ports:
        - "127.0.0.1:${SHEEP3_PORT}:${SHEEP3_PORT}"
     environment:
       - SHEEP_CLUSTER_DRIVER=local
-      - SHEEP_LOGGING=dst=default,level=debug
+      - SHEEP_LOGGING=dst=stdout,level=debug
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_PORT=${SHEEP3_PORT}
+      - SHEEP_ZONE=3
     depends_on:
       - sheep1
-    build: ../
-    command: /usr/sbin/sheep -f -z 3
+    command: /usr/sbin/sheep -f
   sheep4:
     image: sheepdog
+    extends: sheep
     hostname: ${SHEEP4_NAME}
     ipc: "service:sheep1"
+    init: true
     networks:
       etcd-br:
         ipv4_address: ${SHEEP4_IP}
     volumes:
       - sheep4-data:/var/lib/sheep
+      - sheep-shared:/tmp
     expose:
        - ${SHEEP4_PORT}
     ports:
        - "127.0.0.1:${SHEEP4_PORT}:${SHEEP4_PORT}"
     environment:
       - SHEEP_CLUSTER_DRIVER=local
-      - SHEEP_LOGGING=dst=default,level=debug
+      - SHEEP_LOGGING=dst=stdout,level=debug
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_PORT=${SHEEP4_PORT}
+      - SHEEP_ZONE=4
     depends_on:
       - sheep1
-    build: ../
-    command: /usr/sbin/sheep -f -z 4
+    command: /usr/sbin/sheep -f
 
 volumes:
+  sheep-shared:
   sheep1-data:
   sheep2-data:
   sheep3-data:
