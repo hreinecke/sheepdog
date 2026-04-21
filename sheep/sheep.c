@@ -853,35 +853,44 @@ int main(int argc, char **argv, char **envp)
 
 	cdrv_options = getenv("SHEEP_CLUSTER_DRIVER");
 	if (cdrv_options)
-		sd_err("Using SHEEP_CLUSTER_DRIVER='%s'",
-		       cdrv_options);
+		sd_info("Using SHEEP_CLUSTER_DRIVER='%s'",
+			cdrv_options);
 	log_options = getenv("SHEEP_LOGGING");
 	if (log_options)
-		sd_err("Using SHEEP_LOGGING='%s'",
+		sd_info("Using SHEEP_LOGGING='%s'",
 		       log_options);
 	pid_file = getenv("SHEEP_PID_FILE");
 	if (pid_file)
-		sd_err("Using SHEEP_PID_FILE='%s'",
+		sd_info("Using SHEEP_PID_FILE='%s'",
 		       pid_file);
 	base_dir = getenv("SHEEP_BASE_DIR");
 	if (base_dir)
-		sd_err("Using SHEEP_BASE_DIR='%s'",
+		sd_info("Using SHEEP_BASE_DIR='%s'",
 		       base_dir);
 	if ((bindaddr = getenv("SHEEP_BINDADDR"))) {
 		if (!inetaddr_is_valid(bindaddr))
 			bindaddr = NULL;
 		if (bindaddr)
-			sd_err("Using SHEEP_BINDADDR='%s'",
+			sd_info("Using SHEEP_BINDADDR='%s'",
 			       bindaddr);
 	}
 	if ((opt = getenv("SHEEP_PORT"))) {
 		port = str_to_u16(opt);
 		if (errno != 0 || port < 1) {
 			sd_err("Invalide port number '%s'", opt);
-			port = -1;
+			port = SD_LISTEN_PORT;
 		}
-		if (port > 0)
-			sd_err("Using SHEEP_PORT='%u'", port);
+		if (port != SD_LISTEN_PORT)
+			sd_info("Using SHEEP_PORT='%u'", port);
+	}
+	if ((opt = getenv("SHEEP_ZONE"))) {
+		zone = str_to_u32(opt);
+		if (errno != 0) {
+			sd_err("Invalid zone id '%s'", opt);
+			zone = -1;
+		}
+		if (zone >= 0)
+			sd_info("Using SHEEP_ZONE-'%lu", zone);
 	}
 	if ((opt = getenv("SHEEP_OPTS"))) {
 		int o;
