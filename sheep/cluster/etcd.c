@@ -1808,6 +1808,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	if (!ret) {
 		sd_warn("%s: failed to parse cluster info",
 			__func__);
+		free(joining);
 		return;
 	}
 	if (rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp)) {
@@ -1839,6 +1840,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		 joining->node_id, nr_nodes, cinfo.status);
 
 	sd_accept_handler(&joining->node, &sd_root, nr_nodes, &cinfo);
+	free(joining);
 }
 
 static void etcd_kick_block_event(void)
