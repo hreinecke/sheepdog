@@ -217,8 +217,7 @@ retry:
 	parse_data.persistent = persistent;
 
 	ret = recv_http(ne_req, &parse_data);
-
-	if (ne_end_request(ne_req) == NE_RETRY) {
+	if (ret > 0 && ne_end_request(ne_req) == NE_RETRY) {
 		sd_debug("retrying request %s", uri);
 		goto retry;
 	}
