@@ -52,13 +52,31 @@ const char *etcd_event_names[] = {
 	[EVENT_UPDATE_NODE] = "update-node",
 };
 
+enum etcd_status_type {
+	STATUS_INIT,
+	STATUS_JOIN,
+	STATUS_ACCEPT,
+	STATUS_LEAVE,
+	STATUS_KILLED,
+	STATUS_INVALID,
+};
+
+const char *etcd_status_names[] = {
+	[STATUS_INIT] = "init",
+	[STATUS_JOIN] = "join",
+	[STATUS_ACCEPT] = "accept",
+	[STATUS_LEAVE] = "leave",
+	[STATUS_KILLED] = "killed",
+	[STATUS_INVALID] = "invalid",
+};
+
 struct etcd_node {
 	struct list_node list;
 	struct rb_node rb;
 	struct etcd_ctx *ctx;
 	char node_id[MAX_NODE_STR_LEN];
 	struct sd_node node;
-	unsigned int attr_mask;
+	enum etcd_status_type status;
 	bool callbacked;
 };
 
@@ -89,6 +107,17 @@ struct etcd_lock_entry {
 	bool current;
 	char key[MAX_NODE_STR_LEN];
 };
+
+static enum etcd_status_type etcd_status_from_string(const char *str)
+{
+	for (int i = 0; i < ARRAY_SIZE(etcd_status_names); i++) {
+		if (!etcd_status_names[i])
+			continue;
+		if (!strcmp(etcd_status_names[i], str))
+			return i;
+	}
+	return STATUS_INVALID;
+}
 
 static struct rb_root etcd_lock_tree = RB_ROOT;
 static struct sd_mutex etcd_lock_mutex = SD_MUTEX_INITIALIZER;
@@ -215,6 +244,9 @@ static int etcd_node_set_addr(struct etcd_node *node, const char *attr)
 			strcpy(val, "tcp");
 		len = strlen(val);
 #endif
+	} else if (!strcmp(attr, "status")) {
+		strcpy(val, etcd_status_names[node->status]);
+		len = strlen(val);
 	} else
 		return -EINVAL;
 
@@ -320,6 +352,8 @@ static inline bool etcd_node_upload(struct sd_node *node)
 	rc = etcd_node_set_addr(&this_node, "io_transport_type");
 	if (rc) goto err;
 #endif
+	rc = etcd_node_set_addr(&this_node, "status");
+	if (rc) goto err;
 	rc = etcd_node_set_int_attr(&this_node, "zone",
 				    this_node.node.zone);
 	if (rc) goto err;
@@ -384,6 +418,10 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		return 0;
 	}
 #endif
+	if (!strcmp(attr, "status")) {
+		node->status = etcd_status_from_string(kv->value);
+		return 0;
+	}
 	errno = 0;
 	num = strtoul(kv->value, NULL, 10);
 	if (errno) {
@@ -443,6 +481,52 @@ static inline int etcd_node_download(struct etcd_node *node)
 	}
 	etcd_kv_free(kvs, num_kvs);
 	return num_kvs;
+}
+
+static int etcd_node_status(struct etcd_ctx *ctx, enum etcd_status_type status)
+{
+	const char *old_val, *new_val;
+	char cur_val[16], *key;
+	int rc;
+
+	new_val = etcd_status_names[status];
+
+	rc = asprintf(&key, DEFAULT_BASE MEMBER_ZNODE "%s/status",
+		       this_node.node_id);
+	if (rc < 0)
+		return -ENOMEM;
+	if (status == STATUS_LEAVE) {
+		rc = etcd_kv_delete(ctx, key);
+		goto out;
+	}
+retry:
+	old_val = etcd_status_names[this_node.status];
+	memset(cur_val, 0, sizeof(cur_val));
+	rc = etcd_kv_txn_update(ctx, key, old_val, new_val,
+				cur_val, sizeof(cur_val));
+	if (rc < 0) {
+		sd_debug("failed to update node status from '%s' to '%s', error %d",
+			 old_val, new_val, rc);
+		free(key);
+		return rc;
+	} else if (strlen(cur_val)) {
+		enum etcd_status_type cur_status;
+
+		cur_status = etcd_status_from_string(cur_val);
+		if (cur_status == status)
+			return 0;
+		sd_debug("node status from '%s' to '%s' rejected, is '%s'",
+			 old_val, new_val, cur_val);
+		this_node.status = cur_status;
+		goto retry;
+	} else {
+		sd_debug("update status from '%s' to '%s'",
+			 old_val, new_val);
+		this_node.status = status;
+	}
+out:
+	free(key);
+	return rc;
 }
 
 static int etcd_update_status(struct etcd_ctx *ctx, enum sd_status status)
@@ -1811,6 +1895,11 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		free(joining);
 		return;
 	}
+	if (!etcd_node_cmp(joining, &this_node)) {
+		sd_debug("local node has been accepted");
+		etcd_node_status(ctx, STATUS_ACCEPT);
+	}
+
 	if (rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp)) {
 		sd_warn("etcd node '%s' already present", joining->node_id);
 	}
@@ -2191,6 +2280,7 @@ static int etcd_join(const struct sd_node *myself,
 	static sd_thread_t watch_thr;
 
 	this_node.node = *myself;
+	this_node.status = STATUS_JOIN;
 	cinfo->proto_ver = SD_SHEEP_PROTO_VER;
 
 	etcd_cinfo_download(this_ctx, &etcd_cinfo);
@@ -2233,6 +2323,7 @@ static int etcd_leave(void)
 	struct json_object *node_obj;
 
 	sd_info("leaving from cluster");
+	etcd_node_status(this_ctx, STATUS_LEAVE);
 	node_obj = json_object_new_object();
 	json_object_object_add(node_obj, "node",
 			       json_object_new_string(this_node.node_id));
@@ -2284,6 +2375,7 @@ static int etcd_cluster_init(const char *option)
 	}
 	add_timer(&t, this_ctx->ttl * 500);
 	this_node.ctx = this_ctx;
+	this_node.status = STATUS_INIT;
 	strcpy(this_node.node_id, this_ctx->node_name);
 
 	etcd_cinfo_init(this_ctx);
