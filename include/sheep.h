@@ -240,6 +240,8 @@ node_disk_to_vnodes(const struct sd_node *n, struct rb_root *vroot)
 		hval = fnv_64a_64(node_hval, n->disks[j].disk_id);
 		disk_vnodes = DIV_ROUND_UP(n->disks[j].disk_space, WEIGHT_MIN);
 		total += disk_vnodes;
+		sd_debug("disk%u id %lu space %lu hash %lu",
+			 j, n->disks[j].disk_id, n->disks[j].disk_space, hval);
 		for (int k = 0; k < disk_vnodes; k++) {
 			hval = sd_hash_next(hval);
 			struct sd_vnode *v = xmalloc(sizeof(*v));
