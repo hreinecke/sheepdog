@@ -206,7 +206,8 @@ reconnect:
 	fd = -1;
 success:
 	freeaddrinfo(res0);
-	sd_debug("%d, %s:%d", fd, name, port);
+	if (fd >= 0)
+		sd_debug("%d, %s:%d", fd, name, port);
 	return fd;
 }
 
