@@ -1798,6 +1798,11 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	INIT_RB_ROOT(&sd_root);
 	sd_mutex_lock(&etcd_node_mutex);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
+		if (!etcd_node_cmp(node, &joining)) {
+			sd_warn("etcd node '%s' already present, status '%s'",
+				node->node_id, etcd_status_names[node->status]);
+			continue;
+		}
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes++;
 	}
