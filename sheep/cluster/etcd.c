@@ -926,7 +926,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 			return rc;
 		}
 	}
-	rb_for_each_entry(node, &etcd_node_root, rb) {
+	rb_for_each_entry(node, root, rb) {
 		sd_debug("etcd node '%s', status '%s'",
 			 node->node_id, etcd_status_names[node->status]);
 		nr_nodes++;
@@ -937,16 +937,14 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 }
 
 static inline int etcd_node_is_master(struct etcd_ctx *ctx,
+				      struct rb_root *root,
 				      struct etcd_node *node)
 {
 	struct etcd_node *master = NULL, *fallback = NULL, *tmp;
 	int num_nodes = 0;;
 	bool is_master = false;
 
-	sd_mutex_lock(&etcd_node_mutex);
-	etcd_build_node_list(ctx, &etcd_node_root);
-
-	rb_for_each_entry(tmp, &etcd_node_root, rb) {
+	rb_for_each_entry(tmp, root, rb) {
 		sd_debug("id %s master %s fallback %s status %s",
 			 tmp->node_id,
 			 master ? master->node_id : "<none>",
@@ -967,7 +965,6 @@ static inline int etcd_node_is_master(struct etcd_ctx *ctx,
 		if (is_master && !etcd_node_cmp(master, node) && fallback)
 			is_master = !etcd_node_cmp(fallback, &this_node);
 	}
-	sd_mutex_unlock(&etcd_node_mutex);
 	return is_master;
 }
 
@@ -1787,6 +1784,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	struct rb_root sd_root;
 	struct etcd_node joining, *node;
 	int nr_nodes = 0, ret;
+	bool is_master = false;
 
 	memset(&cinfo, 0, sizeof(cinfo));
 	memset(&joining, 0, sizeof(joining));
@@ -1796,6 +1794,16 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	if (!ret) {
 		sd_warn("%s: failed to parse cluster_info",
 			__func__);
+		return;
+	}
+
+	sd_mutex_lock(&etcd_node_mutex);
+	etcd_build_node_list(ctx, &etcd_node_root);
+	is_master = etcd_node_is_master(ctx, &etcd_node_root, &joining);
+	sd_mutex_unlock(&etcd_node_mutex);
+	if (!is_master) {
+		/* Let's await master acking the join-request */
+		sd_debug("node '%s' is not master", this_node.node_id);
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
@@ -1813,11 +1821,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_mutex_unlock(&etcd_node_mutex);
 	sd_debug("JOIN %s, %d nodes", joining.node_id, nr_nodes);
-	if (!etcd_node_is_master(ctx, &joining)) {
-		/* Let's await master acking the join-request */
-		sd_debug("node '%s' is not master", this_node.node_id);
-		return;
-	}
 
 	if (sd_join_handler(&joining.node, &sd_root, nr_nodes, &cinfo)) {
 		struct json_object *cinfo_obj;
@@ -1851,6 +1854,7 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	rb_init_node(&leaving.rb);
 	sd_debug("LEAVE %s", leaving.node_id);
 	sd_mutex_lock(&etcd_node_mutex);
+	etcd_build_node_list(ctx, &etcd_node_root);
 	node = rb_search(&etcd_node_root, &leaving, rb, etcd_node_cmp);
 	if (node)
 		rb_erase(&node->rb, &etcd_node_root);
@@ -1895,40 +1899,37 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 			       struct json_object *obj)
 {
 	struct rb_root sd_root;
-	struct etcd_node *node, *joining, *tmp;
+	struct etcd_node *node, key, *joining;
 	struct cluster_info cinfo;
 	int nr_nodes = 0, ret;
 
-	joining = xzalloc(sizeof(*joining));
-	if (!joining) {
-		sd_warn("failed to allocate joining node");
-		return;
-	}
-	joining->ctx = ctx;
-	joining->status = STATUS_ACCEPT;
-	rb_init_node(&joining->rb);
+	key.ctx = ctx;
+	key.status = STATUS_ACCEPT;
 	memset(&cinfo, 0, sizeof(cinfo));
-	ret = etcd_json_to_cinfo(obj, &cinfo, joining);
+	ret = etcd_json_to_cinfo(obj, &cinfo, &key);
 	if (!ret) {
 		sd_warn("%s: failed to parse cluster info",
 			__func__);
-		free(joining);
 		return;
 	}
-	if (!etcd_node_cmp(joining, &this_node)) {
+	if (!etcd_node_cmp(&key, &this_node)) {
 		sd_debug("local node has been accepted");
 		etcd_node_status(ctx, STATUS_ACCEPT);
 	}
 
 	sd_mutex_lock(&etcd_node_mutex);
-	tmp = rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
-	if (tmp) {
-		sd_warn("etcd node '%s' already present, status %s",
-			tmp->node_id, etcd_status_names[tmp->status]);
-		if (tmp->status == STATUS_JOIN)
-			tmp->status = STATUS_ACCEPT;
-		free(joining);
-		joining = tmp;
+	etcd_build_node_list(ctx, &etcd_node_root);
+	joining = rb_search(&etcd_node_root, &key, rb, etcd_node_cmp);
+	if (!joining) {
+		sd_warn("etcd node '%s' not registered",
+			key.node_id);
+		return;
+	} else if (joining->status != STATUS_ACCEPT) {
+		if (joining->status != STATUS_JOIN)
+			sd_warn("etcd node '%s' in status '%s'",
+				joining->node_id,
+				etcd_status_names[joining->status]);
+		joining->status = STATUS_ACCEPT;
 	}
 
 	INIT_RB_ROOT(&sd_root);
@@ -1956,8 +1957,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		 joining->node_id, nr_nodes, cinfo.status);
 
 	sd_accept_handler(&joining->node, &sd_root, nr_nodes, &cinfo);
-	if (tmp != joining)
-		free(joining);
 }
 
 static void etcd_kick_block_event(void)
