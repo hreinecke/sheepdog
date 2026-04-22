@@ -668,13 +668,6 @@ static int etcd_cinfo_init(struct etcd_ctx *ctx)
 	if (rc < 0)
 		return rc;
 	sd_debug("initializing status to '%s'", v);
-
-	attr = "proto_ver";
-	sprintf(key, DEFAULT_BASE CLUSTER_ZNODE "%s", attr);
-	sprintf(val, "%u", etcd_cinfo.proto_ver);
-	rc = etcd_kv_store(ctx, key, val, strlen(val));
-	if (rc < 0)
-		return rc;
 	return rc;
 }
 
