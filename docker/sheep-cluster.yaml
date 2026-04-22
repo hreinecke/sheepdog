@@ -19,6 +19,8 @@ services:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP1_IP}
+      - SHEEP_BINDADDR=${SHEEP1_IP}:7000
     command: /usr/sbin/sheep -f
   sheep2:
     image: sheepdog
@@ -35,6 +37,8 @@ services:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP2_IP}
+      - SHEEP_BINDADDR=${SHEEP2_IP}:7000
     command: /usr/sbin/sheep -f
   sheep3:
     image: sheepdog
@@ -51,6 +55,8 @@ services:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP3_IP}
+      - SHEEP_BINDADDR=${SHEEP3_IP}:7000
     command: /usr/sbin/sheep -f
   sheep4:
     image: sheepdog
@@ -67,6 +73,8 @@ services:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP4_IP}
+      - SHEEP_BINDADDR=${SHEEP4_IP}:7000
     command: /usr/sbin/sheep -f
 
 volumes:
