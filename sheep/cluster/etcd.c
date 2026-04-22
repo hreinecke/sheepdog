@@ -911,12 +911,12 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		node = rb_search(root, &node_key, rb, etcd_node_cmp);
 		if (!node) {
 			node = xzalloc(node_size);
+			node->ctx = ctx;
 			strcpy(node->node_id, node_key.node_id);
 			if (rb_insert(root, node, rb, etcd_node_cmp)) {
 				sd_err("etcd node '%s' hash collision",
 				       node_key.node_id);
-			} else
-				nr_nodes++;
+			}
 		}
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
@@ -925,6 +925,11 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 			etcd_kv_free(kvs, num_kvs);
 			return rc;
 		}
+	}
+	rb_for_each_entry(node, &etcd_node_root, rb) {
+		sd_debug("etcd node '%s', status '%s'",
+			 node->node_id, etcd_status_names[node->status]);
+		nr_nodes++;
 	}
 	sd_debug("%zu nodes", nr_nodes);
 	etcd_kv_free(kvs, num_kvs);
@@ -948,13 +953,16 @@ static inline int etcd_node_is_master(struct etcd_node *node)
 
 		attr = strrchr(id, '/');
 		*attr++ = '\0';
-		if (attr && !strcmp(attr, "space")) {
+		if (attr && !strcmp(attr, "status")) {
 			/*
 			 * The master node is the node
 			 * with the earliest creation date.
 			 * If we only have one node there
 			 * is no master.
 			 */
+			sd_debug("id %s num %d master %s status %s",
+				 id ? id : "<none>", num_nodes,
+				 master, kv->value);
 			if (!master)
 				master = id;
 			num_nodes++;
@@ -1801,6 +1809,8 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		if (!etcd_node_cmp(node, &joining)) {
 			sd_warn("etcd node '%s' already present, status '%s'",
 				node->node_id, etcd_status_names[node->status]);
+			if (node->status == STATUS_INIT)
+				node->status = STATUS_JOIN;
 			continue;
 		}
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
@@ -1920,6 +1930,8 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	if (tmp) {
 		sd_warn("etcd node '%s' already present, status %s",
 			tmp->node_id, etcd_status_names[tmp->status]);
+		if (tmp->status == STATUS_JOIN)
+			tmp->status = STATUS_ACCEPT;
 		free(joining);
 		joining = tmp;
 	}
