@@ -96,6 +96,7 @@ struct etcd_cluster_info {
 
 static struct sd_mutex etcd_block_mutex = SD_MUTEX_INITIALIZER;
 static LIST_HEAD(etcd_block_list);
+static struct sd_mutex etcd_node_mutex = SD_MUTEX_INITIALIZER;
 static struct rb_root etcd_node_root = RB_ROOT;
 static struct etcd_cluster_info etcd_cinfo = {};
 
@@ -1789,10 +1790,12 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		return;
 	}
 	INIT_RB_ROOT(&sd_root);
+	sd_mutex_lock(&etcd_node_mutex);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes++;
 	}
+	sd_mutex_unlock(&etcd_node_mutex);
 	sd_debug("JOIN %s, %d nodes", joining.node_id, nr_nodes);
 	if (!etcd_node_is_master(&this_node) && nr_nodes != 2) {
 		/* Let's await master acking the join-request */
@@ -1831,12 +1834,15 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	leaving.ctx = ctx;
 	rb_init_node(&leaving.rb);
 	sd_debug("LEAVE %s", leaving.node_id);
+	sd_mutex_lock(&etcd_node_mutex);
 	node = rb_search(&etcd_node_root, &leaving, rb, etcd_node_cmp);
+	if (node)
+		rb_erase(&node->rb, &etcd_node_root);
+	sd_mutex_unlock(&etcd_node_mutex);
 	if (!node) {
 		sd_warn("leaving node not registered");
 		return;
 	}
-	rb_erase(&node->rb, &etcd_node_root);
 	rb_init_node(&node->rb);
 	if (!strcmp(node->node_id, this_node.node_id)) {
 		struct etcd_lock_entry *lock;
@@ -1860,10 +1866,12 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		etcd_cluster_delete(ctx);
 	}
 	INIT_RB_ROOT(&sd_root);
+	sd_mutex_lock(&etcd_node_mutex);
 	rb_for_each_entry(sd_node, &etcd_node_root, rb) {
 		rb_insert(&sd_root, &sd_node->node, rb, node_cmp);
 		nr_nodes++;
 	}
+	sd_mutex_unlock(&etcd_node_mutex);
 	sd_leave_handler(&node->node, &sd_root, nr_nodes);
 }
 
@@ -1895,6 +1903,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		etcd_node_status(ctx, STATUS_ACCEPT);
 	}
 
+	sd_mutex_lock(&etcd_node_mutex);
 	if (rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp)) {
 		sd_warn("etcd node '%s' already present", joining->node_id);
 	}
@@ -1904,7 +1913,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
 		nr_nodes ++;
 	}
-
+	sd_mutex_unlock(&etcd_node_mutex);
 	if (!etcd_node_cmp(joining, &this_node) &&
 	    (etcd_cinfo.status != cinfo.status ||
 	     etcd_cinfo.ctime != cinfo.ctime ||
@@ -1955,7 +1964,9 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 	strcpy(block.node_id, json_object_get_string(node_obj));
 	sd_debug("BLOCK %s", block.node_id);
 	rb_init_node(&block.rb);
+	sd_mutex_lock(&etcd_node_mutex);
 	node = rb_search(&etcd_node_root, &block, rb, etcd_node_cmp);
+	sd_mutex_unlock(&etcd_node_mutex);
 	if (!node) {
 		sd_warn("blocking node not registered");
 		return;
@@ -2020,7 +2031,9 @@ static void etcd_handle_notify(struct etcd_ctx *ctx,
 		return;
 	}
 	sd_debug("NOTIFY %s", notify.node_id);
+	sd_mutex_lock(&etcd_node_mutex);
 	node = rb_search(&etcd_node_root, &notify, rb, etcd_node_cmp);
+	sd_mutex_unlock(&etcd_node_mutex);
 	if (!node) {
 		sd_warn("notify node not registered");
 		free(msg);
@@ -2291,7 +2304,9 @@ static int etcd_join(const struct sd_node *myself,
 		ret = -1;
 	}
 
+	sd_mutex_lock(&etcd_node_mutex);
 	etcd_build_node_list(this_ctx, &etcd_node_root);
+	sd_mutex_unlock(&etcd_node_mutex);
 
 	ret = etcd_node_upload(NULL);
 	if (ret < 0) {
