@@ -874,6 +874,12 @@ int main(int argc, char **argv, char **envp)
 			sd_info("Using SHEEP_BINDADDR='%s'",
 			       bindaddr);
 	}
+	if ((opt = getenv("SHEEP_ADDR"))) {
+		if (str_to_addr(opt, sys->this_node.nid.addr)) {
+			sd_info("Using SHEEP_ADDR='%s'", opt);
+			explicit_addr = true;
+		}
+	}
 	if ((opt = getenv("SHEEP_PORT"))) {
 		port = str_to_u16(opt);
 		if (errno != 0 || port < 1) {
