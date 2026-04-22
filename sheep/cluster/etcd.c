@@ -1877,7 +1877,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 			       struct json_object *obj)
 {
 	struct rb_root sd_root;
-	struct etcd_node *node, *joining;
+	struct etcd_node *node, *joining, *tmp;
 	struct cluster_info cinfo;
 	int nr_nodes = 0, ret;
 
@@ -1887,6 +1887,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		return;
 	}
 	joining->ctx = ctx;
+	joining->status = STATUS_ACCEPT;
 	rb_init_node(&joining->rb);
 	memset(&cinfo, 0, sizeof(cinfo));
 	ret = etcd_json_to_cinfo(obj, &cinfo, joining);
@@ -1901,8 +1902,12 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		etcd_node_status(ctx, STATUS_ACCEPT);
 	}
 
-	if (rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp)) {
-		sd_warn("etcd node '%s' already present", joining->node_id);
+	tmp = rb_insert(&etcd_node_root, joining, rb, etcd_node_cmp);
+	if (tmp) {
+		sd_warn("etcd node '%s' already present, status %s",
+			tmp->node_id, etcd_status_names[tmp->status]);
+		free(joining);
+		joining = tmp;
 	}
 
 	INIT_RB_ROOT(&sd_root);
@@ -1930,7 +1935,8 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		 joining->node_id, nr_nodes, cinfo.status);
 
 	sd_accept_handler(&joining->node, &sd_root, nr_nodes, &cinfo);
-	free(joining);
+	if (tmp != joining)
+		free(joining);
 }
 
 static void etcd_kick_block_event(void)
