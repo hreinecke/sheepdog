@@ -542,28 +542,11 @@ static int etcd_update_status(struct etcd_ctx *ctx, enum sd_status status)
 	old_val = sd_status_to_string(etcd_cinfo.status);
 	if (!old_val)
 		goto invalid;
-	switch (status) {
-	case SD_STATUS_INVALID:
-		goto invalid;
-	case SD_STATUS_WAIT:
-		if (etcd_cinfo.status != SD_STATUS_INVALID &&
-		    etcd_cinfo.status != SD_STATUS_SHUTDOWN &&
-		    etcd_cinfo.status != SD_STATUS_KILLED)
-			goto invalid;
-		break;
-	case SD_STATUS_OK:
-		if (etcd_cinfo.status != SD_STATUS_WAIT)
-			goto invalid;
-		break;
-	case SD_STATUS_SHUTDOWN:
-		break;
-	case SD_STATUS_KILLED:
-		break;
-	default:
-		goto invalid;
-	}
+
 	strcpy(key, DEFAULT_BASE CLUSTER_ZNODE "status");
 	new_val = sd_status_to_string(status);
+	if (!new_val)
+		goto invalid;
 retry:
 	memset(cur_val, 0, sizeof(cur_val));
 	rc = etcd_kv_txn_update(ctx, key, old_val, new_val,
