@@ -1342,6 +1342,8 @@ int main(int argc, char **argv, char **envp)
 	check_host_env();
 	sd_info("sheepdog daemon (version %s) started", PACKAGE_VERSION);
 
+	send_join_request();
+
 	while ((num = uatomic_read(&sys->nr_outstanding_reqs)) != 0 ||
 	       (sys_get_status() != SD_STATUS_KILLED &&
 		sys_get_status() != SD_STATUS_SHUTDOWN)) {

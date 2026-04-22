@@ -1176,7 +1176,7 @@ main_fn bool sd_join_handler(const struct sd_node *joining,
 	return true;
 }
 
-static int send_join_request(void)
+int send_join_request(void)
 {
 	struct sd_node *n = &sys->this_node;
 
@@ -1533,10 +1533,6 @@ int create_cluster(int port, int64_t zone, int nr_vnodes,
 
 	INIT_LIST_HEAD(&sys->local_req_queue);
 	INIT_LIST_HEAD(&sys->req_wait_queue);
-
-	ret = send_join_request();
-	if (ret != 0)
-		return -1;
 
 	return 0;
 }

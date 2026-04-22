@@ -440,6 +440,7 @@ void resume_suspended_recovery(void);
 int create_cluster(int port, int64_t zone, int nr_vnodes,
 		   bool explicit_addr);
 int leave_cluster(void);
+int send_join_request(void);
 
 void queue_cluster_request(struct request *req);
 
