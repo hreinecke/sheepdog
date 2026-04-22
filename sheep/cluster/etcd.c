@@ -936,43 +936,38 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	return nr_nodes;
 }
 
-static inline int etcd_node_is_master(struct etcd_node *node)
+static inline int etcd_node_is_master(struct etcd_ctx *ctx,
+				      struct etcd_node *node)
 {
-	char key[1024], *master = NULL;;
-	struct etcd_kv *kvs;
-	int i, num_kvs, num_nodes = 0;;
+	struct etcd_node *master = NULL, *fallback = NULL, *tmp;
+	int num_nodes = 0;;
 	bool is_master = false;
 
-	strcpy(key, DEFAULT_BASE MEMBER_ZNODE);
-	num_kvs = etcd_kv_range(this_ctx, key, &kvs);
-	if (num_kvs < 0)
-		return is_master;
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		char *id = kv->key + strlen(key), *attr;
+	sd_mutex_lock(&etcd_node_mutex);
+	etcd_build_node_list(ctx, &etcd_node_root);
 
-		attr = strrchr(id, '/');
-		*attr++ = '\0';
-		if (attr && !strcmp(attr, "status")) {
-			/*
-			 * The master node is the node
-			 * with the earliest creation date.
-			 * If we only have one node there
-			 * is no master.
-			 */
-			sd_debug("id %s num %d master %s status %s",
-				 id ? id : "<none>", num_nodes,
-				 master, kv->value);
-			if (!master)
-				master = id;
-			num_nodes++;
-		}
+	rb_for_each_entry(tmp, &etcd_node_root, rb) {
+		sd_debug("id %s master %s fallback %s status %s",
+			 tmp->node_id,
+			 master ? master->node_id : "<none>",
+			 fallback ? fallback->node_id : "<none>",
+			 etcd_status_names[tmp->status]);
+		if (!fallback && master)
+			fallback = tmp;
+		if (!master)
+			master = tmp;
+		num_nodes++;
 	}
-	if (master && !strcmp(master, node->node_id))
-		is_master = true;
 	if (!num_nodes)
 		is_master = true;
-	etcd_kv_free(kvs, num_kvs);
+	else if (master) {
+		/* Check if this node is the master */
+		is_master = !etcd_node_cmp(master, &this_node);
+		/* Delegate requests for the local node to the fallback */
+		if (is_master && !etcd_node_cmp(master, node) && fallback)
+			is_master = !etcd_node_cmp(fallback, &this_node);
+	}
+	sd_mutex_unlock(&etcd_node_mutex);
 	return is_master;
 }
 
@@ -1818,7 +1813,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	}
 	sd_mutex_unlock(&etcd_node_mutex);
 	sd_debug("JOIN %s, %d nodes", joining.node_id, nr_nodes);
-	if (!etcd_node_is_master(&this_node) && nr_nodes != 2) {
+	if (!etcd_node_is_master(ctx, &joining)) {
 		/* Let's await master acking the join-request */
 		sd_debug("node '%s' is not master", this_node.node_id);
 		return;
