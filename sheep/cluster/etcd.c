@@ -1812,8 +1812,6 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 		if (!etcd_node_cmp(node, &joining)) {
 			sd_warn("etcd node '%s' already present, status '%s'",
 				node->node_id, etcd_status_names[node->status]);
-			if (node->status == STATUS_INIT)
-				node->status = STATUS_JOIN;
 			continue;
 		}
 		rb_insert(&sd_root, &node->node, rb, node_cmp);
@@ -1924,12 +1922,6 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 		sd_warn("etcd node '%s' not registered",
 			key.node_id);
 		return;
-	} else if (joining->status != STATUS_ACCEPT) {
-		if (joining->status != STATUS_JOIN)
-			sd_warn("etcd node '%s' in status '%s'",
-				joining->node_id,
-				etcd_status_names[joining->status]);
-		joining->status = STATUS_ACCEPT;
 	}
 
 	INIT_RB_ROOT(&sd_root);
