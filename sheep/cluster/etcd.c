@@ -545,7 +545,8 @@ static int etcd_update_status(struct etcd_ctx *ctx, enum sd_status status)
 	case SD_STATUS_INVALID:
 		goto invalid;
 	case SD_STATUS_WAIT:
-		if (etcd_cinfo.status != SD_STATUS_SHUTDOWN &&
+		if (etcd_cinfo.status != SD_STATUS_INVALID &&
+		    etcd_cinfo.status != SD_STATUS_SHUTDOWN &&
 		    etcd_cinfo.status != SD_STATUS_KILLED)
 			goto invalid;
 		break;
