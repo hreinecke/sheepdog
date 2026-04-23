@@ -773,8 +773,7 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 
 	cinfo_obj = json_object_object_get(obj, "cluster");
 	if (!cinfo_obj) {
-		sd_warn("%s: invalid json payload, 'cluster' missing",
-			__func__);
+		sd_warn("invalid json payload, 'cluster' missing");
 		return 0;
 	}
 	itb = json_object_iter_begin(cinfo_obj);
@@ -815,7 +814,7 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 			json_to_nodes(val_obj, cinfo->nodes, &nr_nodes);
 			cinfo->nr_nodes = nr_nodes;
 		} else {
-			sd_warn("%s: unhandled key '%s'", __func__, key);
+			sd_warn("unhandled key '%s'", key);
 			num_val--;
 		}
 		num_val++;
@@ -830,8 +829,7 @@ static int etcd_json_to_cinfo(struct json_object *obj,
 		strcpy(node->node_id, json_object_get_string(node_obj));
 		ret = etcd_node_download(node);
 		if (ret < 0) {
-			sd_warn("%s: failed to download '%s'",
-				__func__, node->node_id);
+			sd_warn("failed to download '%s'", node->node_id);
 			return 0;
 		}
 		sd_debug("node %s id %s",
@@ -872,8 +870,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		}
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
-			sd_err("%s: failed to load node attr '%s'",
-			       __func__, key);
+			sd_err("failed to load node attr '%s'", key);
 			etcd_kv_free(kvs, num_kvs);
 			return rc;
 		}
@@ -929,7 +926,7 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 
 	event = etcd_event_names[type];
 	if (!event) {
-		sd_warn("%s: invalid type %d", __func__, type);
+		sd_warn("invalid type %d", type);
 		return SD_RES_CLUSTER_ERROR;
 	}
 	json_object_object_add(obj, "event",
@@ -940,8 +937,7 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 
 	rc = etcd_kv_store(ctx, key, json_str, strlen(json_str));
 	if (rc < 0) {
-		sd_err("%s: failed, event %s (%d), %d",
-		       __func__, event, type, rc);
+		sd_err("failed, event %s (%d), %d", event, type, rc);
 		return SD_RES_CLUSTER_ERROR;
 	}
 	return SD_RES_SUCCESS;
@@ -1203,8 +1199,7 @@ static void etcd_json_to_req_vdi(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->vdi, snapid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi, type, key);
 		else
-			sd_warn("%s: unhandled vdi attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled vdi attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1228,8 +1223,7 @@ static void etcd_json_to_rsp_vdi(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &rsp->vdi, copies, key);
 		DEREF_JSON_INT(val_obj, &rsp->vdi, block_size_shift, key);
 		else
-			sd_warn("%s: unhandled vdi attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled vdi attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1259,8 +1253,7 @@ static void etcd_json_to_cluster(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->cluster, nodes_nr, key);
 		DEREF_JSON_INT(val_obj, &req->cluster, block_size_shift, key);
 		else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1289,8 +1282,7 @@ static void etcd_json_to_req_obj(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->obj, tgt_epoch, key);
 		DEREF_JSON_INT(val_obj, &req->obj, offset, key);
 		else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1314,8 +1306,7 @@ static void etcd_json_to_rsp_obj(struct json_object *obj,
 			rsp->obj.copies =
 				json_object_get_int(val_obj);
 		else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1342,8 +1333,7 @@ static void etcd_json_to_vdi_state(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->vdi_state, copy_policy, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, block_size_shift, key);
 		else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1390,8 +1380,7 @@ static void etcd_json_to_req(struct json_object *obj,
 		} else if (!strcmp(key, "id")) {
 			req->id = json_object_get_int(val_obj);
 		} else if (strcmp(key, "data_length"))
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1416,8 +1405,7 @@ static void etcd_json_to_rsp_node(struct json_object *obj,
 				json_object_get_int(val_obj);
 		DEREF_JSON_INT(val_obj, &rsp->node, nr_nodes, key);
 		else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1455,8 +1443,7 @@ static void etcd_json_to_rsp(struct json_object *obj,
 		} else if (!strcmp(key, "result")) {
 			rsp->result = json_object_get_int(val_obj);
 		} else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1480,8 +1467,8 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 			size_t data_len = strlen(val);;
 
 			if (data_len > data_length) {
-				sd_warn("%s: truncating data to %lu",
-					__func__, data_length);
+				sd_warn("truncating data to %lu",
+					data_length);
 				data_len = data_length;
 			}
 			memcpy(data, val, data_len);
@@ -1491,8 +1478,8 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 			const char *val;
 
 			if (data_length < sizeof(*vdi_attr)) {
-				sd_warn("%s: invalid vdi_attr size",
-					__func__);
+				sd_warn("invalid vdi_attr size %lu",
+					data_length);
 				return;
 			}
 			attr_obj = json_object_object_get(val_obj, "name");
@@ -1523,15 +1510,14 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 			struct sd_node *node = (struct sd_node *)data;
 
 			if (data_length < sizeof(*node)) {
-				sd_warn("%s: invalde node data size",
-					__func__);
+				sd_warn("invalde node data size %lu",
+					data_length);
 				return;
 			}
 			memset(node, 0, sizeof(*node));
 			json_to_node(val_obj, node);
 		} else
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 }
@@ -1599,8 +1585,7 @@ static struct vdi_op_message *etcd_json_to_msg(struct json_object *obj,
 				strcpy(node->node_id,
 				       json_object_get_string(val_obj));
 		} else if (strcmp(key, "rsp") && strcmp(key, "event"))
-			sd_warn("%s: unhandled attribute '%s'",
-				__func__, key);
+			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
 	return msg;
@@ -1744,8 +1729,7 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 	rb_init_node(&joining.rb);
 	ret = etcd_json_to_cinfo(obj, &cinfo, &joining);
 	if (!ret) {
-		sd_warn("%s: failed to parse cluster_info",
-			__func__);
+		sd_warn("failed to parse cluster_info");
 		return;
 	}
 
@@ -1854,8 +1838,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	memset(&cinfo, 0, sizeof(cinfo));
 	ret = etcd_json_to_cinfo(obj, &cinfo, &key);
 	if (!ret) {
-		sd_warn("%s: failed to parse cluster info",
-			__func__);
+		sd_warn("failed to parse cluster info");
 		return;
 	}
 	if (!etcd_node_cmp(&key, &this_node)) {
@@ -1921,7 +1904,7 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 
 	node_obj = json_object_object_get(obj, "node");
 	if (!node_obj) {
-		sd_warn("%s: failed to retrieve 'node' object", __func__);
+		sd_warn("failed to retrieve 'node' object");
 		return;
 	}
 	strcpy(block.node_id, json_object_get_string(node_obj));
@@ -1937,8 +1920,8 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 	sd_mutex_lock(&etcd_block_mutex);
 	list_for_each_entry(tmp, &etcd_block_list, list) {
 		if (tmp == node) {
-			sd_warn("%s: node '%s' already on blocked list",
-				__func__, node->node_id);
+			sd_warn("node '%s' already on blocked list",
+				node->node_id);
 			node = NULL;
 			break;
 		}
@@ -1960,7 +1943,7 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 
 	msg = etcd_json_to_msg(obj, &unblock, &msg_len);
 	if (!msg) {
-		sd_warn("%s: failed to deserialize json", __func__);
+		sd_warn("failed to deserialize json");
 		return;
 	}
 	sd_debug("UNBLOCK %s", unblock.node_id);
@@ -1990,7 +1973,7 @@ static void etcd_handle_notify(struct etcd_ctx *ctx,
 	rb_init_node(&notify.rb);
 	msg = etcd_json_to_msg(obj, &notify, &msg_len);
 	if (!msg) {
-		sd_warn("%s: failed to deserialize json", __func__);
+		sd_warn("failed to deserialize json");
 		return;
 	}
 	sd_debug("NOTIFY %s", notify.node_id);
@@ -2067,7 +2050,7 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 	if (kv->value_len) {
 		obj = json_tokener_parse(kv->value);
 		if (!obj) {
-			sd_warn("%s: failed to parse value", __func__);
+			sd_warn("failed to parse value '%s'", kv->value);
 			return;
 		}
 	} else {
@@ -2214,8 +2197,8 @@ static void *etcd_event_watcher(void *arg)
 			break;
 	}
 	if (ret) {
-		sd_warn("%s: etcd_kv_watch failed, error %d (%s)\n",
-			__func__, ret, strerror(-ret));
+		sd_warn("watch error %d (%s)",
+			ret, strerror(-ret));
 		sd_kill_handler(&this_node.node);
 	}
 	pthread_cleanup_pop(1);
@@ -2234,11 +2217,9 @@ static void etcd_lease_refresh(void *arg)
 	    etcd_cinfo.status == SD_STATUS_KILLED)
 		return;
 
-	sd_debug("%s: refresh lease", __func__);
 	ret = etcd_lease_keepalive(this_ctx);
 	if (ret < 0) {
-		sd_err("%s: failed to refresh lease, error %d",
-		       __func__, ret);
+		sd_err("failed to refresh lease, error %d", ret);
 		return;
 	}
 	add_timer(arg, this_ctx->ttl * 500);
