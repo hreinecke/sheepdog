@@ -740,6 +740,8 @@ int etcd_kv_watch(struct etcd_conn_ctx *conn, const char *key,
 	encoded_end = __b64enc(end_key, strlen(end_key));
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_end));
+	json_object_object_add(req_obj, "progress_notify",
+			       json_object_new_boolean(true));
 	if (ev->ev_revision > 0)
 		json_object_object_add(req_obj, "start_revision",
 				       json_object_new_int64(ev->ev_revision));
