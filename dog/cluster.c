@@ -17,6 +17,9 @@
 #include "dog.h"
 #include "sheep.h"
 #include "farm/farm.h"
+#include "json.h"
+
+static struct json_object *out_obj;
 
 static struct sd_option cluster_options[] = {
 	{'b', "store", true, "specify backend store"},
@@ -75,9 +78,25 @@ static int list_store(void)
 		return EXIT_FAILURE;
 	}
 
-	printf("Available stores:\n");
-	printf("---------------------------------------\n");
-	printf("%s\n", buf);
+	if (json_output) {
+		char *l;
+		const char *o;
+
+		out_obj = json_object_new_array();
+		l = strtok(buf, "\n");
+		while (l) {
+			json_object_array_add(out_obj,
+					      json_object_new_string(l));
+			l = strtok(NULL, "\n");
+		}
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	} else {
+		printf("Available stores:\n");
+		printf("---------------------------------------\n");
+		printf("%s\n", buf);
+	}
 	return EXIT_SYSFAIL;
 }
 
@@ -296,6 +315,8 @@ static int cluster_info(int argc, char **argv)
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	struct epoch_log *logs, *log, *last_log = NULL;
 	char *next_log;
+	const char *auto_recovery, *strategy = "fixed", *vnode_mode = "node";
+	struct json_object *log_obj;
 	int nr_logs, log_length;
 	time_t ti, ct;
 	struct tm tm;
@@ -324,17 +345,31 @@ retry:
 	}
 
 	/* show cluster status */
-	if (!raw_output)
-		printf("Cluster status: ");
-	if (rsp->result == SD_RES_SUCCESS)
-		printf("running, auto-recovery %s\n", logs->disable_recovery ?
-		       "disabled" : "enabled");
-	else
-		printf("%s\n", sd_strerror(rsp->result));
+	auto_recovery = logs->disable_recovery ? "disabled" : "enabled";
+	if (json_output) {
+		const char *status;
+		if (rsp->result == SD_RES_SUCCESS) {
+			status = "running";
+			json_object_object_add(out_obj, "auto_recovery",
+				json_object_new_string(auto_recovery));
+		} else {
+			status = sd_strerror(rsp->result);
+		}
+		json_object_object_add(out_obj, "status",
+				       json_object_new_string(status));
+	} else {
+		if (!raw_output)
+			printf("Cluster status: ");
+		if (rsp->result == SD_RES_SUCCESS)
+			printf("running, auto-recovery %s\n",
+			       auto_recovery);
+		else
+			printf("%s\n", sd_strerror(rsp->result));
+	}
 
 	if (verbose) {
 		/* show cluster backend store */
-		if (!raw_output)
+		if (!raw_output && !json_output)
 			printf("Cluster store: ");
 		if (rsp->result == SD_RES_SUCCESS) {
 			char copy[10];
@@ -348,36 +383,61 @@ retry:
 				snprintf(copy, sizeof(copy), "%d:%d",
 					 data, parity);
 			}
-			printf("%s with %s redundancy policy\n",
-			       logs->drv_name, copy);
-		} else
+			if (json_output) {
+				struct json_object *store_obj =
+					json_object_new_object();
+				json_object_object_add(store_obj, "driver",
+					json_object_new_string(logs->drv_name));
+				json_object_object_add(store_obj,
+					"redundancy_policy",
+					json_object_new_string(copy));
+				json_object_object_add(out_obj, "store",
+						       store_obj);
+			} else {
+				printf("%s with %s redundancy policy\n",
+				       logs->drv_name, copy);
+			}
+		} else if (!json_output)
 			printf("%s\n", sd_strerror(rsp->result));
 
 		/* show vnode strategy */
-		if (!raw_output)
-			printf("Cluster vnodes strategy: ");
 		if (logs->flags & SD_CLUSTER_FLAG_AUTO_VNODES)
-			printf("auto\n");
+			strategy = "auto";
+		if (json_output) {
+			json_object_object_add(out_obj, "vnode_strategy",
+				json_object_new_string(strategy));
+		} else if (!raw_output)
+			printf("Cluster vnodes strategy: %s\n", strategy);
 		else
-			printf("fixed\n");
+			printf("%s\n", strategy);
 
 		/* show vnode mode (node or disk) for cluster */
-		if (!raw_output)
-			printf("Cluster vnode mode: ");
 		if (logs->flags & SD_CLUSTER_FLAG_DISKMODE)
-			printf("disk\n");
+			vnode_mode = "disk";
+
+		if (json_output)
+			json_object_object_add(out_obj, "vnode_mode",
+				json_object_new_string(vnode_mode));
+		else if (!raw_output)
+			printf("Cluster vnode mode: %s\n", vnode_mode);
 		else
-			printf("node\n");
-	} else
+			printf("%s\n", vnode_mode);
+	} else if (!json_output)
 		printf("\n");
 
 	if (!raw_output && rsp->data_length > 0) {
 		ct = logs[0].ctime >> 32;
-		printf("Cluster created at %s\n", ctime(&ct));
-		printf("Epoch Time           Version [Host:Port:V-Nodes,,,]");
-		printf("\n");
+		if (json_output) {
+			json_object_object_add(out_obj, "creation_time",
+				json_object_new_string(ctime(&ct)));
+		} else {
+			printf("Cluster created at %s\n", ctime(&ct));
+			printf("Epoch Time           Version [Host:Port:V-Nodes,,,]");
+			printf("\n");
+		}
 	}
 
+	log_obj = json_object_new_array();
 	nr_logs = rsp->data_length / (sizeof(struct epoch_log)
 			+ nodes_nr * sizeof(struct sd_node));
 	next_log = (char *)logs;
@@ -386,27 +446,45 @@ retry:
 		last_log = (struct epoch_log *)((char *)log->nodes
 				+ nodes_nr * sizeof(struct sd_node));
 		ti = log->time;
-		if (raw_output) {
+		if (json_output) {
+			struct json_object *epoch_obj =
+				json_object_new_object();
+			json_object_object_add(epoch_obj, "time",
+				json_object_new_string(ctime(&ti)));
+			json_object_object_add(epoch_obj, "epoch",
+				json_object_new_int(log->epoch));
+			json_object_array_add(log_obj, epoch_obj);
+		} else if (raw_output) {
 			snprintf(time_str, sizeof(time_str), "%" PRIu64, (uint64_t) ti);
 		} else {
 			localtime_r(&ti, &tm);
 			strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
 		}
 
-		printf(raw_output ? "%s %d" : "%s %6d", time_str, log->epoch);
-		printf(" [");
-		if (cluster_cmd_data.diff) {
-			if (i == nr_logs - 1)
-				printf("formated");
-			else
-				print_nodes_diff(log, last_log, logs->flags);
-		} else
-			print_nodes(log, logs->flags);
-		printf("]\n");
+		if (!json_output) {
+			printf(raw_output ? "%s %d" : "%s %6d",
+			       time_str, log->epoch);
+			printf(" [");
+			if (cluster_cmd_data.diff) {
+				if (i == nr_logs - 1)
+					printf("formated");
+				else
+					print_nodes_diff(log, last_log,
+							 logs->flags);
+			} else
+				print_nodes(log, logs->flags);
+			printf("]\n");
+		}
 		next_log = (char *)log->nodes
 				+ nodes_nr * sizeof(struct sd_node);
 	}
-
+	if (json_output) {
+		const char *o;
+		json_object_object_add(out_obj, "logs", log_obj);
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	free(logs);
 	return EXIT_SUCCESS;
 error:
@@ -888,9 +966,9 @@ static int cluster_alter_copy(int argc, char **argv)
 }
 
 static struct subcommand cluster_cmd[] = {
-	{"info", NULL, "aprhvTd", "show cluster information",
+	{"info", NULL, "ajprhvTd", "show cluster information",
 	 NULL, CMD_NEED_NODELIST, cluster_info, cluster_options},
-	{"format", NULL, "bcltaphzTVRfF", "create a Sheepdog store",
+	{"format", NULL, "bcltajphzTVRfF", "create a Sheepdog store",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_NODELIST, cluster_format, cluster_options},
 	{"shutdown", NULL, "aphT", "stop Sheepdog",
 	 NULL, CMD_NEED_ROOT, cluster_shutdown, cluster_options},
