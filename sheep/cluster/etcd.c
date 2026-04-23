@@ -2193,8 +2193,13 @@ static void *etcd_event_watcher(void *arg)
 	for (;;) {
 		ret = etcd_kv_watch(conn, DEFAULT_BASE CLUSTER_ZNODE,
 				    &ev, pthread_self());
-		if (ret && ret != -ETIME)
-			break;
+		if (ret) {
+			if (ret == -EIO || ret == -ETIME) {
+				ev.ev_revision = 0;
+				sd_debug("watch error, reset watch revision");
+			} else
+				break;
+		}
 	}
 	if (ret) {
 		sd_warn("watch error %d (%s)",
