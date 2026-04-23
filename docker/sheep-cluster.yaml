@@ -22,6 +22,7 @@ services:
       - SHEEP_ADDR=${SHEEP1_IP}
       - SHEEP_BINDADDR=${SHEEP1_IP}:7000
     command: /usr/sbin/sheep -f
+    restart: on-failure
   sheep2:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
@@ -40,6 +41,7 @@ services:
       - SHEEP_ADDR=${SHEEP2_IP}
       - SHEEP_BINDADDR=${SHEEP2_IP}:7000
     command: /usr/sbin/sheep -f
+    restart: on-failure
   sheep3:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
@@ -58,6 +60,7 @@ services:
       - SHEEP_ADDR=${SHEEP3_IP}
       - SHEEP_BINDADDR=${SHEEP3_IP}:7000
     command: /usr/sbin/sheep -f
+    restart: on-failure
   sheep4:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
@@ -76,6 +79,7 @@ services:
       - SHEEP_ADDR=${SHEEP4_IP}
       - SHEEP_BINDADDR=${SHEEP4_IP}:7000
     command: /usr/sbin/sheep -f
+    restart: on-failure
 
 volumes:
   sheep1-data:
