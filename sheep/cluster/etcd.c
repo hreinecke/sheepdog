@@ -2266,6 +2266,11 @@ static void *etcd_event_watcher(void *arg)
 				break;
 		}
 	}
+	if (ret) {
+		sd_warn("etcd_kv_watch failed, error %d (%s)\n",
+			ret, strerror(-ret));
+		sd_kill_handler(&this_node.node);
+	}
 	pthread_cleanup_pop(1);
 
 	ret = pthread_detach(pthread_self());

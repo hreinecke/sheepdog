@@ -1413,6 +1413,13 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	remove_node_from_participants(&left->nid);
 }
 
+main_fn void sd_kill_handler(const struct sd_node *killed)
+{
+	sd_debug("kill %s", node_to_str(killed));
+	sys_set_status(SD_STATUS_KILLED);
+	unregister_listening_fds();
+}
+
 static void update_node_info(struct sd_node *node)
 {
 	struct vnode_info *cur_vinfo = get_vnode_info();
