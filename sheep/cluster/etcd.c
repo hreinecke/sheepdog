@@ -157,29 +157,6 @@ static inline int etcd_node_delete(struct etcd_node *node)
 	return etcd_kv_delete(node->ctx, key);
 }
 
-static inline int etcd_node_count(struct etcd_ctx *ctx)
-{
-	char key[1024];
-	struct etcd_kv *kvs;
-	int i, num_kvs, num_nodes = 0;;
-
-	strcpy(key, DEFAULT_BASE MEMBER_ZNODE);
-	num_kvs = etcd_kv_range(ctx, key, &kvs);
-	if (num_kvs < 0)
-		return  0;
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		char *id = kv->key + strlen(key), *attr;
-
-		attr = strrchr(id, '/');
-		if (attr && !strcmp(attr, "/space"))
-			num_nodes++;
-	}
-	etcd_kv_free(kvs, num_kvs);
-	sd_debug("found %d node entries", num_kvs);
-	return num_nodes;
-}
-
 static inline int etcd_cluster_delete(struct etcd_ctx *ctx)
 {
 	char key[256];
@@ -1853,10 +1830,6 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 			free(lock);
 		}
 		sd_mutex_unlock(&etcd_lock_mutex);
-	}
-	if (etcd_node_count(ctx) == 0) {
-		sd_debug("deleting cluster status");
-		etcd_cluster_delete(ctx);
 	}
 	INIT_RB_ROOT(&sd_root);
 	sd_mutex_lock(&etcd_node_mutex);
