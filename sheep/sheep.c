@@ -1357,8 +1357,13 @@ int main(int argc, char **argv, char **envp)
 #endif
 		event_loop(1000);
 	}
-	rc = 0;
-	sd_info("shutdown");
+	if (sys_get_status() == SD_STATUS_KILLED) {
+		rc = 1;
+		sd_info("killed");
+	} else {
+		rc = 0;
+		sd_info("shutdown");
+	}
 
 cleanup_pid_file:
 	if (pid_file)

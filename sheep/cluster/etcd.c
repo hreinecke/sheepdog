@@ -656,7 +656,6 @@ static int etcd_cinfo_init(struct etcd_ctx *ctx)
 	char key[1024];
 	const char *attr;
 	int rc = 0;
-	char val[64];
 	const char *v;
 
 	attr = "status";
@@ -2241,9 +2240,11 @@ static void *etcd_event_watcher(void *arg)
 		if (ret && ret != -ETIME)
 			break;
 	}
-	if (ret && ret != -ETIME)
+	if (ret) {
 		sd_warn("%s: etcd_kv_watch failed, error %d (%s)\n",
 			__func__, ret, strerror(-ret));
+		sd_kill_handler(&this_node.node);
+	}
 	pthread_cleanup_pop(1);
 
 	ret = pthread_detach(pthread_self());
