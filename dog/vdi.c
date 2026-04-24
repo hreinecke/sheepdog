@@ -184,16 +184,11 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 		return;
 
 	ti = i->header.create_time >> 32;
-	if (json_output) {
-		localtime_r(&ti, &tm);
-		strftime(dbuf, sizeof(dbuf),
-			 "%FT%T%z", &tm);
-	} else if (raw_output) {
+	if (raw_output) {
 		snprintf(dbuf, sizeof(dbuf), "%" PRIu64, (uint64_t) ti);
 	} else {
 		localtime_r(&ti, &tm);
-		strftime(dbuf, sizeof(dbuf),
-			 "%Y-%m-%d %H:%M", &tm);
+		strftime(dbuf, sizeof(dbuf), TIME_FORMAT, &tm);
 	}
 
 	sd_inode_stat(i, &my_objs, &cow_objs);
@@ -288,12 +283,7 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 		ti = i->header.create_time >> 32;
 		localtime_r(&ti, &tm);
 
-		if (json_output)
-			strftime(buf, sizeof(buf),
-				 "%FT%T%z", &tm);
-		else
-			strftime(buf, sizeof(buf),
-				 "[%Y-%m-%d %H:%M]", &tm);
+		strftime(buf, sizeof(buf), TIME_FORMAT, &tm);
 	} else
 		pstrcpy(buf, sizeof(buf), "(you are here)");
 

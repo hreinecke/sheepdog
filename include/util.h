@@ -20,6 +20,8 @@
 #define SECTOR_SIZE (1U << 9)
 #define BLOCK_SIZE (1U << 12)
 
+#define TIME_FORMAT "%FT%T%z"
+
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 #define container_of(ptr, type, member) ({			\

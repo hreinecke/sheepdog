@@ -172,7 +172,7 @@ static int backup_epoch(uint32_t epoch)
 
 	gettimeofday(&tv, NULL);
 	localtime_r(&tv.tv_sec, &tm);
-	strftime(suffix, sizeof(suffix), "%Y-%m-%d_%H%M%S", &tm);
+	strftime(suffix, sizeof(suffix), TIME_FORMAT, &tm);
 
 	snprintf(path, sizeof(path), "%s%08u", epoch_path, epoch);
 
@@ -189,7 +189,7 @@ static int backup_store(void)
 
 	gettimeofday(&tv, NULL);
 	localtime_r(&tv.tv_sec, &tm);
-	strftime(suffix, sizeof(suffix), "%Y-%m-%d_%H%M%S", &tm);
+	strftime(suffix, sizeof(suffix), TIME_FORMAT, &tm);
 
 	ret = backup_file(config_path, suffix);
 	if (ret < 0)

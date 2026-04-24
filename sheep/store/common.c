@@ -110,7 +110,7 @@ int update_epoch_log(uint32_t epoch, struct sd_node *nodes, size_t nr_nodes)
 	int ret, len;
 	time_t t;
 	struct tm *tm;
-	char path[PATH_MAX], timestr[256];
+	char path[PATH_MAX], timestr[128];
 	const char *buf;
 
 	sd_debug("update epoch: %d, %zu", epoch, nr_nodes);
@@ -118,7 +118,7 @@ int update_epoch_log(uint32_t epoch, struct sd_node *nodes, size_t nr_nodes)
 	obj = json_object_new_object();
 	time(&t);
 	tm = localtime(&t);
-	strftime(timestr, 256, "%Y-%m-%d %H:%M:%S %z", tm);
+	strftime(timestr, sizeof(timestr), TIME_FORMAT, tm);
 	json_object_object_add(obj, "timestamp",
 			       json_object_new_string(timestr));
 	nodes_to_json(nodes, nr_nodes, obj);
@@ -158,7 +158,7 @@ static int do_epoch_log_read_json(int fd, uint32_t epoch, struct sd_node *nodes,
 			const char *timestr = json_object_get_string(val_obj);
 			struct tm tm;
 
-			strptime(timestr, "%Y-%m-%d %H:%M:%S %z", &tm);
+			strptime(timestr, TIME_FORMAT, &tm);
 			if (timestamp)
 				*timestamp = mktime(&tm);
 		} else if (!strcmp(key, "nodes")) {
