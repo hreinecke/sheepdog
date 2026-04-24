@@ -326,7 +326,7 @@ static void print_vdi_graph(uint32_t vid, const char *name, const char *tag,
 
 }
 
-static void for_each_node_print(uint64_t oid)
+static void for_each_node_print(uint64_t oid, struct json_object *obj)
 {
 	int ret;
 	struct sd_node *n;
@@ -353,10 +353,15 @@ static void for_each_node_print(uint64_t oid)
 		sheep = addr_to_str(n->nid.addr, n->nid.port);
 		switch (rsp->result) {
 		case SD_RES_SUCCESS:
-			printf("%s has the object\n", sheep);
+			if (obj)
+				json_object_array_add(obj,
+					json_object_new_string(sheep));
+			else
+				printf("%s has the object\n", sheep);
 			break;
 		case SD_RES_NO_OBJ:
-			printf("%s doesn't have the object\n", sheep);
+			if (!obj)
+				printf("%s doesn't have the object\n", sheep);
 			break;
 		case SD_RES_OLD_NODE_VER:
 		case SD_RES_NEW_NODE_VER:
@@ -1319,25 +1324,35 @@ out:
 	return ret;
 }
 
-static void print_expected_location(uint64_t oid, int copies)
+static void print_expected_location(uint64_t oid, int copies,
+				    struct json_object *obj)
 {
 	const struct sd_vnode *vnodes[SD_MAX_COPIES];
 
 	if (sd_nodes_nr < copies) {
-		printf("\nBecause number of nodes (%d) is less than "
-			"number of copies (%d), the object should be located "
-			"at every nodes.\n", sd_nodes_nr, copies);
+		if (!obj)
+			printf("\nBecause number of nodes (%d) is less than "
+			       "number of copies (%d), the object should be "
+			       "located at every nodes.\n",
+			       sd_nodes_nr, copies);
 		return;
 	}
 
-	printf("\nAccording to sheepdog algorithm, "
-		   "the object should be located at:\n");
+	if (!obj)
+		printf("\nAccording to sheepdog algorithm, "
+		       "the object should be located at:\n");
 	oid_to_vnodes(oid, &sd_vroot, copies, vnodes);
-	for (int i = 0; i < copies; i++)
-		printf((i < copies - 1) ? "%s " : "%s",
-			addr_to_str(vnodes[i]->node->nid.addr,
-				vnodes[i]->node->nid.port));
-	printf("\n");
+	for (int i = 0; i < copies; i++) {
+		const char *addr = addr_to_str(vnodes[i]->node->nid.addr,
+					       vnodes[i]->node->nid.port);
+		if (obj)
+			json_object_array_add(obj,
+				json_object_new_string(addr));
+		else
+			printf((i < copies - 1) ? "%s " : "%s", addr);
+	}
+	if (!obj)
+		printf("\n");
 }
 
 static int vdi_object_location(int argc, char **argv)
@@ -1346,6 +1361,7 @@ static int vdi_object_location(int argc, char **argv)
 	uint64_t idx = vdi_cmd_data.index, oid;
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
 	uint32_t vid, vdi_id;
+	struct json_object *vdi_obj = NULL, *location_obj = NULL;
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
@@ -1357,19 +1373,33 @@ static int vdi_object_location(int argc, char **argv)
 	}
 	vid = inode->header.vdi_id;
 
+	if (json_output) {
+		out_obj = json_object_new_object();
+		vdi_obj = json_object_new_array();
+		location_obj = json_object_new_object();
+	}
 	if (idx == ~0) {
-		printf("Looking for the inode object 0x%" PRIx32 " with %d"
-		       " nodes\n\n",
-		       vid, sd_nodes_nr);
-		for_each_node_print(vid_to_vdi_oid(vid));
+		if (json_output)
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+		else
+			printf("Looking for the inode object 0x%" PRIx32
+			       " with %d nodes\n\n", vid, sd_nodes_nr);
+		for_each_node_print(vid_to_vdi_oid(vid), vdi_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "location", vdi_obj);
+
 		print_expected_location(vid_to_vdi_oid(vid),
-					inode->header.nr_copies);
+					inode->header.nr_copies,
+					location_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "expected_location",
+					       location_obj);
 		ret = EXIT_SUCCESS;
 		goto out;
 	}
 
 	if (idx >= MAX_DATA_OBJS) {
-		printf("The offset is too large!\n");
+		sd_err("The offset is too large!");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -1377,19 +1407,36 @@ static int vdi_object_location(int argc, char **argv)
 	vdi_id = sd_inode_get_vid(inode, idx);
 	oid = vid_to_data_oid(vdi_id, idx);
 	if (vdi_id) {
-		printf("Looking for the object %016" PRIx64
-		       " (vid 0x%" PRIx32 " idx %"PRIu64
-		       ", %u copies) with %d nodes\n\n",
-			oid, vid, idx, inode->header.nr_copies, sd_nodes_nr);
+		if (json_output)
+			JSON_ADD_INT(out_obj, "vdi_id", vdi_id);
+		else
+			printf("Looking for the object %016" PRIx64
+			       " (vid 0x%" PRIx32 " idx %"PRIu64
+			       ", %u copies) with %d nodes\n\n",
+			       oid, vid, idx, inode->header.nr_copies,
+			       sd_nodes_nr);
 
-		for_each_node_print(oid);
-		print_expected_location(oid, inode->header.nr_copies);
-	} else
+		for_each_node_print(oid, vdi_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "location", vdi_obj);
+		print_expected_location(oid, inode->header.nr_copies,
+					location_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "expected_location",
+					       location_obj);
+	} else if (!json_output)
 		printf("The inode object 0x%" PRIx32 " idx"
 		       " %"PRIu64" is not allocated\n",
 		       vid, idx);
 
 out:
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	free(inode);
 	return ret;
 }
