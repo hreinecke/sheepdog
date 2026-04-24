@@ -208,12 +208,14 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 			json_object_new_int(vid));
 		json_object_object_add(vdi_obj, "vdi_size",
 			json_object_new_uint64(i->header.vdi_size));
-		json_object_object_add(vdi_obj, "snapid",
-			json_object_new_int(snapid));
+		if (vdi_is_snapshot(&i->header))
+			json_object_object_add(vdi_obj, "snapid",
+				json_object_new_int(snapid));
 		json_object_object_add(vdi_obj, "object_size",
 			json_object_new_uint64(my_objs * object_size));
-		json_object_object_add(vdi_obj, "cow_size",
-			json_object_new_uint64(cow_objs * object_size));
+		if (cow_objs)
+			json_object_object_add(vdi_obj, "cow_size",
+				json_object_new_uint64(cow_objs * object_size));
 		json_object_object_add(vdi_obj, "create_time",
 			json_object_new_string(dbuf));
 		json_object_object_add(vdi_obj, "is_snapshot",
@@ -226,7 +228,7 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 		else
 			json_object_object_add(vdi_obj, "nr_copies",
 				json_object_new_int(i->header.nr_copies));
-		if (i->header.tag)
+		if (strlen(i->header.tag))
 			json_object_object_add(vdi_obj, "tag",
 				json_object_new_string(i->header.tag));
 		json_object_object_add(vdi_obj, "block_size_shift",

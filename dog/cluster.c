@@ -327,6 +327,8 @@ static int cluster_info(int argc, char **argv)
 	log_length = sd_epoch * (sizeof(struct epoch_log)
 			+ nodes_nr * sizeof(struct sd_node));
 	logs = xmalloc(log_length);
+	if (json_output)
+		out_obj = json_object_new_object();
 
 retry:
 	sd_init_req(&hdr, SD_OP_STAT_CLUSTER);
@@ -388,14 +390,22 @@ retry:
 					json_object_new_object();
 				json_object_object_add(store_obj, "driver",
 					json_object_new_string(logs->drv_name));
-				json_object_object_add(store_obj,
-					"redundancy_policy",
-					json_object_new_string(copy));
-				json_object_object_add(out_obj, "store",
-						       store_obj);
+				if (!logs->copy_policy)
+					json_object_object_add(store_obj,
+						"nr_copies",
+						json_object_new_int(logs->nr_copies));
+				else
+					json_object_object_add(store_obj,
+						"redundancy_policy",
+						json_object_new_string(copy));
 			} else {
-				printf("%s with %s redundancy policy\n",
-				       logs->drv_name, copy);
+				if (!logs->copy_policy)
+					printf("%s with %d copies\n",
+					       logs->drv_name,
+					       logs->nr_copies);
+				else
+					printf("%s with %s redundancy policy\n",
+					       logs->drv_name, copy);
 			}
 		} else if (!json_output)
 			printf("%s\n", sd_strerror(rsp->result));
@@ -427,11 +437,14 @@ retry:
 
 	if (!raw_output && rsp->data_length > 0) {
 		ct = logs[0].ctime >> 32;
+		localtime_r(&ct, &tm);
+		strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
+
 		if (json_output) {
 			json_object_object_add(out_obj, "creation_time",
-				json_object_new_string(ctime(&ct)));
+				json_object_new_string(time_str));
 		} else {
-			printf("Cluster created at %s\n", ctime(&ct));
+			printf("Cluster created at %s\n", time_str);
 			printf("Epoch Time           Version [Host:Port:V-Nodes,,,]");
 			printf("\n");
 		}
@@ -446,22 +459,27 @@ retry:
 		last_log = (struct epoch_log *)((char *)log->nodes
 				+ nodes_nr * sizeof(struct sd_node));
 		ti = log->time;
-		if (json_output) {
-			struct json_object *epoch_obj =
-				json_object_new_object();
-			json_object_object_add(epoch_obj, "time",
-				json_object_new_string(ctime(&ti)));
-			json_object_object_add(epoch_obj, "epoch",
-				json_object_new_int(log->epoch));
-			json_object_array_add(log_obj, epoch_obj);
-		} else if (raw_output) {
+		if (raw_output) {
 			snprintf(time_str, sizeof(time_str), "%" PRIu64, (uint64_t) ti);
 		} else {
 			localtime_r(&ti, &tm);
 			strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
 		}
 
-		if (!json_output) {
+		if (json_output) {
+			struct json_object *epoch_obj =
+				json_object_new_object();
+			struct json_object *nodes_obj =
+				json_object_new_array();
+			json_object_object_add(epoch_obj, "time",
+				    json_object_new_string(time_str));
+			json_object_object_add(epoch_obj, "epoch",
+				json_object_new_int(log->epoch));
+			json_object_array_add(log_obj, epoch_obj);
+			logs_to_json(nodes_obj, log,
+				     logs->flags);
+			json_object_object_add(epoch_obj, "nodes", nodes_obj);
+		} else {
 			printf(raw_output ? "%s %d" : "%s %6d",
 			       time_str, log->epoch);
 			printf(" [");
@@ -513,12 +531,31 @@ static void print_list(void *buf, unsigned len)
 	struct snap_log *log_buf = (struct snap_log *)buf;
 	unsigned nr = len / sizeof(struct snap_log);
 
-	printf("Index\t\tTag\t\tSnapshot Time\n");
+	if (!json_output)
+		printf("Index\t\tTag\t\tSnapshot Time\n");
 	for (unsigned i = 0; i < nr; i++, log_buf++) {
 		time_t *t = (time_t *)&log_buf->time;
-		printf("%d\t\t", log_buf->idx);
-		printf("%s\t\t", log_buf->tag);
-		printf("%s", ctime(t));
+		struct tm tm;
+		char time_str[128];
+
+		localtime_r(t, &tm);
+		strftime(time_str, sizeof(time_str),
+			 "%Y-%m-%d %H:%M:%S", &tm);
+		if (json_output) {
+			struct json_object *snap_obj =
+				json_object_new_object();
+			json_object_object_add(snap_obj, "index",
+				json_object_new_int(log_buf->idx));
+			json_object_object_add(snap_obj, "tag",
+				json_object_new_string(log_buf->tag));
+			json_object_object_add(snap_obj, "time",
+				json_object_new_string(time_str));
+			json_object_array_add(out_obj, snap_obj);
+		} else {
+			printf("%d\t\t", log_buf->idx);
+			printf("%s\t\t", log_buf->tag);
+			printf("%s", time_str);
+		}
 	}
 }
 
@@ -536,8 +573,17 @@ static int list_snapshot(int argc, char **argv)
 	if (IS_ERR(buf))
 		goto out;
 
+	if (json_output)
+		out_obj = json_object_new_array();
 	print_list(buf, log_nr * sizeof(struct snap_log));
 	ret = EXIT_SUCCESS;
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 out:
 	if (ret)
 		sd_err("Fail to list snapshot.");
@@ -806,7 +852,8 @@ static int cluster_disable_recover(int argc, char **argv)
 	if (ret)
 		return EXIT_FAILURE;
 
-	printf("Cluster recovery: disable\n");
+	if (!json_output)
+		printf("Cluster recovery: disable\n");
 	return EXIT_SUCCESS;
 }
 
@@ -821,7 +868,8 @@ static int cluster_enable_recover(int argc, char **argv)
 	if (ret)
 		return EXIT_FAILURE;
 
-	printf("Cluster recovery: enable\n");
+	if (!json_output)
+		printf("Cluster recovery: enable\n");
 	return EXIT_SUCCESS;
 }
 
@@ -973,10 +1021,10 @@ static struct subcommand cluster_cmd[] = {
 	{"shutdown", NULL, "aphT", "stop Sheepdog",
 	 NULL, CMD_NEED_ROOT, cluster_shutdown, cluster_options},
 	{"snapshot", "<tag|idx> <path> [vdi1] [vdi2] ...",
-	 "aphTm", "snapshot/restore the cluster",
+	 "ajphTm", "snapshot/restore the cluster",
 	 cluster_snapshot_cmd, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 cluster_snapshot, cluster_options},
-	{"recover", NULL, "afphT",
+	{"recover", NULL, "afjphT",
 	 "See 'dog cluster recover' for more information",
 	 cluster_recover_cmd, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 cluster_recover, cluster_options},
