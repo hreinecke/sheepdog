@@ -1287,20 +1287,44 @@ static int vdi_object_map(int argc, char **argv)
 		goto out;
 	}
 
-	printf("Index       VID\n");
+	if (json_output)
+		out_obj = json_object_new_array();
+	else
+		printf("Index       VID\n");
 	if (idx != ~0) {
 		vid = sd_inode_get_vid(inode, idx);
-		printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
+		if (json_output) {
+			struct json_object *vid_obj =
+				json_object_new_object();
+			JSON_ADD_INT(vid_obj, "index", idx);
+			JSON_ADD_INT(vid_obj, "vdi_id", vid);
+			json_object_array_add(out_obj, vid_obj);
+		} else
+			printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
 	} else {
 		uint64_t max_idx = count_data_objs(&inode->header);
 
 		for (idx = 0; idx < max_idx; idx++) {
 			vid = sd_inode_get_vid(inode, idx);
-			if (vid)
+			if (!vid)
+				continue;
+			if (json_output) {
+				struct json_object *vid_obj =
+					json_object_new_object();
+				JSON_ADD_INT(vid_obj, "index", idx);
+				JSON_ADD_INT(vid_obj, "vdi_id", vid);
+				json_object_array_add(out_obj, vid_obj);
+			} else
 				printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
 		}
 	}
+	if (json_output) {
+		const char *o;
 
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 out:
 	free(inode);
 	return ret;
@@ -2925,18 +2949,12 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		} else
 			printf("%d: %"PRIx32"\n", i, inode->data_vdi_id[i]);
 	}
-	if (json_output) {
-		const char *o;
-
-		json_object_object_add(out_obj, "data_vdi", data_obj);
-		o = json_object_to_json_string(out_obj);
-		printf("%s\n", o);
-		json_object_put(out_obj);
-	} else
+	if (!json_output)
 		printf("gref:\n");
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i]) {
-			if (inode->gref[i].generation || inode->gref[i].count)
+			if (!json_output &&
+			    (inode->gref[i].generation || inode->gref[i].count))
 				printf("WARNING: index %d doesn't have data vdi"
 				       " ID but its generation and count is not"
 				       " zero(%d, %d)", i,
@@ -2944,11 +2962,21 @@ static int vdi_object_dump_inode(int argc, char **argv)
 				       inode->gref[i].count);
 			continue;
 		}
-
-		printf("%d: %"PRIx32", %d, %d\n", i, inode->data_vdi_id[i],
-		       inode->gref[i].generation, inode->gref[i].count);
+		if (!json_output)
+			printf("%d: %"PRIx32", %d, %d\n", i,
+			       inode->data_vdi_id[i],
+			       inode->gref[i].generation,
+			       inode->gref[i].count);
 	}
 
+	if (json_output) {
+		const char *o;
+
+		json_object_object_add(out_obj, "data_vdi", data_obj);
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
