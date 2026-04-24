@@ -438,7 +438,7 @@ retry:
 	if (!raw_output && rsp->data_length > 0) {
 		ct = logs[0].ctime >> 32;
 		localtime_r(&ct, &tm);
-		strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
+		strftime(time_str, sizeof(time_str), TIME_FORMAT, &tm);
 
 		if (json_output) {
 			json_object_object_add(out_obj, "creation_time",
@@ -463,7 +463,7 @@ retry:
 			snprintf(time_str, sizeof(time_str), "%" PRIu64, (uint64_t) ti);
 		} else {
 			localtime_r(&ti, &tm);
-			strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
+			strftime(time_str, sizeof(time_str), TIME_FORMAT, &tm);
 		}
 
 		if (json_output) {
@@ -539,8 +539,7 @@ static void print_list(void *buf, unsigned len)
 		char time_str[128];
 
 		localtime_r(t, &tm);
-		strftime(time_str, sizeof(time_str),
-			 "%Y-%m-%d %H:%M:%S", &tm);
+		strftime(time_str, sizeof(time_str), TIME_FORMAT, &tm);
 		if (json_output) {
 			struct json_object *snap_obj =
 				json_object_new_object();
