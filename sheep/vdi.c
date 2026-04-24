@@ -1098,8 +1098,7 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	new->header.parent_vdi_id = iocb->base_vid;
 	if (data_vdi_id)
 		sd_inode_copy_vdis(sheep_bnode_writer, sheep_bnode_reader,
-				   data_vdi_id,
-				   sd_store_policy_is_hyper(&new->header),
+				   data_vdi_id, iocb->store_policy,
 				   iocb->nr_copies, iocb->copy_policy, new);
 	else if (sd_store_policy_is_hyper(&new->header))
 		sd_inode_init(new->data_vdi_id, 1);
