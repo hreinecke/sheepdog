@@ -332,7 +332,8 @@ static void for_each_node_print(uint64_t oid, struct json_object *obj)
 		if (ret < 0)
 			continue;
 		if (rsp->result) {
-			sd_err("%s", sd_strerror(rsp->result));
+			if (!obj)
+				sd_err("%s", sd_strerror(rsp->result));
 			continue;
 		}
 
@@ -1357,7 +1358,7 @@ static int vdi_object_location(int argc, char **argv)
 	if (json_output) {
 		out_obj = json_object_new_object();
 		vdi_obj = json_object_new_array();
-		location_obj = json_object_new_object();
+		location_obj = json_object_new_array();
 	}
 	if (idx == ~0) {
 		if (json_output)
