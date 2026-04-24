@@ -436,7 +436,7 @@ extern int sd_inode_write_vid(struct sd_inode *inode,
 			      int flags, bool create, bool direct);
 extern uint32_t sd_inode_get_meta_size(struct sd_inode *inode, size_t size);
 extern void sd_inode_copy_vdis(write_node_fn writer, read_node_fn reader,
-			       uint32_t *data_vdi_id, bool is_hyper_policy,
+			       uint32_t *data_vdi_id, uint8_t store_policy,
 			       uint8_t nr_copies, uint8_t copy_policy,
 			       struct sd_inode *newi);
 
