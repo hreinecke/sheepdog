@@ -206,37 +206,33 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	if (json_output) {
 		struct json_object *vdi_obj =
 			json_object_new_object();
-		json_object_object_add(vdi_obj, "name",
-			json_object_new_string(name));
-		json_object_object_add(vdi_obj, "vid",
-			json_object_new_int(vid));
-		json_object_object_add(vdi_obj, "vdi_size",
-			json_object_new_uint64(i->header.vdi_size));
+
+		JSON_ADD_STRING(vdi_obj, "name", name);
+		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
+		JSON_ADD_UINT64(vdi_obj, "vdi_size",
+				i->header.vdi_size);
 		if (vdi_is_snapshot(&i->header))
-			json_object_object_add(vdi_obj, "snapid",
-				json_object_new_int(snapid));
-		json_object_object_add(vdi_obj, "object_size",
-			json_object_new_uint64(my_objs * object_size));
+			JSON_ADD_INT(vdi_obj, "snapid", snapid);
+		JSON_ADD_UINT64(vdi_obj, "object_size",
+				my_objs * object_size);
 		if (cow_objs)
-			json_object_object_add(vdi_obj, "cow_size",
-				json_object_new_uint64(cow_objs * object_size));
-		json_object_object_add(vdi_obj, "create_time",
-			json_object_new_string(dbuf));
-		json_object_object_add(vdi_obj, "is_snapshot",
-			json_object_new_boolean(vdi_is_snapshot(&i->header)));
-		json_object_object_add(vdi_obj, "is_clone",
-			json_object_new_boolean(is_clone));
+			JSON_ADD_UINT64(vdi_obj, "cow_size",
+					cow_objs * object_size);
+		JSON_ADD_STRING(vdi_obj, "create_time", dbuf);
+		JSON_ADD_BOOL(vdi_obj, "is_snapshot",
+				 vdi_is_snapshot(&i->header));
+		JSON_ADD_BOOL(vdi_obj, "is_clone", is_clone);
 		if (i->header.copy_policy > 0)
-			json_object_object_add(vdi_obj, "redundancy_scheme",
-				json_object_new_string(redundancy));
+			JSON_ADD_STRING(vdi_obj, "redundancy_scheme",
+					redundancy);
 		else
-			json_object_object_add(vdi_obj, "nr_copies",
-				json_object_new_int(i->header.nr_copies));
+			JSON_ADD_INT(vdi_obj, "nr_copies",
+				     i->header.nr_copies);
 		if (strlen(i->header.tag))
-			json_object_object_add(vdi_obj, "tag",
-				json_object_new_string(i->header.tag));
-		json_object_object_add(vdi_obj, "block_size_shift",
-			json_object_new_int(i->header.block_size_shift));
+			JSON_ADD_STRING(vdi_obj, "tag",
+					i->header.tag);
+		JSON_ADD_INT(vdi_obj, "block_size_shift",
+			     i->header.block_size_shift);
 		json_object_array_add(out_obj, vdi_obj);
 	} else if (raw_output) {
 		printf("%c ", vdi_is_snapshot(&i->header) ?
@@ -752,8 +748,7 @@ out:
 			const char *o;
 
 			out_obj = json_object_new_object();
-			json_object_object_add(out_obj, "vid",
-					       json_object_new_int(vid));
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
@@ -923,10 +918,8 @@ static int vdi_snapshot(int argc, char **argv)
 			const char *o;
 
 			out_obj = json_object_new_object();
-			json_object_object_add(out_obj, "vid",
-					       json_object_new_int(vid));
-			json_object_object_add(out_obj, "new_vid",
-					       json_object_new_int(new_vid));
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			JSON_ADD_INT(out_obj, "new_vdi_id", new_vid);
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
@@ -1043,8 +1036,7 @@ out:
 			const char *o;
 
 			out_obj = json_object_new_object();
-			json_object_object_add(out_obj, "vid",
-					       json_object_new_int(new_vid));
+			JSON_ADD_INT(out_obj, "vdi_id", new_vid);
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
@@ -1274,8 +1266,7 @@ static int vdi_rollback(int argc, char **argv)
 			const char *o;
 
 			out_obj = json_object_new_object();
-			json_object_object_add(out_obj, "vid",
-					       json_object_new_int(new_vid));
+			JSON_ADD_INT(out_obj, "vdi_id", new_vid);
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
