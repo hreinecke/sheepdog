@@ -201,9 +201,21 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	if (json_output) {
 		struct json_object *vdi_obj =
 			json_object_new_object();
+		uuid_t uuid;
+		char uuid_str[UUID_STR_LEN];
 
 		JSON_ADD_STRING(vdi_obj, "name", name);
 		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
+		if (!SD_INODE_USE_UUID(&i->header)) {
+			memcpy((char *)uuid, &i->header.vdi_id, 4);
+			memcpy((char *)uuid + 4, &i->header.parent_vdi_id, 4);
+			memcpy((char *)uuid + 8, &i->header.create_time, 8);
+		} else {
+			memcpy((char *)uuid, &i->header.vm_clock_nsec, 8);
+			memcpy((char *)(uuid + 8), &i->header.vm_state_size, 8);
+		}
+		uuid_unparse(uuid, uuid_str);
+		JSON_ADD_STRING(vdi_obj, "uuid", uuid_str);
 		JSON_ADD_UINT64(vdi_obj, "vdi_size",
 				i->header.vdi_size);
 		if (vdi_is_snapshot(&i->header))
