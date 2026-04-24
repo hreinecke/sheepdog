@@ -353,7 +353,7 @@ retry:
 		if (rsp->result == SD_RES_SUCCESS) {
 			status = "running";
 			json_object_object_add(out_obj, "auto_recovery",
-				json_object_new_string(auto_recovery));
+				json_object_new_boolean(!logs->disable_recovery));
 		} else {
 			status = sd_strerror(rsp->result);
 		}
@@ -369,7 +369,7 @@ retry:
 			printf("%s\n", sd_strerror(rsp->result));
 	}
 
-	if (verbose) {
+	if (verbose || json_output) {
 		/* show cluster backend store */
 		if (!raw_output && !json_output)
 			printf("Cluster store: ");

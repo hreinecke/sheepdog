@@ -184,7 +184,11 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 		return;
 
 	ti = i->header.create_time >> 32;
-	if (raw_output) {
+	if (json_output) {
+		localtime_r(&ti, &tm);
+		strftime(dbuf, sizeof(dbuf),
+			 "%FT%T%z", &tm);
+	} else if (raw_output) {
 		snprintf(dbuf, sizeof(dbuf), "%" PRIu64, (uint64_t) ti);
 	} else {
 		localtime_r(&ti, &tm);
@@ -276,8 +280,12 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 		ti = i->header.create_time >> 32;
 		localtime_r(&ti, &tm);
 
-		strftime(buf, sizeof(buf),
-			 "[%Y-%m-%d %H:%M]", &tm);
+		if (json_output)
+			strftime(buf, sizeof(buf),
+				 "%FT%T%z", &tm);
+		else
+			strftime(buf, sizeof(buf),
+				 "[%Y-%m-%d %H:%M]", &tm);
 	} else
 		pstrcpy(buf, sizeof(buf), "(you are here)");
 
@@ -2792,6 +2800,9 @@ static int vdi_object_dump_inode(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	struct sd_inode *inode = xzalloc(sizeof(*inode));
 	struct sd_inode_header *hdr = &inode->header;
+	struct json_object *data_obj = NULL;
+	uuid_t uuid;
+	char uuid_str[UUID_STR_LEN];
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
@@ -2802,42 +2813,98 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	printf("name: %s\n", hdr->name);
-	printf("tag: %s\n", hdr->tag);
-	printf("create_time: %"PRIx64"\n", hdr->create_time);
-	printf("snap_ctime: %"PRIx64"\n", hdr->snap_ctime);
-	printf("vdi_size: %"PRIu64"\n", hdr->vdi_size);
-	if (!SD_INODE_USE_UUID(hdr)) {
-		printf("vm_clock_nsec: %"PRIx64"\n", hdr->vm_clock_nsec);
-		printf("vm_state_size: %"PRIu64"\n", hdr->vm_state_size);
+	if (json_output) {
+		out_obj = json_object_new_object();
+		JSON_ADD_STRING(out_obj, "name", hdr->name);
+		if (strlen(hdr->tag))
+			JSON_ADD_STRING(out_obj, "tag", hdr->tag);
+		JSON_ADD_UINT64(out_obj, "create_time", hdr->create_time);
+		if (hdr->snap_ctime) {
+			JSON_ADD_UINT64(out_obj, "snapshot_create_time",
+					hdr->snap_ctime);
+		}
+		JSON_ADD_UINT64(out_obj, "vdi_size", hdr->vdi_size);
 	} else {
-		uuid_t uuid;
-		char uuid_str[UUID_STR_LEN];
-
+		printf("name: %s\n", hdr->name);
+		printf("tag: %s\n", hdr->tag);
+		printf("create_time: %"PRIx64"\n", hdr->create_time);
+		printf("snap_ctime: %"PRIx64"\n", hdr->snap_ctime);
+		printf("vdi_size: %"PRIu64"\n", hdr->vdi_size);
+	}
+	if (!SD_INODE_USE_UUID(hdr)) {
+		memcpy((char *)uuid, &hdr->vdi_id, 4);
+		memcpy((char *)uuid + 4, &hdr->parent_vdi_id, 4);
+		memcpy((char *)uuid + 8, &hdr->create_time, 8);
+	} else {
 		memcpy((char *)uuid, &hdr->vm_clock_nsec, 8);
 		memcpy((char *)(uuid + 8), &hdr->vm_state_size, 8);
-		uuid_unparse(uuid, uuid_str);
-		printf("uuid: %s\n", uuid_str);
 	}
-	printf("copy_policy: %d\n", hdr->copy_policy);
-	printf("store_policy: %s\n",
-	       sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
-	printf("nr_copies: %d\n", hdr->nr_copies);
-	printf("block_size_shift: %d\n", hdr->block_size_shift);
-	printf("snap_id: %"PRIu32"\n", hdr->snap_id);
-	printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
-	printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
-	printf("btree_counter: %"PRIu32"\n", inode->btree_counter);
+	uuid_unparse(uuid, uuid_str);
+	if (json_output)
+		JSON_ADD_STRING(out_obj, "uuid", uuid_str);
+	else
+		printf("uuid: %s\n", uuid_str);
 
-	printf("data_vdi_id:\n");
+	if (json_output) {
+		JSON_ADD_INT(out_obj, "copy_policy",
+			     hdr->copy_policy);
+		JSON_ADD_STRING(out_obj, "store_policy",
+			sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
+		JSON_ADD_INT(out_obj, "nr_copies",
+			     hdr->nr_copies);
+		JSON_ADD_INT(out_obj, "block_size_shift",
+			     hdr->block_size_shift);
+		if (hdr->snap_id)
+			JSON_ADD_INT(out_obj, "snap_id",
+				     hdr->snap_id);
+		JSON_ADD_INT(out_obj, "vdi_id",
+			     hdr->vdi_id);
+		JSON_ADD_INT(out_obj, "parent_vdi_id",
+			     hdr->parent_vdi_id);
+		JSON_ADD_INT(out_obj, "btree_counter",
+			     inode->btree_counter);
+		data_obj = json_object_new_array();
+	} else {
+		printf("copy_policy: %d\n", hdr->copy_policy);
+		printf("store_policy: %s\n",
+		       sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
+		printf("nr_copies: %d\n", hdr->nr_copies);
+		printf("block_size_shift: %d\n", hdr->block_size_shift);
+		printf("snap_id: %"PRIu32"\n", hdr->snap_id);
+		printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
+		printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
+		printf("btree_counter: %"PRIu32"\n", inode->btree_counter);
+		printf("data_vdi_id:\n");
+	}
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i])
 			continue;
-
-		printf("%d: %"PRIx32"\n", i, inode->data_vdi_id[i]);
+		if (json_output) {
+			struct json_object *data_vdi_obj =
+				json_object_new_object();
+			struct json_object *gref_obj =
+				json_object_new_object();
+			JSON_ADD_INT(data_vdi_obj, "data_vdi_id",
+				     inode->data_vdi_id[i]);
+			JSON_ADD_INT(gref_obj, "generation",
+				     inode->gref[i].generation);
+			JSON_ADD_INT(gref_obj, "count",
+				     inode->gref[i].count);
+			json_object_object_add(data_vdi_obj, "gref",
+					       gref_obj);
+			json_object_array_add(data_obj, data_vdi_obj);
+		} else
+			printf("%d: %"PRIx32"\n", i, inode->data_vdi_id[i]);
 	}
+	if (json_output) {
+		const char *o;
 
-	printf("gref:\n");
+		json_object_object_add(out_obj, "data_vdi", data_obj);
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	} else
+		printf("gref:\n");
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i]) {
 			if (inode->gref[i].generation || inode->gref[i].count)
@@ -3130,7 +3197,7 @@ static struct subcommand vdi_cmd[] = {
 	 NULL, 0, vdi_tree, vdi_options},
 	{"graph", NULL, "aphT", "show images in Graphviz dot format",
 	 NULL, 0, vdi_graph, vdi_options},
-	{"object", "<vdiname>", "isaphT",
+	{"object", "<vdiname>", "isajphT",
 	 "show object information in the image",
 	 vdi_object_cmd, CMD_NEED_ARG,
 	 vdi_object, vdi_options},
