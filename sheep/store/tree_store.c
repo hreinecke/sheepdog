@@ -184,6 +184,7 @@ int tree_write(uint64_t oid, const struct siocb *iocb)
 		ret = err_to_sderr(path, oid, errno);
 		goto out;
 	}
+	ret = SD_RES_SUCCESS;
 out:
 	close(fd);
 	free(path);

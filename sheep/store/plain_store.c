@@ -161,6 +161,7 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 		ret = err_to_sderr(path, oid, errno);
 		goto out_close;
 	}
+	ret = SD_RES_SUCCESS;
 out_close:
 	close(fd);
 out_free:
