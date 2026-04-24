@@ -653,6 +653,9 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 	} else
 		sd_inode_index_walk(i, fill_cb, &i);
 
+	if (SD_INODE_USE_UUID(&i->header))
+		return;
+
 	/* fill vmstate object id */
 	nr_vmstate_object = DIV_ROUND_UP(i->header.vm_state_size, object_size);
 	for (uint32_t idx = 0; idx < nr_vmstate_object; idx++) {
