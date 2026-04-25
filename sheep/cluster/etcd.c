@@ -74,6 +74,7 @@ struct etcd_node {
 	struct list_node list;
 	struct rb_node rb;
 	struct etcd_ctx *ctx;
+	unsigned int idx;
 	char node_id[MAX_NODE_STR_LEN];
 	struct sd_node node;
 	enum etcd_status_type status;
@@ -881,7 +882,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	char base[MAX_NODE_STR_LEN];
 	struct etcd_kv *kvs;
 	int node_size = sizeof(*node);
-	int i, rc;
+	int i, rc, node_idx = 1;
 
 	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
 	num_kvs = etcd_kv_range(ctx, base, &kvs);
@@ -898,10 +899,18 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		if (!node) {
 			node = xzalloc(node_size);
 			node->ctx = ctx;
+			node->idx = node_idx++;
 			strcpy(node->node_id, node_key.node_id);
+			/* Retain the ordering imposed by etcd */
 			if (rb_insert(root, node, rb, etcd_node_cmp)) {
-				sd_err("etcd node '%s' hash collision",
-				       node_key.node_id);
+				sd_err("etcd node %u '%s' hash collision",
+				       node->idx, node->node_id);
+			}
+		} else {
+			if (node->idx >= node_idx) {
+				sd_info("etcd node %u '%s' updating index",
+					node->idx, node->node_id);
+				node_idx = node->idx + 1;
 			}
 		}
 		rc = etcd_kv_to_node(kv, node);
@@ -912,8 +921,9 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		}
 	}
 	rb_for_each_entry(node, root, rb) {
-		sd_debug("etcd node '%s', status '%s'",
-			 node->node_id, etcd_status_names[node->status]);
+		sd_debug("etcd node idx %u '%s', status '%s'",
+			 node->idx, node->node_id,
+			 etcd_status_names[node->status]);
 		nr_nodes++;
 	}
 	sd_debug("%zu nodes", nr_nodes);
@@ -926,19 +936,26 @@ static inline int etcd_node_is_master(struct etcd_ctx *ctx,
 				      struct etcd_node *node)
 {
 	struct etcd_node *master = NULL, *fallback = NULL, *tmp;
-	int num_nodes = 0;;
+	unsigned int master_idx = 0, fallback_idx = 0;
+	int num_nodes = 0;
 	bool is_master = false;
 
 	rb_for_each_entry(tmp, root, rb) {
-		sd_debug("id %s master %s fallback %s status %s",
-			 tmp->node_id,
+		sd_debug("id %s status %s master %u '%s' fallback %u '%s'",
+			 tmp->node_id, etcd_status_names[tmp->status],
+			 master_idx,
 			 master ? master->node_id : "<none>",
-			 fallback ? fallback->node_id : "<none>",
-			 etcd_status_names[tmp->status]);
-		if (!fallback && master)
-			fallback = tmp;
-		if (!master)
+			 fallback_idx,
+			 fallback ? fallback->node_id : "<none>");
+		if (master) {
+			if (fallback_idx < tmp->idx) {
+				fallback_idx = tmp->idx;
+				fallback = tmp;
+			}
+		} else if (master_idx < tmp->idx) {
+			master_idx = tmp->idx;
 			master = tmp;
+		}
 		num_nodes++;
 	}
 	if (!num_nodes)
