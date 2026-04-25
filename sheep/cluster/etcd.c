@@ -79,6 +79,8 @@ struct etcd_node {
 	struct sd_node node;
 	enum etcd_status_type status;
 	bool callbacked;
+	bool is_master;
+	bool is_fallback;
 };
 
 struct etcd_cluster_info {
@@ -882,7 +884,8 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	char base[MAX_NODE_STR_LEN];
 	struct etcd_kv *kvs;
 	int node_size = sizeof(*node);
-	int i, rc, node_idx = 1;
+	unsigned int node_idx = 0, master_idx = 0;
+	int i, rc;
 
 	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
 	num_kvs = etcd_kv_range(ctx, base, &kvs);
@@ -900,18 +903,17 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 			node = xzalloc(node_size);
 			node->ctx = ctx;
 			node->idx = node_idx++;
+			master_idx = node->idx;
 			strcpy(node->node_id, node_key.node_id);
-			/* Retain the ordering imposed by etcd */
 			if (rb_insert(root, node, rb, etcd_node_cmp)) {
 				sd_err("etcd node %u '%s' hash collision",
 				       node->idx, node->node_id);
 			}
-		} else {
-			if (node->idx >= node_idx) {
-				sd_info("etcd node %u '%s' updating index",
-					node->idx, node->node_id);
-				node_idx = node->idx + 1;
-			}
+		} else if (node->idx >= node_idx) {
+			sd_info("etcd node %u '%s' updating index",
+				node->idx, node->node_id);
+			master_idx = node->idx;
+			node_idx = node->idx + 1;
 		}
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
@@ -921,9 +923,21 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		}
 	}
 	rb_for_each_entry(node, root, rb) {
-		sd_debug("etcd node idx %u '%s', status '%s'",
+		if (node->idx == master_idx) {
+			node->is_master = true;
+			node->is_fallback = false;
+		} else if (node->idx == master_idx - 1) {
+			node->is_master = false;
+			node->is_fallback = true;
+		} else {
+			node->is_master = false;
+			node->is_fallback = false;
+		}
+		sd_debug("etcd node idx %u '%s', status '%s'%s%s",
 			 node->idx, node->node_id,
-			 etcd_status_names[node->status]);
+			 etcd_status_names[node->status],
+			 node->is_master ? " master" : "",
+			 node->is_fallback ? " fallback" : "");
 		nr_nodes++;
 	}
 	sd_debug("%zu nodes", nr_nodes);
@@ -936,32 +950,26 @@ static inline int etcd_node_is_master(struct etcd_ctx *ctx,
 				      struct etcd_node *node)
 {
 	struct etcd_node *master = NULL, *fallback = NULL, *tmp;
-	unsigned int master_idx = 0, fallback_idx = 0;
 	int num_nodes = 0;
 	bool is_master = false;
 
 	rb_for_each_entry(tmp, root, rb) {
-		sd_debug("id %s status %s master %u '%s' fallback %u '%s'",
-			 tmp->node_id, etcd_status_names[tmp->status],
-			 master_idx,
-			 master ? master->node_id : "<none>",
-			 fallback_idx,
-			 fallback ? fallback->node_id : "<none>");
-		if (master) {
-			if (fallback_idx < tmp->idx) {
-				fallback_idx = tmp->idx;
-				fallback = tmp;
-			}
-		} else if (master_idx < tmp->idx) {
-			master_idx = tmp->idx;
+		if (tmp->is_master)
 			master = tmp;
-		}
+		if (tmp->is_fallback)
+			fallback = tmp;
+		sd_debug("id %u '%s' status %s master %u '%s' fallback %u '%s'",
+			 tmp->idx, tmp->node_id, etcd_status_names[tmp->status],
+			 master ? master->idx : 0,
+			 master ? master->node_id : "<none>",
+			 fallback ? fallback->idx : 0,
+			 fallback ? fallback->node_id : "<none>");
 		num_nodes++;
 	}
 	if (!num_nodes)
 		is_master = true;
 	else if (master) {
-		/* Check if this node is the master */
+		/* Check if the local node is the master */
 		is_master = !etcd_node_cmp(master, &this_node);
 		/* Delegate requests for the local node to the fallback */
 		if (is_master && !etcd_node_cmp(master, node) && fallback)
