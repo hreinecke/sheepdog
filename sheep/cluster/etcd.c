@@ -461,6 +461,42 @@ static inline int etcd_node_download(struct etcd_node *node)
 	return num_kvs;
 }
 
+static int etcd_wait_for_node(struct etcd_ctx *ctx)
+{
+	enum etcd_status_type cur_status;
+	char cur_val[16], *key;
+	int rc, tmo = this_ctx->ttl;
+
+	rc = asprintf(&key, DEFAULT_BASE MEMBER_ZNODE "%s/status",
+		       this_node.node_id);
+	if (rc < 0)
+		return -ENOMEM;
+retry:
+	rc = etcd_kv_get(ctx, key, cur_val, sizeof(cur_val));
+	if (rc < 0) {
+		rc = 0;
+		goto out;
+	}
+	cur_status = etcd_status_from_string(cur_val);
+	if (cur_status == STATUS_LEAVE) {
+		sd_info("node %s in status '%s', removing",
+			this_node.node_id, cur_val);
+		etcd_node_delete(&this_node);
+		rc = 0;
+		goto out;
+	}
+	rc = -EBUSY;
+	if (tmo-- > 0) {
+		sd_warn("node %s in status '%s', retrying",
+			this_node.node_id, cur_val);
+		sleep(1);
+		goto retry;
+	}
+out:
+	free(key);
+	return rc;
+}
+
 static int etcd_node_status(struct etcd_ctx *ctx, enum etcd_status_type status)
 {
 	const char *old_val, *new_val;
@@ -1798,7 +1834,7 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 		return;
 	}
 	rb_init_node(&node->rb);
-	if (!strcmp(node->node_id, this_node.node_id)) {
+	if (!etcd_node_cmp(&leaving, &this_node)) {
 		struct etcd_lock_entry *lock;
 
 		sd_debug("deleting node '%s'", this_node.node_id);
@@ -1823,6 +1859,7 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	}
 	sd_mutex_unlock(&etcd_node_mutex);
 	sd_leave_handler(&node->node, &sd_root, nr_nodes);
+	free(node);
 }
 
 static void etcd_handle_accept(struct etcd_ctx *ctx,
@@ -2338,6 +2375,12 @@ static int etcd_cluster_init(const char *option)
 	this_node.ctx = this_ctx;
 	this_node.status = STATUS_INIT;
 	strcpy(this_node.node_id, this_ctx->node_name);
+
+	ret = etcd_wait_for_node(this_ctx);
+	if (ret < 0) {
+		sd_err("node busy, not starting");
+		goto out;
+	}
 
 	etcd_cinfo_init(this_ctx);
 
