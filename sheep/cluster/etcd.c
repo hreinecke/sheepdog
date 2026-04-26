@@ -884,7 +884,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	char base[MAX_NODE_STR_LEN];
 	struct etcd_kv *kvs;
 	int node_size = sizeof(*node);
-	unsigned int node_idx = 0, master_idx = 0;
+	unsigned int node_idx = 0, master_idx = (unsigned int)-1;
 	int i, rc;
 
 	strcpy(base, DEFAULT_BASE MEMBER_ZNODE);
@@ -903,7 +903,6 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 			node = xzalloc(node_size);
 			node->ctx = ctx;
 			node->idx = node_idx++;
-			master_idx = node->idx;
 			strcpy(node->node_id, node_key.node_id);
 			if (rb_insert(root, node, rb, etcd_node_cmp)) {
 				sd_err("etcd node %u '%s' hash collision",
@@ -912,9 +911,10 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		} else if (node->idx >= node_idx) {
 			sd_info("etcd node %u '%s' updating index",
 				node->idx, node->node_id);
-			master_idx = node->idx;
 			node_idx = node->idx + 1;
 		}
+		if (node->idx < master_idx)
+			master_idx = node->idx;
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
 			sd_err("failed to load node attr '%s'", key);
@@ -926,7 +926,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 		if (node->idx == master_idx) {
 			node->is_master = true;
 			node->is_fallback = false;
-		} else if (node->idx == master_idx - 1) {
+		} else if (node->idx == master_idx + 1) {
 			node->is_master = false;
 			node->is_fallback = true;
 		} else {
@@ -956,7 +956,7 @@ static inline int etcd_node_is_master(struct etcd_ctx *ctx,
 	rb_for_each_entry(tmp, root, rb) {
 		if (tmp->is_master)
 			master = tmp;
-		if (tmp->is_fallback)
+		else if (tmp->is_fallback)
 			fallback = tmp;
 		sd_debug("id %u '%s' status %s master %u '%s' fallback %u '%s'",
 			 tmp->idx, tmp->node_id, etcd_status_names[tmp->status],
@@ -2333,6 +2333,8 @@ static int etcd_join(const struct sd_node *myself,
 	etcd_cinfo_to_json(cinfo, cinfo_obj, &this_node);
 	ret = etcd_update_event(this_ctx, EVENT_JOIN, cinfo_obj);
 	if (ret < 0) {
+		sd_err("node '%s' failed to update 'JOIN' event",
+		       this_node.node_id);
 		etcd_node_delete(&this_node);
 		memset(&this_node.node, 0, sizeof(this_node.node));
 	}
