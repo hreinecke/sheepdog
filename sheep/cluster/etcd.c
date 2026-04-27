@@ -2020,7 +2020,7 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 		block->callbacked = false;
 	}
 	sd_mutex_unlock(&etcd_block_mutex);
-	if (block)
+	if (block && !etcd_node_cmp(block, &this_node))
 		sd_notify_handler(&block->node, (void *)msg, msg_len);
 
 	free(msg);
