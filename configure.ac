@@ -27,7 +27,7 @@ AC_INIT([sheepdog], m4_default(git_version, sheepdog_version),
 AM_INIT_AUTOMAKE([-Wno-portability, subdir-objects])
 
 AC_CONFIG_SRCDIR([dog/dog.c])
-AC_CONFIG_HEADER([include/config.h])
+AC_CONFIG_HEADERS([include/config.h])
 
 AC_CANONICAL_HOST
 
@@ -79,14 +79,13 @@ if ! ${MAKE-make} --version /cannot/make/this >/dev/null 2>&1; then
 fi
 
 AC_PROG_CC
-AC_PROG_LIBTOOL
 AM_PROG_AS
 AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
-AC_CHECK_PROGS([GROFF], [groff])
 
 AM_MISSING_PROG(AUTOM4TE, autom4te, $missing_dir)
+AC_CONFIG_MACRO_DIRS([m4])
 
 # Check for programs
 if [[[ $host = *x86_64* ]]]; then
@@ -104,12 +103,10 @@ AC_CHECK_LIB([rt], [clock_gettime], , AC_MSG_ERROR(librt not found))
 # Checks for header files.
 AC_FUNC_ALLOCA
 AC_HEADER_DIRENT
-AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h stdint.h \
-		  stdlib.h string.h sys/ioctl.h sys/param.h sys/socket.h \
-		  sys/time.h syslog.h unistd.h sys/types.h getopt.h malloc.h \
-		  sys/sockio.h utmpx.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h netinet/in.h \
+		  sys/ioctl.h sys/param.h sys/socket.h \
+		  syslog.h unistd.h sys/types.h getopt.h malloc.h ])
 
 AC_CHECK_HEADERS([urcu.h urcu/uatomic.h],,
 	AC_MSG_ERROR(liburcu 0.6.0 or later is required))
@@ -125,7 +122,6 @@ AC_C_CONST
 AC_TYPE_UID_T
 AC_C_INLINE
 AC_TYPE_SIZE_T
-AC_HEADER_TIME
 AC_C_VOLATILE
 
 AC_CHECK_SIZEOF(short)
@@ -156,10 +152,9 @@ AC_FUNC_MEMCMP
 AC_FUNC_REALLOC
 AC_FUNC_SELECT_ARGTYPES
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([alarm alphasort atexit bzero dup2 endgrent endpwent fcntl \
-		getcwd getpeerucred getpeereid gettimeofday inet_ntoa memmove \
-		memset mkdir scandir select socket strcasecmp strchr strdup \
-		strerror strrchr strspn strstr fallocate])
+AC_CHECK_FUNCS([atexit dup2 fcntl gettimeofday inet_ntop memmove \
+		memset mkdir select socket strcasecmp strchr strdup \
+		strerror strrchr strstr fallocate])
 
 AC_CONFIG_FILES([Makefile
 		dog/Makefile
