@@ -1,0 +1,97 @@
+name: sheepdog-etcd
+services:
+  sheep:
+    image: sheepdog
+    build: ../
+    command: echo sheep container ready
+  sheep1:
+    image: sheepdog
+    hostname: ${SHEEP1_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP1_IP}
+      sheep-br:
+    volumes:
+      - sheep1-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7000:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP1_IP}
+      - SHEEP_BINDADDR=${SHEEP1_IP}:7000
+    command: /usr/sbin/sheep -f
+    restart: on-failure
+  sheep2:
+    image: sheepdog
+    hostname: ${SHEEP2_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP2_IP}
+      sheep-br:
+    volumes:
+      - sheep2-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7001:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP2_IP}
+      - SHEEP_BINDADDR=${SHEEP2_IP}:7000
+    command: /usr/sbin/sheep -f
+    restart: on-failure
+  sheep3:
+    image: sheepdog
+    hostname: ${SHEEP3_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP3_IP}
+      sheep-br:
+    volumes:
+      - sheep3-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7002:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP3_IP}
+      - SHEEP_BINDADDR=${SHEEP3_IP}:7000
+    command: /usr/sbin/sheep -f
+    restart: on-failure
+  sheep4:
+    image: sheepdog
+    hostname: ${SHEEP4_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP4_IP}
+      sheep-br:
+    volumes:
+      - sheep4-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7003:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP4_IP}
+      - SHEEP_BINDADDR=${SHEEP4_IP}:7000
+    command: /usr/sbin/sheep -f
+    restart: on-failure
+
+volumes:
+  sheep1-data:
+  sheep2-data:
+  sheep3-data:
+  sheep4-data:
+
+networks:
+  etcd-br:
+  sheep-br:
+    driver: bridge

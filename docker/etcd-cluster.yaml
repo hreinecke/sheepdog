@@ -1,0 +1,101 @@
+name: sheepdog-etcd
+services:
+  etcd1:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE1_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE1_IP}
+    volumes:
+      - etcd1-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE1_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE1_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE1_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE1_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE1_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  etcd2:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE2_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE2_IP}
+    volumes:
+      - etcd2-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE2_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE2_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE2_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE2_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE2_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  etcd3:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE3_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE3_IP}
+    volumes:
+      - etcd3-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE3_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE3_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE3_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE3_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE3_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+  etcd4:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE4_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE4_IP}
+    volumes:
+      - etcd4-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE4_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE4_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE4_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE4_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE4_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380
+
+volumes:
+  etcd1-data:
+  etcd2-data:
+  etcd3-data:
+  etcd4-data:
+
+networks:
+  etcd-br:
+    driver: bridge
+    attachable: true
+    internal: true
+    ipam:
+      config:
+        - subnet: ${CLUSTER_IP}
