@@ -227,9 +227,10 @@ AC_ARG_ENABLE([coverage],
 	[ default="no" ])
 AM_CONDITIONAL(BUILD_COVERAGE, test x$enable_coverage = xyes)
 
+PKG_CHECK_MODULES([libcpg],[libcpg], [have_libcpg="yes"], [have_libcpg="no"])
 AC_ARG_ENABLE([corosync],
 	[  --enable-corosync       : build corosync cluster driver ],,
-	[ enable_corosync="yes" ])
+	[ enable_corosync="${have_libcpg}" ],)
 AM_CONDITIONAL(BUILD_COROSYNC, test x$enable_corosync = xyes)
 
 AC_ARG_ENABLE([zookeeper],
@@ -242,9 +243,10 @@ AC_ARG_ENABLE([shepherd],
 	[ enable_shepherd="no" ],)
 AM_CONDITIONAL(BUILD_SHEPHERD, test x$enable_shepherd = xyes)
 
+PKG_CHECK_MODULES([neon],[neon],[have_neon=yes], [have_neon=no])
 AC_ARG_ENABLE([etcd],
 	[  --enable-etcd      : build etcd cluster driver ],,
-	[ enable_etcd="no" ],)
+	[ enable_etcd="${have_neon}" ],)
 AM_CONDITIONAL(BUILD_ETCD, test x$enable_etcd = xyes)
 
 AC_ARG_WITH([initddir],
@@ -312,10 +314,6 @@ if test x$enable_systemd = xyes -a x$have_systemd != xyes ; then
     AC_MSG_ERROR([Explicitly requested systemd support, but systemd not found])
 fi
 
-if test x$enable_etcd = xyes ; then
-    PKG_CHECK_MODULES([neon],[neon],[have_neon=yes])
-fi
-
 ##### systemd unit files
 AC_ARG_WITH([systemdsystemunitdir],
 AS_HELP_STRING([--with-systemdsystemunitdir=DIR], [Directory for systemd service files]),
@@ -372,7 +370,6 @@ else
 fi
 
 if test "x${enable_corosync}" = xyes; then
-	PKG_CHECK_MODULES([libcpg],[libcpg])
 	PKG_CHECK_MODULES([libcfg],[libcfg])
 	AC_DEFINE_UNQUOTED([HAVE_COROSYNC], 1, [have corosync])
 	PACKAGE_FEATURES="$PACKAGE_FEATURES corosync"
@@ -399,6 +396,11 @@ fi
 if test "x${enable_shepherd}" = xyes; then
 	AC_DEFINE_UNQUOTED([HAVE_SHEPHERD], 1, [have shepherd])
 	PACKAGE_FEATURES="$PACKAGE_FEATURES shepherd"
+fi
+
+if test "x${enable_etcd}" = xyes; then
+	AC_DEFINE_UNQUOTED([HAVE_ETCD], 1, [have etcd])
+	PACKAGE_FEATURES="$PACKAGE_FEATURES etcd"
 fi
 
 if test "x${enable_trace}" = xyes; then
