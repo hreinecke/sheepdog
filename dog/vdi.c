@@ -23,8 +23,11 @@
 #include "treeview.h"
 #include "sha1.h"
 #include "fec.h"
+#include "json.h"
 
 struct rb_root oid_tree = RB_ROOT;
+
+static struct json_object *out_obj;
 
 #define NR_BATCHED_RECLAMATION_DEFAULT 128
 
@@ -173,6 +176,7 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	time_t ti;
 	struct tm tm;
 	char dbuf[128];
+	const char *redundancy;
 	struct get_vdi_info *info = data;
 	uint32_t object_size = (UINT32_C(1) << i->header.block_size_shift);
 
@@ -180,7 +184,11 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 		return;
 
 	ti = i->header.create_time >> 32;
-	if (raw_output) {
+	if (json_output) {
+		localtime_r(&ti, &tm);
+		strftime(dbuf, sizeof(dbuf),
+			 "%FT%T%z", &tm);
+	} else if (raw_output) {
 		snprintf(dbuf, sizeof(dbuf), "%" PRIu64, (uint64_t) ti);
 	} else {
 		localtime_r(&ti, &tm);
@@ -193,7 +201,52 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	if (i->header.snap_id == 1 && i->header.parent_vdi_id != 0)
 		is_clone = true;
 
-	if (raw_output) {
+	redundancy = redundancy_scheme(i->header.nr_copies,
+				       i->header.copy_policy);
+	if (json_output) {
+		struct json_object *vdi_obj =
+			json_object_new_object();
+		uuid_t uuid;
+		char uuid_str[UUID_STR_LEN];
+
+		JSON_ADD_STRING(vdi_obj, "name", name);
+		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
+		if (!SD_INODE_USE_UUID(&i->header)) {
+			memcpy((char *)uuid, &i->header.vdi_id, 4);
+			memcpy((char *)uuid + 4, &i->header.parent_vdi_id, 4);
+			memcpy((char *)uuid + 8, &i->header.create_time, 8);
+		} else {
+			memcpy((char *)uuid, &i->header.vm_clock_nsec, 8);
+			memcpy((char *)(uuid + 8), &i->header.vm_state_size, 8);
+		}
+		uuid_unparse(uuid, uuid_str);
+		JSON_ADD_STRING(vdi_obj, "uuid", uuid_str);
+		JSON_ADD_UINT64(vdi_obj, "vdi_size",
+				i->header.vdi_size);
+		if (vdi_is_snapshot(&i->header))
+			JSON_ADD_INT(vdi_obj, "snapid", snapid);
+		JSON_ADD_UINT64(vdi_obj, "object_size",
+				my_objs * object_size);
+		if (cow_objs)
+			JSON_ADD_UINT64(vdi_obj, "cow_size",
+					cow_objs * object_size);
+		JSON_ADD_STRING(vdi_obj, "create_time", dbuf);
+		JSON_ADD_BOOL(vdi_obj, "is_snapshot",
+				 vdi_is_snapshot(&i->header));
+		JSON_ADD_BOOL(vdi_obj, "is_clone", is_clone);
+		if (i->header.copy_policy > 0)
+			JSON_ADD_STRING(vdi_obj, "redundancy_scheme",
+					redundancy);
+		else
+			JSON_ADD_INT(vdi_obj, "nr_copies",
+				     i->header.nr_copies);
+		if (strlen(i->header.tag))
+			JSON_ADD_STRING(vdi_obj, "tag",
+					i->header.tag);
+		JSON_ADD_INT(vdi_obj, "block_size_shift",
+			     i->header.block_size_shift);
+		json_object_array_add(out_obj, vdi_obj);
+	} else if (raw_output) {
 		printf("%c ", vdi_is_snapshot(&i->header) ?
 		       's' : (is_clone ? 'c' : '='));
 		while (*name) {
@@ -205,9 +258,7 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 		       snapid, strnumber(i->header.vdi_size),
 		       strnumber(my_objs * object_size),
 		       strnumber(cow_objs * object_size),
-		       dbuf, vid,
-		       redundancy_scheme(i->header.nr_copies,
-					 i->header.copy_policy),
+		       dbuf, vid, redundancy,
 		       i->header.tag, i->header.block_size_shift);
 	} else {
 		printf("%c %-8s %5d %7s %7s %7s %s  %7" PRIx32
@@ -237,8 +288,12 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 		ti = i->header.create_time >> 32;
 		localtime_r(&ti, &tm);
 
-		strftime(buf, sizeof(buf),
-			 "[%Y-%m-%d %H:%M]", &tm);
+		if (json_output)
+			strftime(buf, sizeof(buf),
+				 "%FT%T%z", &tm);
+		else
+			strftime(buf, sizeof(buf),
+				 "[%Y-%m-%d %H:%M]", &tm);
 	} else
 		pstrcpy(buf, sizeof(buf), "(you are here)");
 
@@ -279,7 +334,7 @@ static void print_vdi_graph(uint32_t vid, const char *name, const char *tag,
 
 }
 
-static void for_each_node_print(uint64_t oid)
+static void for_each_node_print(uint64_t oid, struct json_object *obj)
 {
 	int ret;
 	struct sd_node *n;
@@ -299,17 +354,23 @@ static void for_each_node_print(uint64_t oid)
 		if (ret < 0)
 			continue;
 		if (rsp->result) {
-			sd_err("%s", sd_strerror(rsp->result));
+			if (!obj)
+				sd_err("%s", sd_strerror(rsp->result));
 			continue;
 		}
 
 		sheep = addr_to_str(n->nid.addr, n->nid.port);
 		switch (rsp->result) {
 		case SD_RES_SUCCESS:
-			printf("%s has the object\n", sheep);
+			if (obj)
+				json_object_array_add(obj,
+					json_object_new_string(sheep));
+			else
+				printf("%s has the object\n", sheep);
 			break;
 		case SD_RES_NO_OBJ:
-			printf("%s doesn't have the object\n", sheep);
+			if (!obj)
+				printf("%s doesn't have the object\n", sheep);
 			break;
 		case SD_RES_OLD_NODE_VER:
 		case SD_RES_NEW_NODE_VER:
@@ -405,7 +466,9 @@ static int vdi_list(int argc, char **argv)
 {
 	const char *vdiname = argv[optind];
 
-	if (!raw_output)
+	if (json_output)
+		out_obj = json_object_new_array();
+	else if (!raw_output)
 		printf("  Name        Id    Size    Used  Shared"
 		       "    Creation time   VDI id  Copies  Tag"
 		       "   Block Size Shift\n");
@@ -416,6 +479,11 @@ static int vdi_list(int argc, char **argv)
 		info.name = vdiname;
 		if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info, true) < 0)
 			return EXIT_SYSFAIL;
+		if (json_output) {
+			const char *o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		}
 		return EXIT_SUCCESS;
 	}
 
@@ -425,11 +493,26 @@ static int vdi_list(int argc, char **argv)
 		if (parse_vdi(print_obj_ref, SD_INODE_SIZE,
 					&vdi_cmd_data.oid, true) < 0)
 			return EXIT_SYSFAIL;
+		if (json_output) {
+			const char *o;
+
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		}
 		return EXIT_SUCCESS;
 	}
 
 	if (parse_vdi(print_vdi_list, SD_INODE_SIZE, NULL, true) < 0)
 		return EXIT_SYSFAIL;
+
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -674,7 +757,15 @@ static int vdi_create(int argc, char **argv)
 
 out:
 	if (ret == EXIT_SUCCESS && verbose) {
-		if (raw_output)
+		if (json_output) {
+			const char *o;
+
+			out_obj = json_object_new_object();
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
 			printf("%x\n", vid);
 		else
 			printf("VDI ID of newly created VDI: %x\n", vid);
@@ -836,7 +927,16 @@ static int vdi_snapshot(int argc, char **argv)
 			    inode.store_policy, inode.block_size_shift);
 
 	if (ret == EXIT_SUCCESS && verbose) {
-		if (raw_output)
+		if (json_output) {
+			const char *o;
+
+			out_obj = json_object_new_object();
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			JSON_ADD_INT(out_obj, "new_vdi_id", new_vid);
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
 			printf("%x %x\n", new_vid, vid);
 		else
 			printf("new VID of original VDI: %x,"
@@ -945,7 +1045,15 @@ static int vdi_clone(int argc, char **argv)
 
 out:
 	if (ret == EXIT_SUCCESS && verbose) {
-		if (raw_output)
+		if (json_output) {
+			const char *o;
+
+			out_obj = json_object_new_object();
+			JSON_ADD_INT(out_obj, "vdi_id", new_vid);
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
 			printf("%x\n", new_vid);
 		else
 			printf("VDI ID of newly created clone: %x\n", new_vid);
@@ -1167,7 +1275,15 @@ static int vdi_rollback(int argc, char **argv)
 			     inode.store_policy, inode.block_size_shift);
 
 	if (ret == EXIT_SUCCESS && verbose) {
-		if (raw_output)
+		if (json_output) {
+			const char *o;
+
+			out_obj = json_object_new_object();
+			JSON_ADD_INT(out_obj, "vdi_id", new_vid);
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
 			printf("%x\n", new_vid);
 		else
 			printf("New VDI ID of rollbacked VDI: %x\n", new_vid);
@@ -1193,44 +1309,78 @@ static int vdi_object_map(int argc, char **argv)
 		goto out;
 	}
 
-	printf("Index       VID\n");
+	if (json_output)
+		out_obj = json_object_new_array();
+	else
+		printf("Index       VID\n");
 	if (idx != ~0) {
 		vid = sd_inode_get_vid(inode, idx);
-		printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
+		if (json_output) {
+			struct json_object *vid_obj =
+				json_object_new_object();
+			JSON_ADD_INT(vid_obj, "index", idx);
+			JSON_ADD_INT(vid_obj, "vdi_id", vid);
+			json_object_array_add(out_obj, vid_obj);
+		} else
+			printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
 	} else {
 		uint64_t max_idx = count_data_objs(&inode->header);
 
 		for (idx = 0; idx < max_idx; idx++) {
 			vid = sd_inode_get_vid(inode, idx);
-			if (vid)
+			if (!vid)
+				continue;
+			if (json_output) {
+				struct json_object *vid_obj =
+					json_object_new_object();
+				JSON_ADD_INT(vid_obj, "index", idx);
+				JSON_ADD_INT(vid_obj, "vdi_id", vid);
+				json_object_array_add(out_obj, vid_obj);
+			} else
 				printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
 		}
 	}
+	if (json_output) {
+		const char *o;
 
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 out:
 	free(inode);
 	return ret;
 }
 
-static void print_expected_location(uint64_t oid, int copies)
+static void print_expected_location(uint64_t oid, int copies,
+				    struct json_object *obj)
 {
 	const struct sd_vnode *vnodes[SD_MAX_COPIES];
 
 	if (sd_nodes_nr < copies) {
-		printf("\nBecause number of nodes (%d) is less than "
-			"number of copies (%d), the object should be located "
-			"at every nodes.\n", sd_nodes_nr, copies);
+		if (!obj)
+			printf("\nBecause number of nodes (%d) is less than "
+			       "number of copies (%d), the object should be "
+			       "located at every nodes.\n",
+			       sd_nodes_nr, copies);
 		return;
 	}
 
-	printf("\nAccording to sheepdog algorithm, "
-		   "the object should be located at:\n");
+	if (!obj)
+		printf("\nAccording to sheepdog algorithm, "
+		       "the object should be located at:\n");
 	oid_to_vnodes(oid, &sd_vroot, copies, vnodes);
-	for (int i = 0; i < copies; i++)
-		printf((i < copies - 1) ? "%s " : "%s",
-			addr_to_str(vnodes[i]->node->nid.addr,
-				vnodes[i]->node->nid.port));
-	printf("\n");
+	for (int i = 0; i < copies; i++) {
+		const char *addr = addr_to_str(vnodes[i]->node->nid.addr,
+					       vnodes[i]->node->nid.port);
+		if (obj)
+			json_object_array_add(obj,
+				json_object_new_string(addr));
+		else
+			printf((i < copies - 1) ? "%s " : "%s", addr);
+	}
+	if (!obj)
+		printf("\n");
 }
 
 static int vdi_object_location(int argc, char **argv)
@@ -1239,6 +1389,7 @@ static int vdi_object_location(int argc, char **argv)
 	uint64_t idx = vdi_cmd_data.index, oid;
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
 	uint32_t vid, vdi_id;
+	struct json_object *vdi_obj = NULL, *location_obj = NULL;
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
@@ -1250,19 +1401,33 @@ static int vdi_object_location(int argc, char **argv)
 	}
 	vid = inode->header.vdi_id;
 
+	if (json_output) {
+		out_obj = json_object_new_object();
+		vdi_obj = json_object_new_array();
+		location_obj = json_object_new_array();
+	}
 	if (idx == ~0) {
-		printf("Looking for the inode object 0x%" PRIx32 " with %d"
-		       " nodes\n\n",
-		       vid, sd_nodes_nr);
-		for_each_node_print(vid_to_vdi_oid(vid));
+		if (json_output)
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+		else
+			printf("Looking for the inode object 0x%" PRIx32
+			       " with %d nodes\n\n", vid, sd_nodes_nr);
+		for_each_node_print(vid_to_vdi_oid(vid), vdi_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "location", vdi_obj);
+
 		print_expected_location(vid_to_vdi_oid(vid),
-					inode->header.nr_copies);
+					inode->header.nr_copies,
+					location_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "expected_location",
+					       location_obj);
 		ret = EXIT_SUCCESS;
 		goto out;
 	}
 
 	if (idx >= MAX_DATA_OBJS) {
-		printf("The offset is too large!\n");
+		sd_err("The offset is too large!");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -1270,19 +1435,36 @@ static int vdi_object_location(int argc, char **argv)
 	vdi_id = sd_inode_get_vid(inode, idx);
 	oid = vid_to_data_oid(vdi_id, idx);
 	if (vdi_id) {
-		printf("Looking for the object %016" PRIx64
-		       " (vid 0x%" PRIx32 " idx %"PRIu64
-		       ", %u copies) with %d nodes\n\n",
-			oid, vid, idx, inode->header.nr_copies, sd_nodes_nr);
+		if (json_output)
+			JSON_ADD_INT(out_obj, "vdi_id", vdi_id);
+		else
+			printf("Looking for the object %016" PRIx64
+			       " (vid 0x%" PRIx32 " idx %"PRIu64
+			       ", %u copies) with %d nodes\n\n",
+			       oid, vid, idx, inode->header.nr_copies,
+			       sd_nodes_nr);
 
-		for_each_node_print(oid);
-		print_expected_location(oid, inode->header.nr_copies);
-	} else
+		for_each_node_print(oid, vdi_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "location", vdi_obj);
+		print_expected_location(oid, inode->header.nr_copies,
+					location_obj);
+		if (json_output)
+			json_object_object_add(out_obj, "expected_location",
+					       location_obj);
+	} else if (!json_output)
 		printf("The inode object 0x%" PRIx32 " idx"
 		       " %"PRIu64" is not allocated\n",
 		       vid, idx);
 
 out:
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	free(inode);
 	return ret;
 }
@@ -2693,6 +2875,9 @@ static int vdi_object_dump_inode(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	struct sd_inode *inode = xzalloc(sizeof(*inode));
 	struct sd_inode_header *hdr = &inode->header;
+	struct json_object *data_obj = NULL;
+	uuid_t uuid;
+	char uuid_str[UUID_STR_LEN];
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
@@ -2703,45 +2888,95 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	printf("name: %s\n", hdr->name);
-	printf("tag: %s\n", hdr->tag);
-	printf("create_time: %"PRIx64"\n", hdr->create_time);
-	printf("snap_ctime: %"PRIx64"\n", hdr->snap_ctime);
-	printf("vdi_size: %"PRIu64"\n", hdr->vdi_size);
-	if (!SD_INODE_USE_UUID(hdr)) {
-		printf("vm_clock_nsec: %"PRIx64"\n", hdr->vm_clock_nsec);
-		printf("vm_state_size: %"PRIu64"\n", hdr->vm_state_size);
+	if (json_output) {
+		out_obj = json_object_new_object();
+		JSON_ADD_STRING(out_obj, "name", hdr->name);
+		if (strlen(hdr->tag))
+			JSON_ADD_STRING(out_obj, "tag", hdr->tag);
+		JSON_ADD_UINT64(out_obj, "create_time", hdr->create_time);
+		if (hdr->snap_ctime) {
+			JSON_ADD_UINT64(out_obj, "snapshot_create_time",
+					hdr->snap_ctime);
+		}
+		JSON_ADD_UINT64(out_obj, "vdi_size", hdr->vdi_size);
 	} else {
-		uuid_t uuid;
-		char uuid_str[UUID_STR_LEN];
-
+		printf("name: %s\n", hdr->name);
+		printf("tag: %s\n", hdr->tag);
+		printf("create_time: %"PRIx64"\n", hdr->create_time);
+		printf("snap_ctime: %"PRIx64"\n", hdr->snap_ctime);
+		printf("vdi_size: %"PRIu64"\n", hdr->vdi_size);
+	}
+	if (!SD_INODE_USE_UUID(hdr)) {
+		memcpy((char *)uuid, &hdr->vdi_id, 4);
+		memcpy((char *)uuid + 4, &hdr->parent_vdi_id, 4);
+		memcpy((char *)uuid + 8, &hdr->create_time, 8);
+	} else {
 		memcpy((char *)uuid, &hdr->vm_clock_nsec, 8);
 		memcpy((char *)(uuid + 8), &hdr->vm_state_size, 8);
-		uuid_unparse(uuid, uuid_str);
-		printf("uuid: %s\n", uuid_str);
 	}
-	printf("copy_policy: %d\n", hdr->copy_policy);
-	printf("store_policy: %s\n",
-	       sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
-	printf("nr_copies: %d\n", hdr->nr_copies);
-	printf("block_size_shift: %d\n", hdr->block_size_shift);
-	printf("snap_id: %"PRIu32"\n", hdr->snap_id);
-	printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
-	printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
-	printf("btree_counter: %"PRIu32"\n", inode->btree_counter);
+	uuid_unparse(uuid, uuid_str);
+	if (json_output)
+		JSON_ADD_STRING(out_obj, "uuid", uuid_str);
+	else
+		printf("uuid: %s\n", uuid_str);
 
-	printf("data_vdi_id:\n");
+	if (json_output) {
+		JSON_ADD_INT(out_obj, "copy_policy",
+			     hdr->copy_policy);
+		JSON_ADD_STRING(out_obj, "store_policy",
+			sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
+		JSON_ADD_INT(out_obj, "nr_copies",
+			     hdr->nr_copies);
+		JSON_ADD_INT(out_obj, "block_size_shift",
+			     hdr->block_size_shift);
+		if (hdr->snap_id)
+			JSON_ADD_INT(out_obj, "snap_id",
+				     hdr->snap_id);
+		JSON_ADD_INT(out_obj, "vdi_id",
+			     hdr->vdi_id);
+		JSON_ADD_INT(out_obj, "parent_vdi_id",
+			     hdr->parent_vdi_id);
+		JSON_ADD_INT(out_obj, "btree_counter",
+			     inode->btree_counter);
+		data_obj = json_object_new_array();
+	} else {
+		printf("copy_policy: %d\n", hdr->copy_policy);
+		printf("store_policy: %s\n",
+		       sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
+		printf("nr_copies: %d\n", hdr->nr_copies);
+		printf("block_size_shift: %d\n", hdr->block_size_shift);
+		printf("snap_id: %"PRIu32"\n", hdr->snap_id);
+		printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
+		printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
+		printf("btree_counter: %"PRIu32"\n", inode->btree_counter);
+		printf("data_vdi_id:\n");
+	}
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i])
 			continue;
-
-		printf("%d: %"PRIx32"\n", i, inode->data_vdi_id[i]);
+		if (json_output) {
+			struct json_object *data_vdi_obj =
+				json_object_new_object();
+			struct json_object *gref_obj =
+				json_object_new_object();
+			JSON_ADD_INT(data_vdi_obj, "data_vdi_id",
+				     inode->data_vdi_id[i]);
+			JSON_ADD_INT(gref_obj, "generation",
+				     inode->gref[i].generation);
+			JSON_ADD_INT(gref_obj, "count",
+				     inode->gref[i].count);
+			json_object_object_add(data_vdi_obj, "gref",
+					       gref_obj);
+			json_object_array_add(data_obj, data_vdi_obj);
+		} else
+			printf("%d: %"PRIx32"\n", i, inode->data_vdi_id[i]);
 	}
-
-	printf("gref:\n");
+	if (!json_output)
+		printf("gref:\n");
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i]) {
-			if (inode->gref[i].generation || inode->gref[i].count)
+			if (!json_output &&
+			    (inode->gref[i].generation || inode->gref[i].count))
 				printf("WARNING: index %d doesn't have data vdi"
 				       " ID but its generation and count is not"
 				       " zero(%d, %d)", i,
@@ -2749,11 +2984,21 @@ static int vdi_object_dump_inode(int argc, char **argv)
 				       inode->gref[i].count);
 			continue;
 		}
-
-		printf("%d: %"PRIx32", %d, %d\n", i, inode->data_vdi_id[i],
-		       inode->gref[i].generation, inode->gref[i].count);
+		if (!json_output)
+			printf("%d: %"PRIx32", %d, %d\n", i,
+			       inode->data_vdi_id[i],
+			       inode->gref[i].generation,
+			       inode->gref[i].count);
 	}
 
+	if (json_output) {
+		const char *o;
+
+		json_object_object_add(out_obj, "data_vdi", data_obj);
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -3010,13 +3255,13 @@ static struct subcommand vdi_cmd[] = {
 	{"check", "<vdiname>", "seaphT", "check and repair image's consistency",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_check, vdi_options},
-	{"create", "<vdiname> <size>", "PycaphrvzTu", "create an image",
+	{"create", "<vdiname> <size>", "PycajphrvzTu", "create an image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_create, vdi_options},
-	{"snapshot", "<vdiname>", "saphrvTR", "create a snapshot",
+	{"snapshot", "<vdiname>", "sajphrvTR", "create a snapshot",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_snapshot, vdi_options},
-	{"clone", "<src vdi> <dst vdi>", "sPnaphrvT", "clone an image",
+	{"clone", "<src vdi> <dst vdi>", "sPnajphrvT", "clone an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_clone, vdi_options},
 	{"delete", "<vdiname>", "saphTBIm", "delete an image",
@@ -3025,13 +3270,13 @@ static struct subcommand vdi_cmd[] = {
 	{"rollback", "<vdiname>", "saphfrvTBI", "rollback to a snapshot",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_rollback, vdi_options},
-	{"list", "[vdiname]", "aprhoT", "list images",
+	{"list", "[vdiname]", "ajprhoT", "list images",
 	 NULL, 0, vdi_list, vdi_options},
 	{"tree", NULL, "aphT", "show images in tree view format",
 	 NULL, 0, vdi_tree, vdi_options},
 	{"graph", NULL, "aphT", "show images in Graphviz dot format",
 	 NULL, 0, vdi_graph, vdi_options},
-	{"object", "<vdiname>", "isaphT",
+	{"object", "<vdiname>", "isajphT",
 	 "show object information in the image",
 	 vdi_object_cmd, CMD_NEED_ARG,
 	 vdi_object, vdi_options},

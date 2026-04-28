@@ -10,6 +10,7 @@
  */
 
 #include "dog.h"
+#include "json.h"
 
 static struct node_cmd_data {
 	bool all_nodes;
@@ -18,6 +19,8 @@ static struct node_cmd_data {
 	bool local;
 	bool force;
 } node_cmd_data;
+
+static struct json_object *out_obj;
 
 static void cal_total_vdi_size(uint32_t vid, const char *name, const char *tag,
 			       uint32_t snapid, uint32_t flags,
@@ -34,15 +37,29 @@ static int node_list(int argc, char **argv)
 	struct sd_node *n;
 	int i = 0;
 
-	if (!raw_output)
+	if (json_output)
+		out_obj = json_object_new_array();
+	else if (!raw_output)
 		printf("  Id   Host:Port         V-Nodes       Zone\n");
 	rb_for_each_entry(n, &sd_nroot, rb) {
 		const char *host = addr_to_str(n->nid.addr, n->nid.port);
 
-		printf(raw_output ? "%d %s %d %u\n" : "%4d   %-20s\t%2d%11u\n",
-		       i++, host, n->nr_vnodes, n->zone);
+		if (json_output) {
+			struct json_object *node_obj =
+				json_object_new_object();
+			node_to_json(n, node_obj);
+			json_object_array_add(out_obj, node_obj);
+		} else
+			printf(raw_output ? "%d %s %d %u\n" :
+			       "%4d   %-20s\t%2d%11u\n",
+			       i++, host, n->nr_vnodes, n->zone);
 	}
+	if (json_output) {
+		const char *o = json_object_to_json_string(out_obj);
 
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -51,8 +68,14 @@ static int node_info(int argc, char **argv)
 	int ret, success = 0, i = 0;
 	uint64_t total_size = 0, total_avail = 0, total_vdi_size = 0;
 	struct sd_node *n;
+	struct json_object *nodes_obj = NULL;
+	int used;
+	double ratio;
 
-	if (!raw_output)
+	if (json_output) {
+		out_obj = json_object_new_object();
+		nodes_obj = json_object_new_array();
+	} else if (!raw_output)
 		printf("Id\tSize\tUsed\tAvail\tUse%%\n");
 
 	rb_for_each_entry(n, &sd_nroot, rb) {
@@ -62,20 +85,33 @@ static int node_info(int argc, char **argv)
 		sd_init_req(&req, SD_OP_STAT_SHEEP);
 
 		ret = send_light_req(&n->nid, &req);
-		if (!ret) {
-			int ratio = (int)(((double)(rsp->node.store_size -
-						    rsp->node.store_free) /
-					   rsp->node.store_size) * 100);
-			printf(raw_output ? "%d %s %s %s %d%%\n" :
-					"%2d\t%s\t%s\t%s\t%3d%%\n",
+		if (ret)
+			continue;
+		used = rsp->node.store_size - rsp->node.store_free;
+		ratio = (double)(used / rsp->node.store_size) * 100;
+		if (json_output) {
+			struct json_object *node_obj =
+				json_object_new_object();
+
+			json_object_object_add(node_obj, "size",
+				json_object_new_int(rsp->node.store_size));
+			json_object_object_add(node_obj, "used",
+				json_object_new_int(used));
+			json_object_object_add(node_obj, "free",
+				json_object_new_int(rsp->node.store_free));
+			json_object_object_add(node_obj, "ratio",
+				json_object_new_double(rsp->node.store_size ?
+						       ratio : 0));
+			json_object_array_add(nodes_obj, node_obj);
+		} else {
+			printf(raw_output ? "%d %s %s %s %.0f%%\n" :
+			       "%2d\t%s\t%s\t%s\t%3.0f%%\n",
 			       i++,
-			       strnumber(rsp->node.store_size),
-			       strnumber(rsp->node.store_size -
-					   rsp->node.store_free),
+			       strnumber(rsp->node.store_size), strnumber(used),
 			       strnumber(rsp->node.store_free),
 			       rsp->node.store_size == 0 ? 0 : ratio);
-			success++;
 		}
+		success++;
 
 		total_size += rsp->node.store_size;
 		total_avail += rsp->node.store_free;
@@ -90,15 +126,37 @@ static int node_info(int argc, char **argv)
 			&total_vdi_size, true) < 0)
 		return EXIT_SYSFAIL;
 
-	printf(raw_output ? "Total %s %s %s %d%% %s\n"
-			  : "Total\t%s\t%s\t%s\t%3d%%\n\n"
-			  "Total virtual image size\t%s\n",
-	       strnumber(total_size),
-	       strnumber(total_size - total_avail),
-	       strnumber(total_avail),
-	       (int)(((double)(total_size - total_avail) / total_size) * 100),
-	       strnumber(total_vdi_size));
+	used = total_size - total_avail;
+	ratio = (double)(used / total_size) * 100;
 
+	if (json_output) {
+		struct json_object *tot_obj =
+			json_object_new_object();
+		const char *o;
+
+		json_object_object_add(out_obj, "nodes", nodes_obj);
+		json_object_object_add(tot_obj, "size",
+				       json_object_new_int(total_size));
+		json_object_object_add(tot_obj, "used",
+				       json_object_new_int(used));
+		json_object_object_add(tot_obj, "free",
+				       json_object_new_int(total_avail));
+		json_object_object_add(tot_obj, "ratio",
+				       json_object_new_double(ratio));
+		json_object_object_add(out_obj, "total", tot_obj);
+		json_object_object_add(out_obj, "vdi_size",
+				       json_object_new_int(total_vdi_size));
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	} else {
+		printf(raw_output ? "Total %s %s %s %.0f%% %s\n"
+		       : "Total\t%s\t%s\t%s\t%3.0f%%\n\n"
+		       "Total virtual image size\t%s\n",
+		       strnumber(total_size), strnumber(used),
+		       strnumber(total_avail), ratio,
+		       strnumber(total_vdi_size));
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -891,18 +949,18 @@ static int node_format(int argc, char **argv)
 }
 
 static struct subcommand node_cmd[] = {
-	{"kill", "<node id>", "aprhlT", "kill node", NULL,
+	{"kill", "<node id>", "ajprhlT", "kill node", NULL,
 	 CMD_NEED_ROOT|CMD_NEED_NODELIST, node_kill, node_options},
-	{"list", NULL, "aprhT", "list nodes", NULL,
+	{"list", NULL, "ajprhT", "list nodes", NULL,
 	 CMD_NEED_NODELIST, node_list},
-	{"info", NULL, "aprhT", "show information about each node", NULL,
+	{"info", NULL, "ajprhT", "show information about each node", NULL,
 	 CMD_NEED_NODELIST, node_info},
 	{"recovery", "<max> <interval>", "aphPrT",
 	 "show recovery information or set/get recovery speed throttling of nodes",
 	 node_recovery_cmd, 0, node_recovery, node_options},
-	{"md", "[disks]", "aprAfhT", "See 'dog node md' for more information",
+	{"md", "[disks]", "ajprAfhT", "See 'dog node md' for more information",
 	 node_md_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, node_md, node_options},
-	{"stat", NULL, "aprwhT", "show stat information about the node", NULL,
+	{"stat", NULL, "ajprwhT", "show stat information about the node", NULL,
 	 0, node_stat, node_options},
 	{"log", NULL, "aphT", "show or set log level of the node", node_log_cmd,
 	 CMD_NEED_ROOT|CMD_NEED_ARG, node_log},

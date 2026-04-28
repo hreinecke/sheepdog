@@ -31,6 +31,7 @@ struct node_id sd_nid = {
 };
 bool highlight = true;
 bool raw_output;
+bool json_output;
 bool verbose;
 bool elapsed_time;
 
@@ -38,6 +39,7 @@ static const struct sd_option dog_options[] = {
 
 	/* common options for all dog commands */
 	{'a', "address", true, "specify the daemon address (default: localhost)"},
+	{'j', "json", false, "output in json format"},
 	{'p', "port", true, "specify the daemon port"},
 	{'r', "raw", false, "raw output mode: omit headers, separate fields with\n"
 	 "                          single spaces and print all sizes in decimal bytes"},
@@ -500,6 +502,9 @@ int main(int argc, char **argv)
 			}
 			memcpy(sd_nid.addr, sdhost, sizeof(sdhost));
 			break;
+		case 'j':
+			json_output = true;
+			break;
 		case 'p':
 			sdport = strtol(optarg, &p, 10);
 			if (optarg == p || sdport < 1 || sdport > UINT16_MAX
@@ -533,10 +538,15 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (raw_output && json_output) {
+		usage(commands, EXIT_USAGE);
+		exit(EXIT_SYSFAIL);
+	}
+
 	if (sd_inode_actor_init(dog_bnode_writer, dog_bnode_reader) < 0)
 		exit(EXIT_SYSFAIL);
 
-	if (!is_stdout_console() || raw_output)
+	if (!is_stdout_console() || raw_output|| json_output)
 		highlight = false;
 
 	if (flags & CMD_NEED_NODELIST) {

@@ -63,6 +63,7 @@ extern struct subcommand *subcmd_stack[MAX_SUBCMD_DEPTH];
 extern struct node_id sd_nid;
 extern bool highlight;
 extern bool raw_output;
+extern bool json_output;
 extern bool verbose;
 
 extern uint32_t sd_epoch;

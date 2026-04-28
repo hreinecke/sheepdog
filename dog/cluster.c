@@ -17,6 +17,9 @@
 #include "dog.h"
 #include "sheep.h"
 #include "farm/farm.h"
+#include "json.h"
+
+static struct json_object *out_obj;
 
 static struct sd_option cluster_options[] = {
 	{'b', "store", true, "specify backend store"},
@@ -75,9 +78,25 @@ static int list_store(void)
 		return EXIT_FAILURE;
 	}
 
-	printf("Available stores:\n");
-	printf("---------------------------------------\n");
-	printf("%s\n", buf);
+	if (json_output) {
+		char *l;
+		const char *o;
+
+		out_obj = json_object_new_array();
+		l = strtok(buf, "\n");
+		while (l) {
+			json_object_array_add(out_obj,
+					      json_object_new_string(l));
+			l = strtok(NULL, "\n");
+		}
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	} else {
+		printf("Available stores:\n");
+		printf("---------------------------------------\n");
+		printf("%s\n", buf);
+	}
 	return EXIT_SYSFAIL;
 }
 
@@ -296,6 +315,8 @@ static int cluster_info(int argc, char **argv)
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	struct epoch_log *logs, *log, *last_log = NULL;
 	char *next_log;
+	const char *auto_recovery, *strategy = "fixed", *vnode_mode = "node";
+	struct json_object *log_obj;
 	int nr_logs, log_length;
 	time_t ti, ct;
 	struct tm tm;
@@ -306,6 +327,8 @@ static int cluster_info(int argc, char **argv)
 	log_length = sd_epoch * (sizeof(struct epoch_log)
 			+ nodes_nr * sizeof(struct sd_node));
 	logs = xmalloc(log_length);
+	if (json_output)
+		out_obj = json_object_new_object();
 
 retry:
 	sd_init_req(&hdr, SD_OP_STAT_CLUSTER);
@@ -324,17 +347,31 @@ retry:
 	}
 
 	/* show cluster status */
-	if (!raw_output)
-		printf("Cluster status: ");
-	if (rsp->result == SD_RES_SUCCESS)
-		printf("running, auto-recovery %s\n", logs->disable_recovery ?
-		       "disabled" : "enabled");
-	else
-		printf("%s\n", sd_strerror(rsp->result));
-
-	if (verbose) {
-		/* show cluster backend store */
+	auto_recovery = logs->disable_recovery ? "disabled" : "enabled";
+	if (json_output) {
+		const char *status;
+		if (rsp->result == SD_RES_SUCCESS) {
+			status = "running";
+			json_object_object_add(out_obj, "auto_recovery",
+				json_object_new_boolean(!logs->disable_recovery));
+		} else {
+			status = sd_strerror(rsp->result);
+		}
+		json_object_object_add(out_obj, "status",
+				       json_object_new_string(status));
+	} else {
 		if (!raw_output)
+			printf("Cluster status: ");
+		if (rsp->result == SD_RES_SUCCESS)
+			printf("running, auto-recovery %s\n",
+			       auto_recovery);
+		else
+			printf("%s\n", sd_strerror(rsp->result));
+	}
+
+	if (verbose || json_output) {
+		/* show cluster backend store */
+		if (!raw_output && !json_output)
 			printf("Cluster store: ");
 		if (rsp->result == SD_RES_SUCCESS) {
 			char copy[10];
@@ -348,37 +385,72 @@ retry:
 				snprintf(copy, sizeof(copy), "%d:%d",
 					 data, parity);
 			}
-			printf("%s with %s redundancy policy\n",
-			       logs->drv_name, copy);
-
-			/* show vnode strategy */
-			if (!raw_output)
-				printf("Cluster vnodes strategy: ");
-			if (logs->flags & SD_CLUSTER_FLAG_AUTO_VNODES)
-				printf("auto\n");
-			else
-				printf("fixed\n");
-
-		} else
+			if (json_output) {
+				struct json_object *store_obj =
+					json_object_new_object();
+				json_object_object_add(store_obj, "driver",
+					json_object_new_string(logs->drv_name));
+				if (!logs->copy_policy)
+					json_object_object_add(store_obj,
+						"nr_copies",
+						json_object_new_int(logs->nr_copies));
+				else
+					json_object_object_add(store_obj,
+						"redundancy_policy",
+						json_object_new_string(copy));
+			} else {
+				if (!logs->copy_policy)
+					printf("%s with %d copies\n",
+					       logs->drv_name,
+					       logs->nr_copies);
+				else
+					printf("%s with %s redundancy policy\n",
+					       logs->drv_name, copy);
+			}
+		} else if (!json_output)
 			printf("%s\n", sd_strerror(rsp->result));
 
-		/* show vnode mode (node or disk) for cluster */
-		if (!raw_output)
-			printf("Cluster vnode mode: ");
-		if (logs->flags & SD_CLUSTER_FLAG_DISKMODE)
-			printf("disk\n");
+		/* show vnode strategy */
+		if (logs->flags & SD_CLUSTER_FLAG_AUTO_VNODES)
+			strategy = "auto";
+		if (json_output) {
+			json_object_object_add(out_obj, "vnode_strategy",
+				json_object_new_string(strategy));
+		} else if (!raw_output)
+			printf("Cluster vnodes strategy: %s\n", strategy);
 		else
-			printf("node\n");
-	} else
+			printf("%s\n", strategy);
+
+		/* show vnode mode (node or disk) for cluster */
+		if (logs->flags & SD_CLUSTER_FLAG_DISKMODE)
+			vnode_mode = "disk";
+
+		if (json_output)
+			json_object_object_add(out_obj, "vnode_mode",
+				json_object_new_string(vnode_mode));
+		else if (!raw_output)
+			printf("Cluster vnode mode: %s\n", vnode_mode);
+		else
+			printf("%s\n", vnode_mode);
+	} else if (!json_output)
 		printf("\n");
 
 	if (!raw_output && rsp->data_length > 0) {
 		ct = logs[0].ctime >> 32;
-		printf("Cluster created at %s\n", ctime(&ct));
-		printf("Epoch Time           Version [Host:Port:V-Nodes,,,]");
-		printf("\n");
+		localtime_r(&ct, &tm);
+		strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
+
+		if (json_output) {
+			json_object_object_add(out_obj, "creation_time",
+				json_object_new_string(time_str));
+		} else {
+			printf("Cluster created at %s\n", time_str);
+			printf("Epoch Time           Version [Host:Port:V-Nodes,,,]");
+			printf("\n");
+		}
 	}
 
+	log_obj = json_object_new_array();
 	nr_logs = rsp->data_length / (sizeof(struct epoch_log)
 			+ nodes_nr * sizeof(struct sd_node));
 	next_log = (char *)logs;
@@ -394,20 +466,43 @@ retry:
 			strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm);
 		}
 
-		printf(raw_output ? "%s %d" : "%s %6d", time_str, log->epoch);
-		printf(" [");
-		if (cluster_cmd_data.diff) {
-			if (i == nr_logs - 1)
-				printf("formated");
-			else
-				print_nodes_diff(log, last_log, logs->flags);
-		} else
-			print_nodes(log, logs->flags);
-		printf("]\n");
+		if (json_output) {
+			struct json_object *epoch_obj =
+				json_object_new_object();
+			struct json_object *nodes_obj =
+				json_object_new_array();
+			json_object_object_add(epoch_obj, "time",
+				    json_object_new_string(time_str));
+			json_object_object_add(epoch_obj, "epoch",
+				json_object_new_int(log->epoch));
+			json_object_array_add(log_obj, epoch_obj);
+			logs_to_json(nodes_obj, log,
+				     logs->flags);
+			json_object_object_add(epoch_obj, "nodes", nodes_obj);
+		} else {
+			printf(raw_output ? "%s %d" : "%s %6d",
+			       time_str, log->epoch);
+			printf(" [");
+			if (cluster_cmd_data.diff) {
+				if (i == nr_logs - 1)
+					printf("formated");
+				else
+					print_nodes_diff(log, last_log,
+							 logs->flags);
+			} else
+				print_nodes(log, logs->flags);
+			printf("]\n");
+		}
 		next_log = (char *)log->nodes
 				+ nodes_nr * sizeof(struct sd_node);
 	}
-
+	if (json_output) {
+		const char *o;
+		json_object_object_add(out_obj, "logs", log_obj);
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	free(logs);
 	return EXIT_SUCCESS;
 error:
@@ -436,12 +531,31 @@ static void print_list(void *buf, unsigned len)
 	struct snap_log *log_buf = (struct snap_log *)buf;
 	unsigned nr = len / sizeof(struct snap_log);
 
-	printf("Index\t\tTag\t\tSnapshot Time\n");
+	if (!json_output)
+		printf("Index\t\tTag\t\tSnapshot Time\n");
 	for (unsigned i = 0; i < nr; i++, log_buf++) {
 		time_t *t = (time_t *)&log_buf->time;
-		printf("%d\t\t", log_buf->idx);
-		printf("%s\t\t", log_buf->tag);
-		printf("%s", ctime(t));
+		struct tm tm;
+		char time_str[128];
+
+		localtime_r(t, &tm);
+		strftime(time_str, sizeof(time_str),
+			 "%Y-%m-%d %H:%M:%S", &tm);
+		if (json_output) {
+			struct json_object *snap_obj =
+				json_object_new_object();
+			json_object_object_add(snap_obj, "index",
+				json_object_new_int(log_buf->idx));
+			json_object_object_add(snap_obj, "tag",
+				json_object_new_string(log_buf->tag));
+			json_object_object_add(snap_obj, "time",
+				json_object_new_string(time_str));
+			json_object_array_add(out_obj, snap_obj);
+		} else {
+			printf("%d\t\t", log_buf->idx);
+			printf("%s\t\t", log_buf->tag);
+			printf("%s", time_str);
+		}
 	}
 }
 
@@ -459,8 +573,17 @@ static int list_snapshot(int argc, char **argv)
 	if (IS_ERR(buf))
 		goto out;
 
+	if (json_output)
+		out_obj = json_object_new_array();
 	print_list(buf, log_nr * sizeof(struct snap_log));
 	ret = EXIT_SUCCESS;
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 out:
 	if (ret)
 		sd_err("Fail to list snapshot.");
@@ -529,6 +652,9 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 		}
 	} else
 		sd_inode_index_walk(i, fill_cb, &i);
+
+	if (SD_INODE_USE_UUID(&i->header))
+		return;
 
 	/* fill vmstate object id */
 	nr_vmstate_object = DIV_ROUND_UP(i->header.vm_state_size, object_size);
@@ -729,7 +855,8 @@ static int cluster_disable_recover(int argc, char **argv)
 	if (ret)
 		return EXIT_FAILURE;
 
-	printf("Cluster recovery: disable\n");
+	if (!json_output)
+		printf("Cluster recovery: disable\n");
 	return EXIT_SUCCESS;
 }
 
@@ -744,7 +871,8 @@ static int cluster_enable_recover(int argc, char **argv)
 	if (ret)
 		return EXIT_FAILURE;
 
-	printf("Cluster recovery: enable\n");
+	if (!json_output)
+		printf("Cluster recovery: enable\n");
 	return EXIT_SUCCESS;
 }
 
@@ -889,17 +1017,17 @@ static int cluster_alter_copy(int argc, char **argv)
 }
 
 static struct subcommand cluster_cmd[] = {
-	{"info", NULL, "aprhvTd", "show cluster information",
+	{"info", NULL, "ajprhvTd", "show cluster information",
 	 NULL, CMD_NEED_NODELIST, cluster_info, cluster_options},
-	{"format", NULL, "bcltaphzTVRfF", "create a Sheepdog store",
+	{"format", NULL, "bcltajphzTVRfF", "create a Sheepdog store",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_NODELIST, cluster_format, cluster_options},
 	{"shutdown", NULL, "aphT", "stop Sheepdog",
 	 NULL, CMD_NEED_ROOT, cluster_shutdown, cluster_options},
 	{"snapshot", "<tag|idx> <path> [vdi1] [vdi2] ...",
-	 "aphTm", "snapshot/restore the cluster",
+	 "ajphTm", "snapshot/restore the cluster",
 	 cluster_snapshot_cmd, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 cluster_snapshot, cluster_options},
-	{"recover", NULL, "afphT",
+	{"recover", NULL, "afjphT",
 	 "See 'dog cluster recover' for more information",
 	 cluster_recover_cmd, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 cluster_recover, cluster_options},
