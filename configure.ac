@@ -437,7 +437,7 @@ if test "x${enable_sheepfs}" = xyes; then
 fi
 
 if test "x${enable_http}" = xyes; then
-	AC_CHECK_HEADERS([fcgiapp.h],,
+	AC_CHECK_HEADERS([fastcgi/fcgiapp.h],,
 		AC_MSG_ERROR(fcgiapp.h header not found))
 	AC_CHECK_LIB([fcgi], [FCGX_Accept],,
 		AC_MSG_ERROR(libfcgi not found))
