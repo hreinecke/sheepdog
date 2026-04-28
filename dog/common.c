@@ -205,7 +205,7 @@ int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 		}
 
 		/* this VDI has been deleted, and no need to handle it */
-		if (no_deleted && i->name[0] == '\0')
+		if (no_deleted && i->header.name[0] == '\0')
 			continue;
 
 		if (size > SD_INODE_HEADER_SIZE) {
@@ -220,8 +220,9 @@ int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 			}
 		}
 
-		snapid = vdi_is_snapshot(i) ? i->snap_id : 0;
-		func(i->vdi_id, i->name, i->tag, snapid, 0, i, data);
+		snapid = vdi_is_snapshot(&i->header) ? i->header.snap_id : 0;
+		func(i->header.vdi_id, i->header.name, i->header.tag,
+		     snapid, 0, i, data);
 	}
 
 out:

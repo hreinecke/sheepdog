@@ -25,8 +25,8 @@ static void cal_total_vdi_size(uint32_t vid, const char *name, const char *tag,
 {
 	uint64_t *size = data;
 
-	if (!vdi_is_snapshot(i))
-		*size += i->vdi_size;
+	if (!vdi_is_snapshot(&i->header))
+		*size += i->header.vdi_size;
 }
 
 static int node_list(int argc, char **argv)

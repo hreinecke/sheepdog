@@ -475,8 +475,9 @@ static void fill_cb(struct sd_index *idx, void *arg, int ignore)
 
 	if (idx->vdi_id) {
 		oid = vid_to_data_oid(idx->vdi_id, idx->idx);
-		object_tree_insert(oid, inode->nr_copies,
-				   inode->copy_policy, inode->block_size_shift);
+		object_tree_insert(oid, inode->header.nr_copies,
+				   inode->header.copy_policy,
+				   inode->header.block_size_shift);
 	}
 }
 
@@ -487,12 +488,12 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 	uint64_t vdi_oid = vid_to_vdi_oid(vid), vmstate_oid;
 	uint32_t vdi_id;
 	uint32_t nr_objs, nr_vmstate_object;
-	uint32_t object_size = (UINT32_C(1) << i->block_size_shift);
+	uint32_t object_size = (UINT32_C(1) << i->header.block_size_shift);
 	struct vdi_option *opt = (struct vdi_option *)data;
 	bool matched;
 
 	/* ignore active vdi */
-	if (!vdi_is_snapshot(i))
+	if (!vdi_is_snapshot(&i->header))
 		return;
 
 	/* iff vdi specified in command line */
@@ -507,33 +508,35 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 			return;
 	}
 
-	if (i->name[0] != '\0')
+	if (i->header.name[0] != '\0')
 		opt->nr_snapshot++;
 
 	/* fill vdi object id */
-	object_tree_insert(vdi_oid, i->nr_copies, i->copy_policy,
-			   i->block_size_shift);
+	object_tree_insert(vdi_oid, i->header.nr_copies, i->header.copy_policy,
+			   i->header.block_size_shift);
 
 	/* fill data object id */
-	if (!sd_store_policy_is_hyper(i)) {
-		nr_objs = count_data_objs(i);
+	if (!sd_store_policy_is_hyper(&i->header)) {
+		nr_objs = count_data_objs(&i->header);
 		for (uint32_t idx = 0; idx < nr_objs; idx++) {
 			vdi_id = sd_inode_get_vid(i, idx);
 			if (!vdi_id)
 				continue;
 			uint64_t oid = vid_to_data_oid(vdi_id, idx);
-			object_tree_insert(oid, i->nr_copies, i->copy_policy,
-					   i->block_size_shift);
+			object_tree_insert(oid, i->header.nr_copies,
+					   i->header.copy_policy,
+					   i->header.block_size_shift);
 		}
 	} else
 		sd_inode_index_walk(i, fill_cb, &i);
 
 	/* fill vmstate object id */
-	nr_vmstate_object = DIV_ROUND_UP(i->vm_state_size, object_size);
+	nr_vmstate_object = DIV_ROUND_UP(i->header.vm_state_size, object_size);
 	for (uint32_t idx = 0; idx < nr_vmstate_object; idx++) {
 		vmstate_oid = vid_to_vmstate_oid(vid, idx);
-		object_tree_insert(vmstate_oid, i->nr_copies,
-				   i->copy_policy, i->block_size_shift);
+		object_tree_insert(vmstate_oid, i->header.nr_copies,
+				   i->header.copy_policy,
+				   i->header.block_size_shift);
 	}
 }
 
@@ -797,7 +800,7 @@ static void cluster_check_cb(uint32_t vid, const char *name, const char *tag,
 			     uint32_t snapid, uint32_t flags,
 			     const struct sd_inode *inode, void *data)
 {
-	if (vdi_is_snapshot(inode))
+	if (vdi_is_snapshot(&inode->header))
 		printf("fix snapshot %s (id: %d, tag: \"%s\")\n", name,
 		       snapid, tag);
 	else

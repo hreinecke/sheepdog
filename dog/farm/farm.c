@@ -69,7 +69,7 @@ static int vdi_cmp(const struct active_vdi_entry *e1,
 }
 
 static void update_active_vdi_entry(struct active_vdi_entry *vdi,
-				    struct sd_inode *new)
+				    struct sd_inode_header *new)
 {
 	pstrcpy(vdi->name, sizeof(vdi->name), new->name);
 	vdi->vdi_size = new->vdi_size;
@@ -81,7 +81,7 @@ static void update_active_vdi_entry(struct active_vdi_entry *vdi,
 	vdi->block_size_shift = new->block_size_shift;
 }
 
-static void add_active_vdi(struct sd_inode *new)
+static void add_active_vdi(struct sd_inode_header *new)
 {
 	struct active_vdi_entry *vdi, *ret;
 
@@ -477,38 +477,35 @@ static int queue_load_snapshot_work(struct trunk_entry *entry, void *data)
 
 static int visit_vdi_obj_entry(struct trunk_entry *entry, void *data)
 {
-	int ret = -1;
 	size_t size;
-	struct sd_inode *inode;
+	void *slice;
+	struct sd_inode inode = {};
 	struct vdi_option *opt = (struct vdi_option *)data;
 
 	if (!is_vdi_obj(entry->oid))
 		return 0;
 
-	inode = slice_read(entry->sha1, &size);
-	if (!inode) {
+	slice = slice_read(entry->sha1, &size);
+	if (!slice) {
 		sd_err("Fail to load vdi object, oid %016"PRIx64, entry->oid);
-		goto out;
+		return -1;
 	}
-
+	memcpy(&inode, slice, size);
+	free(slice);
 	if (opt->count == 0) {
 		if (opt->enable_if_blank)
-			opt->func(inode);
-	} else if (inode->name[0] == '\0') {
+			opt->func(&inode);
+	} else if (inode.header.name[0] == '\0') {
 		if (opt->enable_if_deleted)
-			opt->func(inode);
+			opt->func(&inode);
 	} else {
 		for (int i = 0; i < opt->count; i++)
-			if (!strcmp(inode->name, opt->name[i])) {
-				opt->func(inode);
+			if (!strcmp(inode.header.name, opt->name[i])) {
+				opt->func(&inode);
 				break;
 			}
 	}
-
-	ret = 0;
-out:
-	free(inode);
-	return ret;
+	return 0;
 }
 
 static void do_register_obj(uint64_t oid)
@@ -528,7 +525,7 @@ static void do_register_obj(uint64_t oid)
 
 static void register_obj(struct sd_inode *inode)
 {
-	do_register_obj(vid_to_vdi_oid(inode->vdi_id));
+	do_register_obj(vid_to_vdi_oid(inode->header.vdi_id));
 
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i])
@@ -587,7 +584,8 @@ static void print_vdi(struct sd_inode *inode)
 	static int seq;
 
 	sd_info("%d. VDI id: %"PRIx32", name: %s, tag: %s",
-			++seq, inode->vdi_id, inode->name, inode->tag);
+		++seq, inode->header.vdi_id,
+		inode->header.name, inode->header.tag);
 }
 
 int farm_show_snapshot(uint32_t idx, const char *tag, int count, char **name)

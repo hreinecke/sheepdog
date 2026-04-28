@@ -384,16 +384,16 @@ static int upgrade_inode_convert(int argc, char **argv)
 			return EXIT_USAGE;
 		}
 
-		memcpy(dst->name, orig_0_7->name, SD_MAX_VDI_LEN);
-		memcpy(dst->tag, orig_0_7->tag, SD_MAX_VDI_TAG_LEN);
-		dst->create_time = orig_0_7->create_time;
-		dst->vm_clock_nsec = orig_0_7->vm_clock_nsec;
-		dst->vdi_size = orig_0_7->vdi_size;
-		dst->vm_state_size = orig_0_7->vm_state_size;
-		dst->copy_policy = orig_0_7->copy_policy;
-		dst->nr_copies = orig_0_7->nr_copies;
-		dst->block_size_shift = orig_0_7->block_size_shift;
-		dst->vdi_id = orig_0_7->vdi_id;
+		memcpy(dst->header.name, orig_0_7->name, SD_MAX_VDI_LEN);
+		memcpy(dst->header.tag, orig_0_7->tag, SD_MAX_VDI_TAG_LEN);
+		dst->header.create_time = orig_0_7->create_time;
+		dst->header.vm_clock_nsec = orig_0_7->vm_clock_nsec;
+		dst->header.vdi_size = orig_0_7->vdi_size;
+		dst->header.vm_state_size = orig_0_7->vm_state_size;
+		dst->header.copy_policy = orig_0_7->copy_policy;
+		dst->header.nr_copies = orig_0_7->nr_copies;
+		dst->header.block_size_shift = orig_0_7->block_size_shift;
+		dst->header.vdi_id = orig_0_7->vdi_id;
 
 		memcpy(dst->data_vdi_id, orig_0_7->data_vdi_id,
 		       sizeof(uint32_t) * SD_INODE_DATA_INDEX);
@@ -411,16 +411,16 @@ static int upgrade_inode_convert(int argc, char **argv)
 			return EXIT_USAGE;
 		}
 
-		memcpy(dst->name, orig_0_8->name, SD_MAX_VDI_LEN);
-		memcpy(dst->tag, orig_0_8->tag, SD_MAX_VDI_TAG_LEN);
-		dst->create_time = orig_0_8->create_time;
-		dst->vm_clock_nsec = orig_0_8->vm_clock_nsec;
-		dst->vdi_size = orig_0_8->vdi_size;
-		dst->vm_state_size = orig_0_8->vm_state_size;
-		dst->copy_policy = orig_0_8->copy_policy;
-		dst->nr_copies = orig_0_8->nr_copies;
-		dst->block_size_shift = orig_0_8->block_size_shift;
-		dst->vdi_id = orig_0_8->vdi_id;
+		memcpy(dst->header.name, orig_0_8->name, SD_MAX_VDI_LEN);
+		memcpy(dst->header.tag, orig_0_8->tag, SD_MAX_VDI_TAG_LEN);
+		dst->header.create_time = orig_0_8->create_time;
+		dst->header.vm_clock_nsec = orig_0_8->vm_clock_nsec;
+		dst->header.vdi_size = orig_0_8->vdi_size;
+		dst->header.vm_state_size = orig_0_8->vm_state_size;
+		dst->header.copy_policy = orig_0_8->copy_policy;
+		dst->header.nr_copies = orig_0_8->nr_copies;
+		dst->header.block_size_shift = orig_0_8->block_size_shift;
+		dst->header.vdi_id = orig_0_8->vdi_id;
 
 		memcpy(dst->data_vdi_id, orig_0_8->data_vdi_id,
 		       sizeof(uint32_t) * SD_INODE_DATA_INDEX);

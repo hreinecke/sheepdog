@@ -492,7 +492,7 @@ static struct vdi_state *fill_vdi_state_list_with_alloc(int *result_nr)
 
 static inline bool vdi_is_deleted(struct sd_inode *inode)
 {
-	return *inode->name == '\0';
+	return *inode->header.name == '\0';
 }
 
 int vdi_exist(uint32_t vid)
@@ -1080,26 +1080,28 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	unsigned long block_size = (UINT32_C(1) << iocb->block_size_shift);
 	uuid_t uuid;
 
-	pstrcpy(new->name, sizeof(new->name), iocb->name);
-	new->vdi_id = new_vid;
-	new->create_time = iocb->time;
-	new->vdi_size = iocb->size;
-	new->copy_policy = iocb->copy_policy;
-	new->store_policy = iocb->store_policy;
-	new->nr_copies = iocb->nr_copies;
-	new->block_size_shift = find_next_bit(&block_size, BITS_PER_LONG, 0);
-	new->snap_id = new_snapid;
-	if (SD_INODE_USE_UUID(new)) {
+	pstrcpy(new->header.name, sizeof(new->header.name), iocb->name);
+	new->header.vdi_id = new_vid;
+	new->header.create_time = iocb->time;
+	new->header.vdi_size = iocb->size;
+	new->header.copy_policy = iocb->copy_policy;
+	new->header.store_policy = iocb->store_policy;
+	new->header.nr_copies = iocb->nr_copies;
+	new->header.block_size_shift =
+		find_next_bit(&block_size, BITS_PER_LONG, 0);
+	new->header.snap_id = new_snapid;
+	if (SD_INODE_USE_UUID(&new->header)) {
 		uuid_generate(uuid);
-		memcpy(&new->vm_clock_nsec, (char *)uuid, 8);
-		memcpy(&new->vm_state_size, (char *)(uuid + 8), 8);
+		memcpy(&new->header.vm_clock_nsec, (char *)uuid, 8);
+		memcpy(&new->header.vm_state_size, (char *)(uuid + 8), 8);
 	}
-	new->parent_vdi_id = iocb->base_vid;
+	new->header.parent_vdi_id = iocb->base_vid;
 	if (data_vdi_id)
 		sd_inode_copy_vdis(sheep_bnode_writer, sheep_bnode_reader,
-				   data_vdi_id, sd_store_policy_is_hyper(new),
+				   data_vdi_id,
+				   sd_store_policy_is_hyper(&new->header),
 				   iocb->nr_copies, iocb->copy_policy, new);
-	else if (sd_store_policy_is_hyper(new))
+	else if (sd_store_policy_is_hyper(&new->header))
 		sd_inode_init(new->data_vdi_id, 1);
 
 	if (gref) {
@@ -1127,8 +1129,8 @@ static int create_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 	sd_debug("%s: size %" PRIu64 ", new_vid %" PRIx32 ", copies %d, "
 		 "snapid %" PRIu32 " copy policy %"PRIu8 "store policy %"PRIu8
 		 "block_size_shift %"PRIu8, iocb->name, iocb->size, new_vid,
-		  iocb->nr_copies, new_snapid, new->copy_policy,
-		  new->store_policy, iocb->block_size_shift);
+		  iocb->nr_copies, new_snapid, new->header.copy_policy,
+		  new->header.store_policy, iocb->block_size_shift);
 
 	ret = sd_write_object(vid_to_vdi_oid(new_vid), (char *)new,
 			      sizeof(*new), 0, true);
@@ -1240,7 +1242,7 @@ static int snapshot_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 	/* TODO: multiple sd_write_object should be performed atomically */
 
 	/* update a base vdi */
-	base->snap_ctime = iocb->time;
+	base->header.snap_ctime = iocb->time;
 
 	for (int i = 0; i < ARRAY_SIZE(base->gref); i++) {
 		if (base->data_vdi_id[i])
@@ -1312,7 +1314,8 @@ static int rebase_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 
        ret = sd_write_object(vid_to_vdi_oid(cur_vid), (char *)&iocb->time,
                              sizeof(iocb->time),
-                             offsetof(struct sd_inode, snap_ctime), false);
+                             offsetof(struct sd_inode_header, snap_ctime),
+			     false);
 	if (ret != SD_RES_SUCCESS) {
 		ret = SD_RES_VDI_WRITE;
 		goto out;
@@ -1384,7 +1387,7 @@ static inline bool vdi_has_tag(const struct vdi_iocb *iocb)
 }
 
 static inline bool vdi_tag_match(const struct vdi_iocb *iocb,
-				 const struct sd_inode *inode)
+				 const struct sd_inode_header *inode)
 {
 	const char *tag = iocb->tag;
 
@@ -1399,61 +1402,53 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 			       const struct vdi_iocb *iocb,
 			       struct vdi_info *info)
 {
-	struct sd_inode *inode;
+	struct sd_inode_header inode;
 	bool vdi_found = false;
 	int ret = SD_RES_NO_VDI;
 	uint32_t i;
 	const char *name = iocb->name;
 
-	inode = malloc(offsetof(struct sd_inode, btree_counter));
-	if (!inode) {
-		sd_err("failed to allocate memory");
-		ret = SD_RES_NO_MEM;
-		goto out;
-	}
 	for (i = right - 1; i >= left && i; i--) {
 		if (!test_bit(i, sys->vdi_inuse) &&
 		    !test_bit(i, sys->vdi_deleted))
 			continue;
 
-		ret = sd_read_object(vid_to_vdi_oid(i), (char *)inode,
-				     offsetof(struct sd_inode, btree_counter),
-				     0);
+		ret = sd_read_object(vid_to_vdi_oid(i), (char *)&inode,
+				     sizeof(inode), 0);
 		if (ret != SD_RES_SUCCESS)
 			goto out;
 
-		if (!strncmp(inode->name, name, sizeof(inode->name))) {
-			sd_debug("%s = %s, %u = %u", iocb->tag, inode->tag,
-				 iocb->snapid, inode->snap_id);
+		if (!strncmp(inode.name, name, sizeof(inode.name))) {
+			sd_debug("%s = %s, %u = %u", iocb->tag,
+				 inode.tag, iocb->snapid, inode.snap_id);
 			if (vdi_has_tag(iocb)) {
 				/* Read, delete, clone on snapshots */
-				if (!vdi_is_snapshot(inode)) {
+				if (!vdi_is_snapshot(&inode)) {
 					vdi_found = true;
-					info->vid = inode->vdi_id;
+					info->vid = inode.vdi_id;
 					continue;
 				}
-				if (!vdi_tag_match(iocb, inode))
+				if (!vdi_tag_match(iocb, &inode))
 					continue;
 			} else {
 				/*
 				 * Rollback & snap create, read, delete on
 				 * current working VDI
 				 */
-				info->snapid = inode->snap_id + 1;
-				if (vdi_is_snapshot(inode)) {
+				info->snapid = inode.snap_id + 1;
+				if (vdi_is_snapshot(&inode)) {
 					/* Current working VDI is deleted */
-					info->vid = inode->vdi_id;
+					info->vid = inode.vdi_id;
 					break;
 				}
 			}
-			info->create_time = inode->create_time;
-			info->vid = inode->vdi_id;
+			info->create_time = inode.create_time;
+			info->vid = inode.vdi_id;
 			goto out;
 		}
 	}
 	ret = vdi_found ? SD_RES_NO_TAG : SD_RES_NO_VDI;
 out:
-	free(inode);
 	return ret;
 }
 
@@ -1748,7 +1743,7 @@ static void delete_cb(struct sd_index *idx, void *arg, int ignore)
 
 	if (idx->vdi_id) {
 		oid = vid_to_data_oid(idx->vdi_id, idx->idx);
-		if (idx->vdi_id != darg->inode->vdi_id)
+		if (idx->vdi_id != darg->inode->header.vdi_id)
 			sd_debug("object %016" PRIx64 " is base's data, would"
 				 " not be deleted.", oid);
 		else {
@@ -1786,11 +1781,11 @@ static void delete_vdi_work(struct work *work)
 		goto out;
 	}
 
-	if (inode->vdi_size == 0 && vdi_is_deleted(inode))
+	if (inode->header.vdi_size == 0 && vdi_is_deleted(inode))
 		goto out;
 
-	if (!sd_store_policy_is_hyper(inode)) {
-		nr_objs = count_data_objs(inode);
+	if (!sd_store_policy_is_hyper(&inode->header)) {
+		nr_objs = count_data_objs(&inode->header);
 		for (nr_deleted = 0, i = 0; i < nr_objs; i++) {
 			uint32_t vid = sd_inode_get_vid(inode, i);
 
@@ -1812,8 +1807,8 @@ static void delete_vdi_work(struct work *work)
 	if (vdi_is_deleted(inode))
 		goto out;
 
-	inode->vdi_size = 0;
-	memset(inode->name, 0, sizeof(inode->name));
+	inode->header.vdi_size = 0;
+	memset(inode->header.name, 0, sizeof(inode->header.name));
 	memset((char *)inode + SD_INODE_HEADER_SIZE, 0,
 	       SD_INODE_SIZE - SD_INODE_HEADER_SIZE);
 

@@ -451,13 +451,15 @@ static void transfer_to_idx_root(write_node_fn writer, struct sd_inode *inode)
 	split_to_nodes(root, left, right, num);
 
 	/* write two nodes back */
-	left_oid = vid_to_btree_oid(inode->vdi_id, inode->btree_counter++);
-	right_oid = vid_to_btree_oid(inode->vdi_id, inode->btree_counter++);
+	left_oid = vid_to_btree_oid(inode->header.vdi_id,
+				    inode->btree_counter++);
+	right_oid = vid_to_btree_oid(inode->header.vdi_id,
+				     inode->btree_counter++);
 
 	writer(left_oid, left, SD_INODE_DATA_INDEX_SIZE, 0, 0,
-	       inode->nr_copies, inode->copy_policy, true, false);
+	       inode->header.nr_copies, inode->header.copy_policy, true, false);
 	writer(right_oid, right, SD_INODE_DATA_INDEX_SIZE, 0, 0,
-	       inode->nr_copies, inode->copy_policy, true, false);
+	       inode->header.nr_copies, inode->header.copy_policy, true, false);
 
 	/* change root from ext-node to idx-node */
 	root->entries = 0;
@@ -541,7 +543,7 @@ uint32_t sd_inode_get_vid(const struct sd_inode *inode, uint32_t idx)
 	struct find_path path;
 	int ret;
 
-	if (!sd_store_policy_is_hyper(inode))
+	if (!sd_store_policy_is_hyper(&inode->header))
 		return inode->data_vdi_id[idx];
 	else {
 		/* btree is not init, so vdi is 0 */
@@ -574,11 +576,12 @@ static void split_index_node(write_node_fn writer, struct sd_inode *inode,
 
 	split_to_nodes(old, new_ext, old, num);
 
-	new_oid = vid_to_btree_oid(inode->vdi_id, inode->btree_counter++);
+	new_oid = vid_to_btree_oid(inode->header.vdi_id,
+				   inode->btree_counter++);
 	writer(new_oid, new_ext, SD_INODE_DATA_INDEX_SIZE, 0, 0,
-	       inode->nr_copies, inode->copy_policy, true, false);
+	       inode->header.nr_copies, inode->header.copy_policy, true, false);
 	writer(path->p_indirect_idx->oid, old, SD_INODE_DATA_INDEX_SIZE, 0, 0,
-	       inode->nr_copies, inode->copy_policy, false, false);
+	       inode->header.nr_copies, inode->header.copy_policy, false, false);
 
 	/* write new index */
 	insert_idx_entry(INDEX_HEADER(inode->data_vdi_id),
@@ -621,8 +624,9 @@ static int insert_new_node(write_node_fn writer, read_node_fn reader,
 			insert_index_nosearch(path->p_index_header,
 					      path->p_index, idx, vdi_id);
 			writer(path->p_indirect_idx->oid, path->p_index_header,
-			       SD_INODE_DATA_INDEX_SIZE, 0, 0, inode->nr_copies,
-			       inode->copy_policy, false, false);
+			       SD_INODE_DATA_INDEX_SIZE, 0, 0,
+			       inode->header.nr_copies,
+			       inode->header.copy_policy, false, false);
 		} else if (path->p_index_header) {
 			/* the last idx-node */
 			insert_index_nosearch(path->p_index_header,
@@ -631,8 +635,9 @@ static int insert_new_node(write_node_fn writer, read_node_fn reader,
 			path->p_indirect_idx->idx =
 				(LAST_INDEX(path->p_index_header) - 1)->idx;
 			writer(path->p_indirect_idx->oid, path->p_index_header,
-			       SD_INODE_DATA_INDEX_SIZE, 0, 0, inode->nr_copies,
-			       inode->copy_policy, false, false);
+			       SD_INODE_DATA_INDEX_SIZE, 0, 0,
+			       inode->header.nr_copies,
+			       inode->header.copy_policy, false, false);
 		} else {
 			/* if btree is full, then panic */
 			if (header->entries >= EXT_IDX_MAX_ENTRIES)
@@ -640,14 +645,14 @@ static int insert_new_node(write_node_fn writer, read_node_fn reader,
 			/* create a new ext-node */
 			leaf_node = xvalloc(SD_INODE_DATA_INDEX_SIZE);
 			sd_inode_init(leaf_node, 1);
-			oid = vid_to_btree_oid(inode->vdi_id,
+			oid = vid_to_btree_oid(inode->header.vdi_id,
 					       inode->btree_counter++);
 			insert_index_nosearch(leaf_node,
 					      FIRST_INDEX(leaf_node), idx,
 					      vdi_id);
 			writer(oid, leaf_node, SD_INODE_DATA_INDEX_SIZE,
-			       0, 0, inode->nr_copies,
-			       inode->copy_policy, true, false);
+			       0, 0, inode->header.nr_copies,
+			       inode->header.copy_policy, true, false);
 			insert_indirect_nosearch(header, path->p_indirect_idx,
 						 idx, oid);
 		}
@@ -683,8 +688,9 @@ static void set_vid_for_btree(write_node_fn writer, read_node_fn reader,
 				(unsigned char *)(path.p_index_header) +
 				offsetof(struct sd_index, vdi_id);
 			writer(path.p_indirect_idx->oid, &vdi_id,
-			       sizeof(vdi_id), offset, 0, inode->nr_copies,
-			       inode->copy_policy, false, false);
+			       sizeof(vdi_id), offset, 0,
+			       inode->header.nr_copies,
+			       inode->header.copy_policy, false, false);
 			goto out;
 		} else if (ret == SD_RES_NOT_FOUND) {
 			ret = insert_new_node(writer, reader, inode,
@@ -710,7 +716,7 @@ int sd_inode_set_vid_range(struct sd_inode *inode, uint32_t idx_start,
 	int idx;
 
 	for (idx = idx_start; idx <= idx_end; idx++) {
-		if (!sd_store_policy_is_hyper(inode))
+		if (!sd_store_policy_is_hyper(&inode->header))
 			inode->data_vdi_id[idx] = vdi_id;
 		else {
 			if (inode->data_vdi_id[0] == 0)
@@ -728,10 +734,10 @@ int sd_inode_set_vid_range(struct sd_inode *inode, uint32_t idx_start,
 					  idx, vdi_id);
 		}
 	}
-	if (sd_store_policy_is_hyper(inode))
+	if (sd_store_policy_is_hyper(&inode->header))
 		dump_btree(inode);
 
-	icache_release(inode->nr_copies, inode->copy_policy);
+	icache_release(inode->header.nr_copies, inode->header.copy_policy);
 	/* XXX: return error code */
 	return 0;
 }
@@ -751,8 +757,9 @@ uint32_t sd_inode_get_meta_size(struct sd_inode *inode, size_t size)
 	struct sd_index_header *header;
 	uint32_t len;
 
-	if (!sd_store_policy_is_hyper(inode)) {
-		len = count_data_objs(inode) * sizeof(inode->data_vdi_id[0]);
+	if (!sd_store_policy_is_hyper(&inode->header)) {
+		len = count_data_objs(&inode->header) *
+			sizeof(inode->data_vdi_id[0]);
 		if (len > size - SD_INODE_HEADER_SIZE - sizeof(uint32_t))
 			len = size - SD_INODE_HEADER_SIZE - sizeof(uint32_t);
 	} else {
@@ -775,26 +782,29 @@ int sd_inode_write(struct sd_inode *inode, int flags, bool create, bool direct)
 	uint32_t len;
 	int ret;
 
-	if (!sd_store_policy_is_hyper(inode))
-		ret = inode_actor.writer(vid_to_vdi_oid(inode->vdi_id), inode,
-					 SD_INODE_HEADER_SIZE, 0,
-					 flags, inode->nr_copies,
-					 inode->copy_policy,
+	if (!sd_store_policy_is_hyper(&inode->header))
+		ret = inode_actor.writer(vid_to_vdi_oid(inode->header.vdi_id),
+					 inode, SD_INODE_HEADER_SIZE, 0,
+					 flags, inode->header.nr_copies,
+					 inode->header.copy_policy,
 					 create, direct);
 	else {
 		len = SD_INODE_HEADER_SIZE + sd_inode_get_meta_size(inode, 0);
-		ret = inode_actor.writer(vid_to_vdi_oid(inode->vdi_id), inode,
-					 len, 0, flags, inode->nr_copies,
-					 inode->copy_policy, create, false);
+		ret = inode_actor.writer(vid_to_vdi_oid(inode->header.vdi_id),
+					 inode, len, 0, flags,
+					 inode->header.nr_copies,
+					 inode->header.copy_policy,
+					 create, false);
 		if (ret != SD_RES_SUCCESS)
 			goto out;
-		ret = inode_actor.writer(vid_to_vdi_oid(inode->vdi_id),
+		ret = inode_actor.writer(vid_to_vdi_oid(inode->header.vdi_id),
 					 &(inode->btree_counter),
 					 sizeof(uint32_t),
 					 offsetof(struct sd_inode,
 						  btree_counter),
 					 flags,
-					 inode->nr_copies, inode->copy_policy,
+					 inode->header.nr_copies,
+					 inode->header.copy_policy,
 					 create, false);
 	}
 out:
@@ -808,12 +818,12 @@ int sd_inode_write_vid(struct sd_inode *inode,
 {
 	int ret = SD_RES_SUCCESS;
 
-	if (!sd_store_policy_is_hyper(inode))
+	if (!sd_store_policy_is_hyper(&inode->header))
 		ret = inode_actor.writer(vid_to_vdi_oid(vid), &value,
 					 sizeof(value),
 				SD_INODE_HEADER_SIZE + sizeof(value) * idx,
-					 flags, inode->nr_copies,
-					 inode->copy_policy,
+					 flags, inode->header.nr_copies,
+					 inode->header.copy_policy,
 					 create, direct);
 	else {
 		/*
@@ -848,7 +858,7 @@ void sd_inode_copy_vdis(write_node_fn writer, read_node_fn reader,
 		while (old_iter_idx != last_idx) {
 			reader(old_iter_idx->oid, &tmp,
 			       SD_INODE_DATA_INDEX_SIZE, 0);
-			oid = vid_to_btree_oid(newi->vdi_id,
+			oid = vid_to_btree_oid(newi->header.vdi_id,
 					       newi->btree_counter++);
 			writer(oid, leaf_node, SD_INODE_DATA_INDEX_SIZE, 0, 0,
 			       nr_copies, copy_policy, true, false);
@@ -882,7 +892,7 @@ static void stat_cb(struct sd_index *idx, void *arg,
 static void hypver_volume_stat(const struct sd_inode *inode,
 			       uint64_t *my_objs, uint64_t *cow_objs)
 {
-	struct stat_arg arg = {my_objs, cow_objs, inode->vdi_id};
+	struct stat_arg arg = {my_objs, cow_objs, inode->header.vdi_id};
 	sd_inode_index_walk(inode, stat_cb, &arg);
 }
 
@@ -891,14 +901,14 @@ static void volume_stat(const struct sd_inode *inode, uint64_t *my_objs,
 {
 	int nr;
 	uint64_t my, cow, *p;
-	uint32_t vid = inode->vdi_id;
+	uint32_t vid = inode->header.vdi_id;
 
 	my = 0;
 	cow = 0;
-	nr = count_data_objs(inode);
+	nr = count_data_objs(&inode->header);
 
 	if (nr % 2 != 0) {
-		if (inode->data_vdi_id[0] == inode->vdi_id)
+		if (inode->data_vdi_id[0] == inode->header.vdi_id)
 			my++;
 		else if (inode->data_vdi_id[0] != 0)
 			cow++;
@@ -945,7 +955,7 @@ static void volume_stat(const struct sd_inode *inode, uint64_t *my_objs,
 void sd_inode_stat(const struct sd_inode *inode, uint64_t *my_objs,
 		   uint64_t *cow_objs)
 {
-	if (!sd_store_policy_is_hyper(inode))
+	if (!sd_store_policy_is_hyper(&inode->header))
 		volume_stat(inode, my_objs, cow_objs);
 	else
 		hypver_volume_stat(inode, my_objs, cow_objs);

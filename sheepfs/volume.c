@@ -67,7 +67,7 @@ static struct sd_rw_lock vdi_inode_tree_lock = SD_RW_LOCK_INITIALIZER;
 static inline bool is_data_obj_writeable(const struct sd_inode *inode,
 					 uint32_t idx)
 {
-	return inode->vdi_id == sd_inode_get_vid(inode, idx);
+	return inode->header.vdi_id == sd_inode_get_vid(inode, idx);
 }
 
 static int vdi_inode_cmp(const struct vdi_inode *a, const struct vdi_inode *b)

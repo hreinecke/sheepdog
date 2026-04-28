@@ -108,7 +108,7 @@ int dog_bnode_reader(uint64_t oid, void **mem, unsigned int len,
 static inline bool is_data_obj_writeable(const struct sd_inode *inode,
 					 uint32_t idx)
 {
-	return inode->vdi_id == sd_inode_get_vid(inode, idx);
+	return inode->header.vdi_id == sd_inode_get_vid(inode, idx);
 }
 
 /*
@@ -174,12 +174,12 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	struct tm tm;
 	char dbuf[128];
 	struct get_vdi_info *info = data;
-	uint32_t object_size = (UINT32_C(1) << i->block_size_shift);
+	uint32_t object_size = (UINT32_C(1) << i->header.block_size_shift);
 
 	if (info && strcmp(name, info->name) != 0)
 		return;
 
-	ti = i->create_time >> 32;
+	ti = i->header.create_time >> 32;
 	if (raw_output) {
 		snprintf(dbuf, sizeof(dbuf), "%" PRIu64, (uint64_t) ti);
 	} else {
@@ -190,34 +190,38 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 
 	sd_inode_stat(i, &my_objs, &cow_objs);
 
-	if (i->snap_id == 1 && i->parent_vdi_id != 0)
+	if (i->header.snap_id == 1 && i->header.parent_vdi_id != 0)
 		is_clone = true;
 
 	if (raw_output) {
-		printf("%c ", vdi_is_snapshot(i) ? 's' : (is_clone ? 'c' : '='));
+		printf("%c ", vdi_is_snapshot(&i->header) ?
+		       's' : (is_clone ? 'c' : '='));
 		while (*name) {
 			if (isspace(*name) || *name == '\\')
 				putchar('\\');
 			putchar(*name++);
 		}
 		printf(" %d %s %s %s %s %" PRIx32 " %s %s %" PRIu8 "\n",
-		       snapid, strnumber(i->vdi_size),
+		       snapid, strnumber(i->header.vdi_size),
 		       strnumber(my_objs * object_size),
 		       strnumber(cow_objs * object_size),
 		       dbuf, vid,
-		       redundancy_scheme(i->nr_copies, i->copy_policy),
-		       i->tag, i->block_size_shift);
+		       redundancy_scheme(i->header.nr_copies,
+					 i->header.copy_policy),
+		       i->header.tag, i->header.block_size_shift);
 	} else {
 		printf("%c %-8s %5d %7s %7s %7s %s  %7" PRIx32
 		       " %6s %13s %3" PRIu8 "\n",
-		       vdi_is_snapshot(i) ? 's' : (is_clone ? 'c' : ' '),
+		       vdi_is_snapshot(&i->header) ?
+		       's' : (is_clone ? 'c' : ' '),
 		       name, snapid,
-		       strnumber(i->vdi_size),
+		       strnumber(i->header.vdi_size),
 		       strnumber(my_objs * object_size),
 		       strnumber(cow_objs * object_size),
 		       dbuf, vid,
-		       redundancy_scheme(i->nr_copies, i->copy_policy),
-		       i->tag, i->block_size_shift);
+		       redundancy_scheme(i->header.nr_copies,
+					 i->header.copy_policy),
+		       i->header.tag, i->header.block_size_shift);
 	}
 }
 
@@ -229,8 +233,8 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 	struct tm tm;
 	char buf[128];
 
-	if (vdi_is_snapshot(i)) {
-		ti = i->create_time >> 32;
+	if (vdi_is_snapshot(&i->header)) {
+		ti = i->header.create_time >> 32;
 		localtime_r(&ti, &tm);
 
 		strftime(buf, sizeof(buf),
@@ -238,8 +242,8 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 	} else
 		pstrcpy(buf, sizeof(buf), "(you are here)");
 
-	add_vdi_tree(name, buf, vid, i->parent_vdi_id,
-		     highlight && !vdi_is_snapshot(i));
+	add_vdi_tree(name, buf, vid, i->header.parent_vdi_id,
+		     highlight && !vdi_is_snapshot(&i->header));
 }
 
 static void print_vdi_graph(uint32_t vid, const char *name, const char *tag,
@@ -250,13 +254,13 @@ static void print_vdi_graph(uint32_t vid, const char *name, const char *tag,
 	struct tm tm;
 	char dbuf[128], tbuf[128];
 
-	ti = i->create_time >> 32;
+	ti = i->header.create_time >> 32;
 	localtime_r(&ti, &tm);
 
 	strftime(dbuf, sizeof(dbuf), "%Y-%m-%d", &tm);
 	strftime(tbuf, sizeof(tbuf), "%H:%M:%S", &tm);
 
-	printf("  \"%x\" -> \"%x\";\n", i->parent_vdi_id, vid);
+	printf("  \"%x\" -> \"%x\";\n", i->header.parent_vdi_id, vid);
 	printf("  \"%x\" [\n"
 	       "    group = \"%s\",\n"
 	       "    label = \"",
@@ -266,9 +270,9 @@ static void print_vdi_graph(uint32_t vid, const char *name, const char *tag,
 	       "Size: %10s\\n"
 	       "Date: %10s\\n"
 	       "Time: %10s",
-	       name, snapid, strnumber(i->vdi_size), dbuf, tbuf);
+	       name, snapid, strnumber(i->header.vdi_size), dbuf, tbuf);
 
-	if (vdi_is_snapshot(i))
+	if (vdi_is_snapshot(&i->header))
 		printf("\"\n  ];\n\n");
 	else
 		printf("\",\n    color=\"red\"\n  ];\n\n");
@@ -353,6 +357,7 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 			    uint32_t snapid, uint32_t flags,
 			    const struct sd_inode *i, void *data)
 {
+	const struct sd_inode_header *h = &i->header;
 	const struct lock_list_data *u = (const struct lock_list_data *)data;
 	const struct vdi_state key = { .vid = vid };
 	const struct vdi_state *found = bsearch(&key, u->sorted, u->nmemb,
@@ -362,10 +367,10 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 	if (!found || found->lock_state == LOCK_STATE_UNLOCKED)
 		return;
 
-	const bool is_clone = (i->snap_id == 1 && i->parent_vdi_id != 0);
+	const bool is_clone = (h->snap_id == 1 && h->parent_vdi_id != 0);
 
 	printf("%c %-8s  %5" PRIu32 "  %6" PRIx32 "  %-13s ",
-	       vdi_is_snapshot(i) ? 's' : (is_clone ? 'c' : ' '),
+	       vdi_is_snapshot(h) ? 's' : (is_clone ? 'c' : ' '),
 	       name, snapid, vid, tag);
 
 	if (found->lock_state == LOCK_STATE_LOCKED) {
@@ -483,8 +488,7 @@ static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
 }
 
 int read_vdi_obj(const char *vdiname, int snapid, const char *tag,
-			uint32_t *pvid, struct sd_inode *inode,
-			size_t size)
+			uint32_t *pvid, void *inode, size_t size)
 {
 	int ret;
 	uint32_t vid;
@@ -643,15 +647,16 @@ static int vdi_create(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	object_size = (UINT32_C(1) << inode->block_size_shift);
+	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	max_idx = DIV_ROUND_UP(size, object_size);
 
 	for (idx = 0; idx < max_idx; idx++) {
-		vdi_show_progress(idx * object_size, inode->vdi_size);
+		vdi_show_progress(idx * object_size, inode->header.vdi_size);
 		oid = vid_to_data_oid(vid, idx);
 
-		ret = dog_write_object(oid, 0, NULL, 0, 0, 0, inode->nr_copies,
-				      inode->copy_policy, true, true);
+		ret = dog_write_object(oid, 0, NULL, 0, 0, 0,
+				       inode->header.nr_copies,
+				       inode->header.copy_policy, true, true);
 		if (ret != SD_RES_SUCCESS) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -664,7 +669,7 @@ static int vdi_create(int argc, char **argv)
 			goto out;
 		}
 	}
-	vdi_show_progress(idx * object_size, inode->vdi_size);
+	vdi_show_progress(idx * object_size, inode->header.vdi_size);
 	ret = EXIT_SUCCESS;
 
 out:
@@ -751,8 +756,7 @@ static int vdi_snapshot(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint32_t vid, new_vid;
 	int ret;
-	char buf[SD_INODE_HEADER_SIZE];
-	struct sd_inode *inode = (struct sd_inode *)buf;
+	struct sd_inode_header inode;
 	bool fail_if_snapshot = false;
 
 	if (vdi_cmd_data.snapshot_id != 0) {
@@ -776,12 +780,12 @@ static int vdi_snapshot(int argc, char **argv)
 	}
 
 	if (fail_if_snapshot) {
-		ret = dog_read_object(vid_to_vdi_oid(vid), inode,
+		ret = dog_read_object(vid_to_vdi_oid(vid), &inode,
 				      SD_INODE_HEADER_SIZE, 0, true);
 		if (ret != EXIT_SUCCESS)
 			return ret;
 
-		if (vdi_is_snapshot(inode)) {
+		if (vdi_is_snapshot(&inode)) {
 			sd_err("Failed to create snapshot for %s, maybe "
 			       "snapshot id (%d) or tag (%s) is existed",
 			       vdiname, vdi_cmd_data.snapshot_id,
@@ -789,13 +793,13 @@ static int vdi_snapshot(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 	} else {
-		ret = read_vdi_obj(vdiname, 0, "", &vid, inode,
+		ret = read_vdi_obj(vdiname, 0, "", &vid, &inode,
 				   SD_INODE_HEADER_SIZE);
 		if (ret != EXIT_SUCCESS)
 			return ret;
 	}
 
-	if (sd_store_policy_is_hyper(inode)) {
+	if (sd_store_policy_is_hyper(&inode)) {
 		sd_err("creating a snapshot of hypervolume is not supported");
 		return EXIT_FAILURE;
 	}
@@ -820,15 +824,16 @@ static int vdi_snapshot(int argc, char **argv)
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
 			       vdi_cmd_data.snapshot_tag,
 			       SD_MAX_VDI_TAG_LEN,
-			       offsetof(struct sd_inode, tag),
-			       0, inode->nr_copies, inode->copy_policy,
+			       offsetof(struct sd_inode_header, tag),
+			       0, inode.nr_copies, inode.copy_policy,
 			       false, false);
 	if (ret != SD_RES_SUCCESS)
 		goto out;
 
-	ret = do_vdi_create(vdiname, inode->vdi_size, vid, &new_vid, true,
-			    inode->nr_copies, inode->copy_policy,
-			    inode->store_policy, inode->block_size_shift);
+	ret = do_vdi_create(vdiname, inode.vdi_size,
+			    vid, &new_vid, true,
+			    inode.nr_copies, inode.copy_policy,
+			    inode.store_policy, inode.block_size_shift);
 
 	if (ret == EXIT_SUCCESS && verbose) {
 		if (raw_output)
@@ -878,10 +883,13 @@ static int vdi_clone(int argc, char **argv)
 	if (vdi_cmd_data.no_share == true)
 		base_vid = 0;
 
-	object_size = (UINT32_C(1) << inode->block_size_shift);
-	ret = do_vdi_create(dst_vdi, inode->vdi_size, base_vid, &new_vid, false,
-			    inode->nr_copies, inode->copy_policy,
-			    inode->store_policy, inode->block_size_shift);
+	object_size = (UINT32_C(1) << inode->header.block_size_shift);
+	ret = do_vdi_create(dst_vdi, inode->header.vdi_size,
+			    base_vid, &new_vid, false,
+			    inode->header.nr_copies,
+			    inode->header.copy_policy,
+			    inode->header.store_policy,
+			    inode->header.block_size_shift);
 	if (ret != EXIT_SUCCESS ||
 			(!vdi_cmd_data.prealloc && !vdi_cmd_data.no_share))
 		goto out;
@@ -893,12 +901,12 @@ static int vdi_clone(int argc, char **argv)
 		goto out;
 
 	buf = xzalloc(object_size);
-	max_idx = count_data_objs(inode);
+	max_idx = count_data_objs(&inode->header);
 
 	for (idx = 0; idx < max_idx; idx++) {
 		size_t size;
 
-		vdi_show_progress(idx * object_size, inode->vdi_size);
+		vdi_show_progress(idx * object_size, inode->header.vdi_size);
 		vdi_id = sd_inode_get_vid(inode, idx);
 		if (vdi_id) {
 			oid = vid_to_data_oid(vdi_id, idx);
@@ -917,8 +925,8 @@ static int vdi_clone(int argc, char **argv)
 
 		oid = vid_to_data_oid(new_vid, idx);
 		ret = dog_write_object(oid, 0, buf, size, 0, 0,
-				       inode->nr_copies,
-				       inode->copy_policy, true, true);
+				       inode->header.nr_copies,
+				       inode->header.copy_policy, true, true);
 		if (ret != SD_RES_SUCCESS) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -932,7 +940,7 @@ static int vdi_clone(int argc, char **argv)
 			goto out;
 		}
 	}
-	vdi_show_progress(idx * object_size, inode->vdi_size);
+	vdi_show_progress(idx * object_size, inode->header.vdi_size);
 	ret = EXIT_SUCCESS;
 
 out:
@@ -956,8 +964,7 @@ static int vdi_resize(int argc, char **argv)
 	uint64_t new_size, old_max_total_size;
 	uint32_t vid, object_size;
 	int ret;
-	char buf[SD_INODE_HEADER_SIZE];
-	struct sd_inode *inode = (struct sd_inode *)buf;
+	struct sd_inode_header inode;
 
 	if (!argv[optind]) {
 		sd_err("Please specify the new size for the VDI");
@@ -967,13 +974,13 @@ static int vdi_resize(int argc, char **argv)
 	if (ret < 0)
 		return EXIT_USAGE;
 
-	ret = read_vdi_obj(vdiname, 0, "", &vid, inode, SD_INODE_HEADER_SIZE);
+	ret = read_vdi_obj(vdiname, 0, "", &vid, &inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		return ret;
 
-	object_size = (UINT32_C(1) << inode->block_size_shift);
+	object_size = (UINT32_C(1) << inode.block_size_shift);
 	old_max_total_size = object_size * OLD_MAX_DATA_OBJS;
-	if (!sd_store_policy_is_hyper(inode)) {
+	if (!sd_store_policy_is_hyper(&inode)) {
 		if (new_size > old_max_total_size) {
 			sd_err("New VDI size is too large."
 			       " This volume's max size is %"PRIu64,
@@ -987,15 +994,15 @@ static int vdi_resize(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 
-	if (new_size < inode->vdi_size) {
+	if (new_size < inode.vdi_size) {
 		sd_err("Shrinking VDIs is not implemented");
 		return EXIT_USAGE;
 	}
-	inode->vdi_size = new_size;
+	inode.vdi_size = new_size;
 
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
-			      inode, SD_INODE_HEADER_SIZE, 0,
-			      0, inode->nr_copies, inode->copy_policy,
+			      &inode, SD_INODE_HEADER_SIZE, 0,
+			      0, inode.nr_copies, inode.copy_policy,
 			      false, true);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to update an inode header");
@@ -1036,7 +1043,7 @@ static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
 		goto out;
 	}
 
-	nr_objs = count_data_objs(inode);
+	nr_objs = count_data_objs(&inode->header);
 	nr_reclaimed = 0;
 	while (i < nr_objs) {
 		int start_idx, nr_filled_idx;
@@ -1069,7 +1076,8 @@ static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
 				       (i - start_idx) * sizeof(uint32_t),
 				       offsetof(struct sd_inode,
 						data_vdi_id[start_idx]),
-				       0, inode->nr_copies, inode->copy_policy,
+				       0, inode->header.nr_copies,
+				       inode->header.copy_policy,
 				       false, true);
 		if (ret) {
 			sd_err("failed to update inode for discarding objects:"
@@ -1129,8 +1137,7 @@ static int vdi_rollback(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint32_t base_vid, new_vid;
 	int ret;
-	char buf[SD_INODE_HEADER_SIZE];
-	struct sd_inode *inode = (struct sd_inode *)buf;
+	struct sd_inode_header inode;
 
 	if (!vdi_cmd_data.snapshot_id && !vdi_cmd_data.snapshot_tag[0]) {
 		sd_err("Please specify the '-s' option");
@@ -1138,8 +1145,8 @@ static int vdi_rollback(int argc, char **argv)
 	}
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, &base_vid, inode,
-			   SD_INODE_HEADER_SIZE);
+			   vdi_cmd_data.snapshot_tag, &base_vid, &inode,
+			   sizeof(inode));
 	if (ret != EXIT_SUCCESS)
 		return ret;
 
@@ -1155,9 +1162,9 @@ static int vdi_rollback(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	ret = do_vdi_create(vdiname, inode->vdi_size, base_vid, &new_vid,
-			     false, inode->nr_copies, inode->copy_policy,
-			     inode->store_policy, inode->block_size_shift);
+	ret = do_vdi_create(vdiname, inode.vdi_size, base_vid, &new_vid,
+			     false, inode.nr_copies, inode.copy_policy,
+			     inode.store_policy, inode.block_size_shift);
 
 	if (ret == EXIT_SUCCESS && verbose) {
 		if (raw_output)
@@ -1191,7 +1198,7 @@ static int vdi_object_map(int argc, char **argv)
 		vid = sd_inode_get_vid(inode, idx);
 		printf("%08"PRIu64" %8"PRIx32"\n", idx, vid);
 	} else {
-		uint64_t max_idx = count_data_objs(inode);
+		uint64_t max_idx = count_data_objs(&inode->header);
 
 		for (idx = 0; idx < max_idx; idx++) {
 			vid = sd_inode_get_vid(inode, idx);
@@ -1241,14 +1248,15 @@ static int vdi_object_location(int argc, char **argv)
 		sd_err("FATAL: no inode objects");
 		goto out;
 	}
-	vid = inode->vdi_id;
+	vid = inode->header.vdi_id;
 
 	if (idx == ~0) {
 		printf("Looking for the inode object 0x%" PRIx32 " with %d"
 		       " nodes\n\n",
 		       vid, sd_nodes_nr);
 		for_each_node_print(vid_to_vdi_oid(vid));
-		print_expected_location(vid_to_vdi_oid(vid), inode->nr_copies);
+		print_expected_location(vid_to_vdi_oid(vid),
+					inode->header.nr_copies);
 		ret = EXIT_SUCCESS;
 		goto out;
 	}
@@ -1265,10 +1273,10 @@ static int vdi_object_location(int argc, char **argv)
 		printf("Looking for the object %016" PRIx64
 		       " (vid 0x%" PRIx32 " idx %"PRIu64
 		       ", %u copies) with %d nodes\n\n",
-			oid, vid, idx, inode->nr_copies, sd_nodes_nr);
+			oid, vid, idx, inode->header.nr_copies, sd_nodes_nr);
 
 		for_each_node_print(oid);
-		print_expected_location(oid, inode->nr_copies);
+		print_expected_location(oid, inode->header.nr_copies);
 	} else
 		printf("The inode object 0x%" PRIx32 " idx"
 		       " %"PRIu64" is not allocated\n",
@@ -1311,7 +1319,7 @@ static void build_oid_tree(const struct sd_inode *inode)
 	uint64_t oid;
 	struct sd_node *node;
 	struct oid_entry *entry;
-	int copies = min((int)inode->nr_copies, sd_zones_nr);
+	int copies = min((int)inode->header.nr_copies, sd_zones_nr);
 
 	rb_for_each_entry(node, &sd_nroot, rb) {
 		entry = xmalloc(sizeof(*entry));
@@ -1322,8 +1330,8 @@ static void build_oid_tree(const struct sd_inode *inode)
 		rb_insert(&oid_tree, entry, rb, oid_entry_cmp);
 	}
 
-	save_oid(vid_to_vdi_oid(inode->vdi_id), copies);
-	max_idx = count_data_objs(inode);
+	save_oid(vid_to_vdi_oid(inode->header.vdi_id), copies);
+	max_idx = count_data_objs(&inode->header);
 	for (uint32_t idx = 0; idx < max_idx; idx++) {
 		vid = sd_inode_get_vid(inode, idx);
 		if (vid == 0)
@@ -1363,18 +1371,20 @@ static int do_vdi_check_exist(const struct sd_inode *inode)
 		total += n;
 		for (int i = 0; i < n; i++)
 			printf("[%s] oid %016"PRIx64" is missing.\n",
-					addr_to_str(entry->node->nid.addr,
-							entry->node->nid.port),
-					entry->oids[i]);
+			       addr_to_str(entry->node->nid.addr,
+					   entry->node->nid.port),
+			       entry->oids[i]);
 	}
 
 	destroy_oid_tree();
 
 	if (total == 0) {
-		printf("%s is fine, no object is missing.\n", inode->name);
+		printf("%s is fine, no object is missing.\n",
+		       inode->header.name);
 		return EXIT_SUCCESS;
 	} else {
-		printf("%s lost %d object(s).\n", inode->name, total);
+		printf("%s lost %d object(s).\n",
+		       inode->header.name, total);
 		return EXIT_FAILURE;
 	}
 }
@@ -1481,8 +1491,8 @@ static int vdi_track(int argc, char **argv)
 		sd_err("FATAL: no inode objects");
 		goto err;
 	}
-	vid = inode->vdi_id;
-	nr_copies = inode->nr_copies;
+	vid = inode->header.vdi_id;
+	nr_copies = inode->header.nr_copies;
 
 	if (!oid) {
 		if (idx == ~0) {
@@ -1702,16 +1712,16 @@ static int vdi_read(int argc, char **argv)
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
-	if (inode->vdi_size < offset) {
+	if (inode->header.vdi_size < offset) {
 		sd_err("Read offset is beyond the end of the VDI");
 		ret = EXIT_FAILURE;
 		goto load_inode_err;
 	}
 
-	object_size = (UINT32_C(1) << inode->block_size_shift);
+	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	buf = xmalloc(object_size);
 
-	total = min(total, inode->vdi_size - offset);
+	total = min(total, inode->header.vdi_size - offset);
 	idx = offset / object_size;
 	offset %= object_size;
 	while (done < total) {
@@ -1778,16 +1788,16 @@ static int vdi_write(int argc, char **argv)
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
-	if (inode->vdi_size < offset) {
+	if (inode->header.vdi_size < offset) {
 		sd_err("Write offset is beyond the end of the VDI");
 		ret = EXIT_FAILURE;
 		goto load_inode_err;
 	}
 
-	object_size = (UINT32_C(1) << inode->block_size_shift);
+	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	buf = xmalloc(object_size);
 
-	total = min(total, inode->vdi_size - offset);
+	total = min(total, inode->header.vdi_size - offset);
 	idx = offset / object_size;
 	offset %= object_size;
 	while (done < total) {
@@ -1818,11 +1828,12 @@ static int vdi_write(int argc, char **argv)
 			total = done + len;
 		}
 
-		sd_inode_set_vid(inode, idx, inode->vdi_id);
-		oid = vid_to_data_oid(inode->vdi_id, idx);
+		sd_inode_set_vid(inode, idx, inode->header.vdi_id);
+		oid = vid_to_data_oid(inode->header.vdi_id, idx);
 		ret = dog_write_object(oid, old_oid, buf, len, offset, flags,
-				      inode->nr_copies, inode->copy_policy,
-				      create, false);
+				       inode->header.nr_copies,
+				       inode->header.copy_policy,
+				       create, false);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("Failed to write VDI");
 			ret = EXIT_FAILURE;
@@ -2201,11 +2212,11 @@ static void queue_vdi_check_work(const struct sd_inode *inode, uint64_t oid,
 	info = xzalloc(sizeof(*info) + sizeof(info->vcw[0]) * nr_copies);
 	info->oid = oid;
 	info->nr_copies = nr_copies;
-	info->total = inode->vdi_size;
+	info->total = inode->header.vdi_size;
 	info->done = done;
 	info->wq = wq;
-	info->copy_policy = inode->copy_policy;
-	info->block_size_shift = inode->block_size_shift;
+	info->copy_policy = inode->header.copy_policy;
+	info->block_size_shift = inode->header.block_size_shift;
 
 	oid_to_vnodes(oid, &sd_vroot, nr_copies, tgt_vnodes);
 	for (int i = 0; i < nr_copies; i++) {
@@ -2230,12 +2241,13 @@ static void check_cb(struct sd_index *idx, void *arg, int ignore)
 {
 	struct check_arg *carg = arg;
 	uint64_t oid;
-	uint32_t object_size = (UINT32_C(1) << carg->inode->block_size_shift);
+	uint32_t object_size =
+		(UINT32_C(1) << carg->inode->header.block_size_shift);
 
 	if (idx->vdi_id) {
 		oid = vid_to_data_oid(idx->vdi_id, idx->idx);
 		*(carg->done) = (uint64_t)idx->idx * object_size;
-		vdi_show_progress(*(carg->done), carg->inode->vdi_size);
+		vdi_show_progress(*(carg->done), carg->inode->header.vdi_size);
 		queue_vdi_check_work(carg->inode, oid, NULL, carg->wq,
 				     carg->nr_copies);
 	}
@@ -2247,10 +2259,11 @@ int do_vdi_check(const struct sd_inode *inode)
 	uint64_t done = 0, oid;
 	uint32_t vid;
 	struct work_queue *wq;
-	int nr_copies = min((int)inode->nr_copies, sd_zones_nr);
-	uint32_t object_size = (UINT32_C(1) << inode->block_size_shift);
+	int nr_copies = min((int)inode->header.nr_copies, sd_zones_nr);
+	uint32_t object_size = (UINT32_C(1) << inode->header.block_size_shift);
 
-	if (0 < inode->copy_policy && sd_zones_nr < (int)inode->nr_copies) {
+	if (0 < inode->header.copy_policy &&
+	    sd_zones_nr < (int)inode->header.nr_copies) {
 		sd_err("ABORT: Not enough active zones for consistency-checking"
 		       " erasure coded VDI");
 		return EXIT_FAILURE;
@@ -2260,12 +2273,12 @@ int do_vdi_check(const struct sd_inode *inode)
 
 	init_fec();
 
-	queue_vdi_check_work(inode, vid_to_vdi_oid(inode->vdi_id), NULL, wq,
-			     nr_copies);
+	queue_vdi_check_work(inode, vid_to_vdi_oid(inode->header.vdi_id),
+			     NULL, wq, nr_copies);
 
-	if (!sd_store_policy_is_hyper(inode)) {
-		max_idx = count_data_objs(inode);
-		vdi_show_progress(done, inode->vdi_size);
+	if (!sd_store_policy_is_hyper(&inode->header)) {
+		max_idx = count_data_objs(&inode->header);
+		vdi_show_progress(done, inode->header.vdi_size);
 		for (uint32_t idx = 0; idx < max_idx; idx++) {
 			vid = sd_inode_get_vid(inode, idx);
 			if (vid) {
@@ -2274,18 +2287,19 @@ int do_vdi_check(const struct sd_inode *inode)
 						     nr_copies);
 			} else {
 				done += object_size;
-				vdi_show_progress(done, inode->vdi_size);
+				vdi_show_progress(done, inode->header.vdi_size);
 			}
 		}
 	} else {
 		struct check_arg arg = {inode, &done, wq, nr_copies};
 		sd_inode_index_walk(inode, check_cb, &arg);
-		vdi_show_progress(inode->vdi_size, inode->vdi_size);
+		vdi_show_progress(inode->header.vdi_size,
+				  inode->header.vdi_size);
 	}
 
 	work_queue_wait(wq);
 
-	fprintf(stdout, "finish check&repair %s\n", inode->name);
+	fprintf(stdout, "finish check&repair %s\n", inode->header.name);
 
 	return EXIT_SUCCESS;
 }
@@ -2426,10 +2440,10 @@ static int vdi_backup(int argc, char **argv)
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
-	nr_objs = count_data_objs(to_inode);
+	nr_objs = count_data_objs(&to_inode->header);
 
 	struct obj_backup *backup = xzalloc(sizeof(*backup));
-	object_size = (UINT32_C(1) << from_inode->block_size_shift);
+	object_size = (UINT32_C(1) << from_inode->header.block_size_shift);
 	backup->data = xzalloc(sizeof(uint8_t) * object_size);
 
 	ret = xwrite(STDOUT_FILENO, &hdr, sizeof(hdr));
@@ -2507,15 +2521,15 @@ static int restore_obj(struct obj_backup *backup, uint32_t vid,
 	/* send a copy-on-write request */
 	ret = dog_write_object(vid_to_data_oid(vid, backup->idx), parent_oid,
 			       backup->data, backup->length, backup->offset,
-			       0, parent_inode->nr_copies,
-			       parent_inode->copy_policy, true, true);
+			       0, parent_inode->header.nr_copies,
+			       parent_inode->header.copy_policy, true, true);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
 
 	return dog_write_object(vid_to_vdi_oid(vid), 0, &vid, sizeof(vid),
 			SD_INODE_HEADER_SIZE + sizeof(vid) * backup->idx,
-				0, parent_inode->nr_copies,
-				parent_inode->copy_policy, false, true);
+				0, parent_inode->header.nr_copies,
+				parent_inode->header.copy_policy, false, true);
 }
 
 static uint32_t do_restore(const char *vdiname, int snapid, const char *tag)
@@ -2542,15 +2556,18 @@ static uint32_t do_restore(const char *vdiname, int snapid, const char *tag)
 	if (ret != EXIT_SUCCESS)
 		goto out;
 
-	ret = do_vdi_create(vdiname, inode->vdi_size, inode->vdi_id, &vid,
-			    false, inode->nr_copies, inode->copy_policy,
-			    inode->store_policy, inode->block_size_shift);
+	ret = do_vdi_create(vdiname, inode->header.vdi_size,
+			    inode->header.vdi_id, &vid,
+			    false, inode->header.nr_copies,
+			    inode->header.copy_policy,
+			    inode->header.store_policy,
+			    inode->header.block_size_shift);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("Failed to read VDI");
 		goto out;
 	}
 
-	object_size = (UINT32_C(1) << inode->block_size_shift);
+	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	backup->data = xzalloc(sizeof(uint8_t) * object_size);
 
 	while (true) {
@@ -2596,10 +2613,9 @@ static int vdi_restore(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	int ret;
-	char buf[SD_INODE_HEADER_SIZE] = {0};
 	struct sd_inode *inode_for_check = xzalloc(sizeof(*inode_for_check));
-	struct sd_inode *current_inode = xzalloc(sizeof(*current_inode));
-	struct sd_inode *parent_inode = (struct sd_inode *)buf;
+	struct sd_inode_header current;
+	struct sd_inode_header parent;
 	bool need_current_recovery = false;
 
 	if (!vdi_cmd_data.snapshot_id && !vdi_cmd_data.snapshot_tag[0]) {
@@ -2623,13 +2639,13 @@ static int vdi_restore(int argc, char **argv)
 	 * delete the current vdi temporarily first to avoid making
 	 * the current state become snapshot
 	 */
-	ret = read_vdi_obj(vdiname, 0, "", NULL, current_inode,
+	ret = read_vdi_obj(vdiname, 0, "", NULL, &current,
 			   SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
 
-	ret = dog_read_object(vid_to_vdi_oid(current_inode->parent_vdi_id),
-			     parent_inode, SD_INODE_HEADER_SIZE, 0, true);
+	ret = dog_read_object(vid_to_vdi_oid(current.parent_vdi_id),
+			     &parent, SD_INODE_HEADER_SIZE, 0, true);
 	if (ret != SD_RES_SUCCESS) {
 		printf("error\n");
 		goto out;
@@ -2657,18 +2673,17 @@ out:
 	if (need_current_recovery) {
 		int recovery_ret;
 		/* recreate the current vdi object */
-		recovery_ret = do_vdi_create(vdiname, current_inode->vdi_size,
-					     current_inode->parent_vdi_id, NULL,
-					     true, current_inode->nr_copies,
-					     current_inode->copy_policy,
-					     current_inode->store_policy,
-					     current_inode->block_size_shift);
+		recovery_ret = do_vdi_create(vdiname, current.vdi_size,
+					     current.parent_vdi_id, NULL,
+					     true, current.nr_copies,
+					     current.copy_policy,
+					     current.store_policy,
+					     current.block_size_shift);
 		if (recovery_ret != EXIT_SUCCESS) {
 			sd_err("failed to resume the current vdi");
 			ret = recovery_ret;
 		}
 	}
-	free(current_inode);
 	free(inode_for_check);
 	return ret;
 }
@@ -2677,6 +2692,7 @@ static int vdi_object_dump_inode(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	struct sd_inode *inode = xzalloc(sizeof(*inode));
+	struct sd_inode_header *hdr = &inode->header;
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
@@ -2687,31 +2703,31 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	printf("name: %s\n", inode->name);
-	printf("tag: %s\n", inode->tag);
-	printf("create_time: %"PRIx64"\n", inode->create_time);
-	printf("snap_ctime: %"PRIx64"\n", inode->snap_ctime);
-	printf("vdi_size: %"PRIu64"\n", inode->vdi_size);
-	if (!SD_INODE_USE_UUID(inode)) {
-		printf("vm_clock_nsec: %"PRIx64"\n", inode->vm_clock_nsec);
-		printf("vm_state_size: %"PRIu64"\n", inode->vm_state_size);
+	printf("name: %s\n", hdr->name);
+	printf("tag: %s\n", hdr->tag);
+	printf("create_time: %"PRIx64"\n", hdr->create_time);
+	printf("snap_ctime: %"PRIx64"\n", hdr->snap_ctime);
+	printf("vdi_size: %"PRIu64"\n", hdr->vdi_size);
+	if (!SD_INODE_USE_UUID(hdr)) {
+		printf("vm_clock_nsec: %"PRIx64"\n", hdr->vm_clock_nsec);
+		printf("vm_state_size: %"PRIu64"\n", hdr->vm_state_size);
 	} else {
 		uuid_t uuid;
 		char uuid_str[UUID_STR_LEN];
 
-		memcpy((char *)uuid, &inode->vm_clock_nsec, 8);
-		memcpy((char *)(uuid + 8), &inode->vm_state_size, 8);
+		memcpy((char *)uuid, &hdr->vm_clock_nsec, 8);
+		memcpy((char *)(uuid + 8), &hdr->vm_state_size, 8);
 		uuid_unparse(uuid, uuid_str);
 		printf("uuid: %s\n", uuid_str);
 	}
-	printf("copy_policy: %d\n", inode->copy_policy);
+	printf("copy_policy: %d\n", hdr->copy_policy);
 	printf("store_policy: %s\n",
-	       sd_store_policy_is_hyper(inode) ? "hyper" : "default");
-	printf("nr_copies: %d\n", inode->nr_copies);
-	printf("block_size_shift: %d\n", inode->block_size_shift);
-	printf("snap_id: %"PRIu32"\n", inode->snap_id);
-	printf("vdi_id: %"PRIx32"\n", inode->vdi_id);
-	printf("parent_vdi_id: %"PRIx32"\n", inode->parent_vdi_id);
+	       sd_store_policy_is_hyper(hdr) ? "hyper" : "default");
+	printf("nr_copies: %d\n", hdr->nr_copies);
+	printf("block_size_shift: %d\n", hdr->block_size_shift);
+	printf("snap_id: %"PRIu32"\n", hdr->snap_id);
+	printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
+	printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
 	printf("btree_counter: %"PRIu32"\n", inode->btree_counter);
 
 	printf("data_vdi_id:\n");
@@ -2760,7 +2776,7 @@ static void construct_vdi_tree(uint32_t vid, const char *name, const char *tag,
 			       uint32_t snapid, uint32_t flags,
 			       const struct sd_inode *i, void *data)
 {
-	add_vdi_tree(name, tag, vid, i->parent_vdi_id, false);
+	add_vdi_tree(name, tag, vid, i->header.parent_vdi_id, false);
 }
 
 static bool is_vdi_standalone(uint32_t vid, const char *name)
@@ -2793,8 +2809,7 @@ static int vdi_alter_copy(int argc, char **argv)
 	int ret, old_nr_copies;
 	uint32_t vid;
 	const char *vdiname = argv[optind++];
-	char buf[SD_INODE_HEADER_SIZE];
-	struct sd_inode *inode = (struct sd_inode *)buf;
+	struct sd_inode_header inode;
 	struct sd_req hdr;
 
 	if (vdi_cmd_data.copy_policy != 0) {
@@ -2817,26 +2832,26 @@ static int vdi_alter_copy(int argc, char **argv)
 		confirm(info);
 	}
 
-	ret = read_vdi_obj(vdiname, 0, "", &vid, inode, SD_INODE_HEADER_SIZE);
+	ret = read_vdi_obj(vdiname, 0, "", &vid, &inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("Reading %s's vdi object failure.", vdiname);
 		return EXIT_FAILURE;
 	}
 
-	if (inode->copy_policy) {
+	if (inode.copy_policy) {
 		sd_err("%s's copy policy is erasure code, "
 			   "changing it is not supported yet.", vdiname);
 		return EXIT_FAILURE;
 	}
 
-	old_nr_copies = inode->nr_copies;
+	old_nr_copies = inode.nr_copies;
 	if (old_nr_copies == vdi_cmd_data.nr_copies) {
 		sd_err("%s's redundancy level is already set to %d, "
 			   "nothing changed.", vdiname, old_nr_copies);
 		return EXIT_FAILURE;
 	}
 
-	if (!is_vdi_standalone(vid, inode->name)) {
+	if (!is_vdi_standalone(vid, inode.name)) {
 		sd_err("Only standalone vdi supports "
 			   "changing redundancy level.");
 		sd_err("Please clone %s with -n (--no-share) "
@@ -2847,10 +2862,10 @@ static int vdi_alter_copy(int argc, char **argv)
 	if (!vdi_cmd_data.force)
 		confirm(ALTER_VDI_COPY_PRINT);
 
-	inode->nr_copies = vdi_cmd_data.nr_copies;
-	ret = dog_write_object(vid_to_vdi_oid(vid), 0, inode,
+	inode.nr_copies = vdi_cmd_data.nr_copies;
+	ret = dog_write_object(vid_to_vdi_oid(vid), 0, &inode,
 			SD_INODE_HEADER_SIZE, 0, 0, old_nr_copies,
-			inode->copy_policy, false, true);
+			inode.copy_policy, false, true);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Overwrite the vdi object's header of %s failure "
 			   "while setting its redundancy level.", vdiname);
@@ -2861,7 +2876,7 @@ static int vdi_alter_copy(int argc, char **argv)
 	hdr.vdi_state.new_vid = vid;
 	hdr.vdi_state.copies = vdi_cmd_data.nr_copies;
 	hdr.vdi_state.copy_policy = vdi_cmd_data.copy_policy;
-	hdr.vdi_state.block_size_shift = inode->block_size_shift;
+	hdr.vdi_state.block_size_shift = inode.block_size_shift;
 
 	ret = send_light_req(&sd_nid, &hdr);
 	if (ret == 0) {
