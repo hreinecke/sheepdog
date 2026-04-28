@@ -608,42 +608,56 @@ static inline bool md_access(const char *path)
 }
 
 static int get_old_new_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
-			    const char *path, char *old, char *new)
+			    const char *path, char **old, char **new)
 {
+	int ret;
+
 	if (!epoch) {
 		if (!is_erasure_oid(oid)) {
-			snprintf(old, PATH_MAX, "%s/%016" PRIx64, path, oid);
-			snprintf(new, PATH_MAX, "%s/%016" PRIx64,
-				 md_get_object_dir_nolock(oid), oid);
+			ret = asprintf(old, "%s/%016" PRIx64, path, oid);
+			if (ret < 0)
+				return ret;
+			ret = asprintf(new, "%s/%016" PRIx64,
+				       md_get_object_dir_nolock(oid), oid);
 		} else {
-			snprintf(old, PATH_MAX, "%s/%016" PRIx64"_%d", path,
-				 oid, ec_index);
-			snprintf(new, PATH_MAX, "%s/%016" PRIx64"_%d",
-				 md_get_object_dir_nolock(oid), oid, ec_index);
+			ret = asprintf(old, "%s/%016" PRIx64"_%d", path,
+				       oid, ec_index);
+			if (ret < 0)
+				return ret;
+			ret = asprintf(new, "%s/%016" PRIx64"_%d",
+				       md_get_object_dir_nolock(oid), oid,
+				       ec_index);
 		}
 	} else {
 		if (!is_erasure_oid(oid)) {
-			snprintf(old, PATH_MAX,
-				 "%s/.stale/%016"PRIx64".%"PRIu32, path,
-				 oid, epoch);
-			snprintf(new, PATH_MAX,
-				 "%s/.stale/%016"PRIx64".%"PRIu32,
-				 md_get_object_dir_nolock(oid), oid, epoch);
+			ret = asprintf(old, "%s/.stale/%016"PRIx64".%"PRIu32,
+				       path, oid, epoch);
+			if (ret < 0)
+				return ret;
+			ret = asprintf(new, "%s/.stale/%016"PRIx64".%"PRIu32,
+				       md_get_object_dir_nolock(oid), oid,
+				       epoch);
 		} else {
-			snprintf(old, PATH_MAX,
-				 "%s/.stale/%016"PRIx64"_%d.%"PRIu32, path,
-				 oid, ec_index, epoch);
-			snprintf(new, PATH_MAX,
-				 "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
-				 md_get_object_dir_nolock(oid),
-				 oid, ec_index, epoch);
+			ret = asprintf(old, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
+				       path, oid, ec_index, epoch);
+			if (ret < 0)
+				return ret;
+			ret = asprintf(new, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
+				       md_get_object_dir_nolock(oid),
+				       oid, ec_index, epoch);
 		}
 	}
+	if (ret < 0)
+		goto out_free_old;
 
-	if (!md_access(old))
-		return -1;
-
+	if (!md_access(*old)) {
+		free(*new);
+		goto out_free_old;
+	}
 	return 0;
+out_free_old:
+	free(*old);
+	return -1;
 }
 
 static int md_move_object(uint64_t oid, const char *old, const char *new)
@@ -685,9 +699,9 @@ out:
 static int md_check_and_move(uint64_t oid, uint32_t epoch, uint8_t ec_index,
 			     const char *path)
 {
-	char old[PATH_MAX], new[PATH_MAX];
+	char *old, *new;
 
-	if (get_old_new_path(oid, epoch, ec_index, path, old, new) < 0)
+	if (get_old_new_path(oid, epoch, ec_index, path, &old, &new) < 0)
 		return SD_RES_EIO;
 	/*
 	 * Recovery thread and main thread might try to recover the same object.
@@ -695,16 +709,23 @@ static int md_check_and_move(uint64_t oid, uint32_t epoch, uint8_t ec_index,
 	 * trying to move the object to where it is already in place, in this
 	 * case we simply return.
 	 */
-	if (!strcmp(old, new))
+	if (!strcmp(old, new)) {
+		free(old);
+		free(new);
 		return SD_RES_SUCCESS;
+	}
 
 	/* We can't use rename(2) across device */
 	if (md_move_object(oid, old, new) < 0) {
 		sd_err("move old %s to new %s failed", old, new);
+		free(old);
+		free(new);
 		return SD_RES_EIO;
 	}
 
 	sd_debug("from %s to %s", old, new);
+	free(old);
+	free(new);
 	return SD_RES_SUCCESS;
 }
 
@@ -739,8 +760,10 @@ bool md_exist(uint64_t oid, uint8_t ec_index, char *path)
 }
 
 int md_get_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
-		      char *path)
+		      char **path)
 {
+	int ret = SD_RES_SUCCESS;
+
 	if (unlikely(!epoch))
 		panic("invalid 0 epoch");
 
@@ -748,18 +771,23 @@ int md_get_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
 		if (unlikely(ec_index >= SD_MAX_COPIES))
 			panic("invalid ec index %d", ec_index);
 
-		snprintf(path, PATH_MAX, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
+		ret = asprintf(path, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
 			 md_get_object_dir(oid), oid, ec_index, epoch);
 	} else
-		snprintf(path, PATH_MAX, "%s/.stale/%016"PRIx64".%"PRIu32,
+		ret = asprintf(path, "%s/.stale/%016"PRIx64".%"PRIu32,
 			 md_get_object_dir(oid), oid, epoch);
 
-	if (md_access(path))
+	if (ret < 0)
+		return SD_RES_NO_MEM;
+
+	if (md_access(*path))
 		return SD_RES_SUCCESS;
 
 	if (scan_wd(oid, epoch, ec_index) == SD_RES_SUCCESS)
 		return SD_RES_SUCCESS;
 
+	free(*path);
+	*path = NULL;
 	return SD_RES_NO_OBJ;
 }
 
