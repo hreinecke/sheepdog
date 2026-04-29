@@ -16,15 +16,7 @@ SHEEP_CLUSTER_DRIVER="local"
 #
 # Logging options
 #
-SHEEP_LOGGING="dst=syslog"
-
-## Type: string
-## Default: ""
-#
-# Additional options, separate by comma.
-# Possible values: directio,foreground,gateway,nosync,upgrade,wildcard-recovery
-#
-SHEEP_OPTS="upgrade"
+SHEEP_LOGGING="level=warn,dst=default"
 
 ## Type: string
 ## Default: ""
@@ -48,8 +40,35 @@ SHEEP_BASE_DIR="/var/lib/sheepdog"
 # SHEEP_BINDADDR="localhost"
 
 ## Type: int
+#
+# Network IP address for sheep
+#
+# SHEEP_ADDR="127.0.0.1"
+
+## Type: int
 ## Default: 7000
 #
 # Network port for sheep
 #
 # SHEEP_PORT=7000
+
+## Type: int
+#
+# Zone ID for sheep
+#
+# SHEEP_ZONE=1
+
+## Type: int
+## Default: 0
+# Number of VNodes for sheep
+#
+# SHEEP_VNODES=0
+
+## Type: string
+## Default: ""
+#
+# Additional options, separate by comma.
+# Possible values: directio,foreground,gateway,nosync,upgrade,wildcard-recovery
+#
+# SHEEP_OPTS="upgrade"
+
