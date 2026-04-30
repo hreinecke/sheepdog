@@ -106,6 +106,7 @@ static int send_http(ne_session *ne_sess, ne_request *ne_req,
 static int parse_json(struct etcd_parse_data *data,
 		      const char *body, size_t len)
 {
+	enum json_tokener_error jerr;
 	json_object *obj;
 	size_t parsed;
 
@@ -116,16 +117,20 @@ static int parse_json(struct etcd_parse_data *data,
 	}
 	obj = json_tokener_parse_ex(data->tokener,
 				    body, len);
-	if (json_tokener_get_error(data->tokener) ==
-	    json_tokener_continue) {
+	jerr = json_tokener_get_error(data->tokener);
+	if (jerr == json_tokener_continue) {
 		data->len += len;
-		return len;
+		return data->len;
 	}
-	parsed = json_tokener_get_parse_end(data->tokener);
-	data->len += parsed;
-	if (http_debug)
-		sd_debug("http data (%ld bytes parsed)", data->len);
-
+	if (jerr != json_tokener_success) {
+		sd_warn("json parsing error");
+		obj = json_object_new_object();
+	} else {
+		parsed = json_tokener_get_parse_end(data->tokener);
+		data->len += parsed;
+		if (http_debug)
+			sd_debug("http data (%ld bytes parsed)", data->len);
+	}
 	if (data->parse_cb)
 		data->parse_cb(obj, data->parse_arg);
 	else
@@ -134,7 +139,7 @@ static int parse_json(struct etcd_parse_data *data,
 	json_object_put(obj);
 	json_tokener_reset(data->tokener);
 
-	return parsed;
+	return 0;
 }
 
 static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
@@ -153,7 +158,6 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 		if (ret < 0) {
 			sd_err("error %d during read, %ld bytes read",
 			       ret, result_size);
-			ret = ne_status_to_errno(ret);
 			break;
 		}
 		if (ret == 0) {
@@ -166,11 +170,9 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 			sd_debug("%ld bytes read", result_size);
 
 		ret = parse_json(data, result, result_size);
-		if (ret <= 0) {
-			sd_info("No bytes processed: %s", result);
-			break;
-		}
-		if (result_size < alloc_size && !data->persistent)
+		if (ret > 0)
+			continue;
+		if (!data->persistent)
 			break;
 		memset(result, 0, alloc_size);
 		if (http_debug)
