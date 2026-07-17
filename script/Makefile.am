@@ -1,6 +1,6 @@
 MAINTAINERCLEANFILES    = Makefile.in
 
-EXTRA_DIST		= sheepdog.in sheepdog.service.in sheepdog.sysconfig
+EXTRA_DIST		= sheepdog.in sheepdog.service.in
 
 noinst_HEADERS		= checkarch.sh vditest gen_man.pl gen_bash_completion.pl
 
@@ -10,6 +10,9 @@ initscriptdir		= $(INITDDIR)
 systemd_DATA = sheepdog.service
 systemddir = $(systemdsystemunitdir)
 
+sysconfig_DATA = sheepdog.sysconfig
+sysconfigdir = $(sysconfdir)/sysconfig
+
 completion_DATA		= dog
 completiondir		= $(sysconfdir)/bash_completion.d
 
@@ -17,6 +20,9 @@ dog: gen_bash_completion.pl Makefile
 	rm -f $@-t $@
 	$(top_srcdir)/script/gen_bash_completion.pl $(top_builddir)/dog/dog > $@-t
 	mv $@-t $@
+
+install_data_hook: sheepdog.sysconfig
+	$(INSTALL) $^ $(DESTDIR)$(sysconfdir)/sysconfig/sheepdog
 
 %: %.in Makefile
 	rm -f $@-t $@
