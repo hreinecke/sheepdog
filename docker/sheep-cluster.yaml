@@ -93,5 +93,7 @@ volumes:
 
 networks:
   etcd-br:
+    external: true
+    name: "etcd-internal"
   sheep-br:
     driver: bridge

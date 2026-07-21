@@ -93,6 +93,7 @@ volumes:
 
 networks:
   etcd-br:
+    name: "etcd-internal"
     driver: bridge
     attachable: true
     internal: true
