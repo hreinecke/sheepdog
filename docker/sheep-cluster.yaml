@@ -2,7 +2,9 @@ name: sheepdog-etcd
 services:
   sheep:
     image: sheepdog
-    build: ../
+    build:
+      context: ../
+      dockerfile: Dockerfile.sheepdog
     command: echo sheep container ready
   sheep1:
     image: sheepdog
