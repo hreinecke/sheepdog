@@ -156,6 +156,7 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 	while (true) {
 		ret = ne_read_response_block(ne_req, result, alloc_size);
 		if (ret < 0) {
+			ret = -EIO;
 			sd_err("error %d during read, %ld bytes read",
 			       ret, result_size);
 			break;
