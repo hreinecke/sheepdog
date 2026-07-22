@@ -169,6 +169,16 @@ _count_sheep_processes()
     pgrep -f "$SHEEP_PROG $STORE/" $PGREP_OPTIONS | awk '{ $1=""; print }' | sort | uniq | wc -l
 }
 
+_check_sheep()
+{
+    local num_sheep
+    if [[ "$DRIVER" == etcd* ]];then
+	num_sheep=$(docker container list | grep etcd-sheep$1 | wc -l)
+    else
+	num_sheeps=`pgrep -f "$SHEEP_PROG $STORE/$1 " | wc -l`
+    fi
+    echo "${num_sheeps}"
+}
 # Wait for the specified sheep to be stopped.  If no argument is
 # passed, this waits for all the sheeps to be stopped
 _wait_for_sheep_stop()
@@ -185,13 +195,19 @@ _wait_for_sheep_stop()
 	# check sheep process
 	local SHEEPS=0
 	if [ "$1" == "" ]; then
-	    SHEEPS=`pgrep -f "$SHEEP_PROG $WD" | wc -l`
+	    if [[ "$DRIVER" == etcd* ]];then
+		SHEEPS=$(docker container list | grep etcd-sheep | wc -l)
+	    else
+		SHEEPS=`pgrep -f "$SHEEP_PROG $WD" | wc -l`
+	    fi
 	else
-	    SHEEPS=`pgrep -f "$SHEEP_PROG $STORE/$1 " | wc -l`
+	    SHEEPS=$(_check_sheep $1)
 	fi
 	if [ $SHEEPS != 0 ]; then
 	    sleep 1
 	    continue
+	elif [[ "$DRIVER" == etcd* ]]; then
+	    return
 	fi
 
 	# make sure that the sheep port is available
@@ -262,7 +278,7 @@ _valgrind_sheep()
 
     # wait for sheep to start up
     while true; do
-	local SHEEPS=`pgrep -f "$SHEEP_PROG $1" | wc -l`
+	local SHEEPS=$(_check_sheep $1)
 	if [ $SHEEPS == 0 ]; then
 	    # failed to start sheep $1
 	    break
@@ -291,7 +307,7 @@ _start_sheep()
     local running=true
     local cnt
     for cnt in `seq 1 10`; do  # wait at most 10 seconds
-	local SHEEPS=`pgrep -f "$SHEEP_PROG $STORE/$1 " | wc -l`
+	local SHEEPS=$(_check_sheep $1)
         if [ $SHEEPS == 0 ]; then
             running=false
             break
@@ -307,7 +323,11 @@ _start_sheep()
 	MD_STORE=",$STORE/$1/d0,$STORE/$1/d1,$STORE/$1/d2"
     fi
 
-    $SHEEP $STORE/$1$MD_STORE -z $1 -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
+    if [[ "$DRIVER" == etcd* ]]; then
+	docker compose ${DOCKER_ENV} ${DOCKER_YAML} up -d sheep$1
+    else
+	$SHEEP $STORE/$1$MD_STORE -z $1 -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
+    fi
 
     if [ $? != 0 ]; then
         _die "cannot start sheep $1"
@@ -331,15 +351,21 @@ _kill_all_dogs()
 
 _kill_all_sheeps()
 {
-    pkill -f "$SHEEP_PROG $WD"
-
+    if [[ "$DRIVER" == etcd* ]]; then
+	docker compose ${DOCKER_ENV} ${DOCKER_YAML} down
+    else
+	pkill -f "$SHEEP_PROG $WD"
+    fi
     _wait_for_sheep_stop
 }
 
 _kill_sheep()
 {
-    pkill -f "$SHEEP_PROG $STORE/$1 "
-
+    if [[ "$DRIVER" == etcd* ]]; then
+	docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep$1
+    else
+	pkill -f "$SHEEP_PROG $STORE/$1 "
+    fi
     if [ $? != 0 ]; then
         _die "cannot kill sheep $1"
     fi
