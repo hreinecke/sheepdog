@@ -98,7 +98,7 @@ struct logmsg {
 	char str[0];
 };
 
-typedef int (*formatter_fn)(char *, size_t, const struct logmsg *, bool);
+typedef int (*formatter_fn)(char **, const struct logmsg *, bool);
 
 struct log_format {
 	const char *name;
@@ -176,66 +176,60 @@ static char *format_thread_name(const char *name, int idx, size_t *len)
 	return str;
 }
 
-static int server_log_formatter(char *buff, size_t size,
-				const struct logmsg *msg, bool print_time)
+static int server_log_formatter(char **buff, const struct logmsg *msg,
+				bool print_time)
 {
-	char *p = buff;
+	char timestr[64] = {};
 	struct tm tm;
-	ssize_t len;
+	int len;
 	size_t thread_name_len;
 	char *thread_name;
 
 	if (print_time) {
 		localtime_r(&msg->tv.tv_sec, &tm);
-		len = strftime(p, size, "%b %2d %H:%M:%S ",
+		len = strftime(timestr, sizeof(timestr),
+			       "%b %2d %H:%M:%S ",
 			       (const struct tm *)&tm);
-		p += len;
-		size -= len;
 	}
 
 	thread_name = format_thread_name(msg->worker_name, msg->worker_idx,
 					 &thread_name_len);
 	if (!thread_name)
 		thread_name = strdup("main");
-	len = snprintf(p, size, "%s%6s %s[%s] %s(%d) %s%s%s",
-		       colorize ? log_color[msg->prio] : "",
+	len = asprintf(buff, "%s%s%6s %s[%s] %s(%d) %s%s%s%s",
+		       timestr, colorize ? log_color[msg->prio] : "",
 		       log_prio_str[msg->prio],
 		       colorize ? TEXT_YELLOW : "",
 		       thread_name,
 		       msg->func, msg->line,
 		       colorize ? log_color[msg->prio] : "",
-		       msg->str, colorize ? TEXT_NORMAL : "");
-	if (len < 0)
-		len = 0;
-	p += min((size_t)len, size - 1);
+		       msg->str, colorize ? TEXT_NORMAL : "",
+		       print_time ? "\n" : "");
 
 	if (thread_name_len)
 		free(thread_name);
-	return p - buff;
-}
-
-static int default_log_formatter(char *buff, size_t size,
-				 const struct logmsg *msg, bool print_time)
-{
-	size_t len = min(size, msg->str_len);
-
-	memcpy(buff, msg->str, len);
-
 	return len;
 }
 
-static int json_log_formatter(char *buff, size_t size,
-			      const struct logmsg *msg, bool print_time)
+static int default_log_formatter(char **buff, const struct logmsg *msg,
+				 bool print_time)
 {
-	char *msg_str;
+	int len;
+
+	len = asprintf(buff, "%s%s", msg->str,
+			print_time ? "\n" : "");
+	return len;
+}
+
+static int json_log_formatter(char **buff, const struct logmsg *msg,
+			      bool print_time)
+{
 	const char *p, *worker = "main";
 	struct json_object *obj, *user_info_obj, *body_obj;
-	ssize_t len;
+	int len;
 
 	sd_assert(logger_user_info);
 
-	msg_str = xzalloc(msg->str_len + 1);
-	memcpy(msg_str, msg->str, msg->str_len);
 	obj = json_object_new_object();
 	user_info_obj = json_object_new_object();
 	if (log_name)
@@ -260,13 +254,12 @@ static int json_log_formatter(char *buff, size_t size,
 	json_object_object_add(body_obj, "line",
 			       json_object_new_int(msg->line));
 	json_object_object_add(body_obj, "msg",
-			       json_object_new_string(msg_str));
+			       json_object_new_string(msg->str));
 	json_object_object_add(obj, "body", body_obj);
 
 	p = json_object_to_json_string(obj);
-	len = min(strlen(p), size - 1);
-	strncpy(buff, p, len);
-	free(msg_str);
+	len = asprintf(buff, "%s%s", p,
+		       print_time ? "\n" : "");
 	json_object_put(obj);
 
 	return len;
@@ -377,15 +370,12 @@ static void free_logarea(void)
 /* this one can block under memory pressure */
 static void log_syslog(const struct logmsg *msg)
 {
-	char str[MAX_MSG_SIZE];
+	char *str;
 	int len;
 
-	len = format->formatter(str, sizeof(str) - 1, msg, log_fd >= 0);
-	if (dst_type == LOG_DST_DEFAULT)
-		str[len++] = '\n';
-	else	/* LOG_DST_SYSLOG */
-		str[len++] = '\0';
-
+	len = format->formatter(&str, msg, log_fd >= 0);
+	if (len <= 0)
+		return;
 	block_sighup();
 
 	if (log_fd >= 0)
@@ -394,6 +384,7 @@ static void log_syslog(const struct logmsg *msg)
 		syslog(msg->prio, "%s", str);
 
 	unblock_sighup();
+	free(str);
 }
 
 static void init_logmsg(struct logmsg *msg, struct timeval *tv,
@@ -457,14 +448,13 @@ static void dolog(int prio, const char *func, int line,
 			return;
 		}
 	} else {
-		char str_final[MAX_MSG_SIZE];
+		char *str_final;
 
 		init_logmsg(msg, &tv, prio, func, line);
-		len = format->formatter(str_final, sizeof(str_final) - 1, msg,
-					true);
-		str_final[len++] = '\n';
+		len = format->formatter(&str_final, msg, true);
 		xwrite(fileno(stderr), str_final, len);
 		fflush(stderr);
+		free(str_final);
 	}
 }
 
