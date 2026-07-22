@@ -131,12 +131,17 @@ _filter_date()
 # ISO dates
 _filter_iso_date()
 {
-    sed -e 's/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/DATE/g'
+    sed -e 's/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]+[0-9][0-9][0-9][0-9]/DATE/g'
 }
 
 _filter_short_date()
 {
     sed -e 's/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]/DATE/g'
+}
+
+_filter_ip_port()
+{
+    sed -e 's/\(.*\)192.168.122.3\([0-9]\):7000:\(.*\)/\1127.0.0.1:700\2:\3/g'
 }
 
 _filter_ip()
@@ -153,7 +158,7 @@ _filter_spaces()
 # normalize dog cluster info output
 _filter_cluster_info()
 {
-    _filter_date | _filter_iso_date
+    _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_date | _filter_iso_date
 }
 
 # sanitize qemu-io output
