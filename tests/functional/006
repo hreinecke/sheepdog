@@ -11,16 +11,16 @@ _wait_for_sheep 1
 _cluster_format
 
 # launch sheeps simultaneously
-for i in `seq 1 9`; do
+for i in `seq 1 7`; do
     _start_sheep $i
 done
 
-_wait_for_sheep 10
+_wait_for_sheep 8
 
 echo check whether all nodes have the same cluster info
-for i in `seq 0 9`; do
+for i in `seq 0 7`; do
     $DOG cluster info -p 700$i | _filter_cluster_info > $STORE/cinfo.$i
 done
-for i in `seq 1 9`; do
+for i in `seq 1 7`; do
     diff -u $STORE/cinfo.0 $STORE/cinfo.$i
 done

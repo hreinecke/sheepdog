@@ -576,7 +576,7 @@ _cluster_format()
     fi
 
     # wait for all the sheeps to be running
-    local ports=$($DOG node list -r $port_opt | perl -ne 'print "$1\n" if /:(\d+)/')
+    local ports=$($DOG node list -r $port_opt | _filter_port | cut -f 2 -d ' ')
     local port
     for port in $ports; do
 	local cnt
