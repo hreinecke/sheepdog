@@ -2358,6 +2358,7 @@ static int etcd_leave(void)
 	block_event_list_del(&this_node);
 	rc = etcd_update_event(this_ctx, EVENT_LEAVE, node_obj);
 	json_object_put(node_obj);
+	etcd_node_delete(&this_node);
 	return rc;
 }
 
