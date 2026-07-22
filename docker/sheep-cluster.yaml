@@ -24,7 +24,6 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP1_IP}
     command: /usr/sbin/sheep -f
-    restart: on-failure
   sheep2:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
@@ -43,7 +42,6 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP2_IP}
     command: /usr/sbin/sheep -f
-    restart: on-failure
   sheep3:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
@@ -62,7 +60,6 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP3_IP}
     command: /usr/sbin/sheep -f
-    restart: on-failure
   sheep4:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
@@ -81,7 +78,6 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP4_IP}
     command: /usr/sbin/sheep -f
-    restart: on-failure
 
 volumes:
   sheep1-data:
