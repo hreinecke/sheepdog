@@ -4,7 +4,7 @@
 
 . ./common
 
-# start three sheep daemons
+# start 7 sheep daemons
 for i in `seq 0 6`; do
     _start_sheep $i
 done
