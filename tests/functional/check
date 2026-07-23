@@ -141,6 +141,7 @@ common options
 
 check options
     -sheepdog           test sheepdog
+    -etcd               use etcd driver (default: local)
     -corosync           use corosync driver (default: local)
     -zk                 use zookeeper driver
     -valgrind           use valgrind
@@ -162,6 +163,10 @@ testlist options
 	    exit 0
 	    ;;
 
+	-etcd)
+	    DRIVER="etcd"
+	    xpand=false
+	    ;;
 	-corosync)
 	    DRIVER="corosync"
 	    xpand=false
