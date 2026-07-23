@@ -15,18 +15,20 @@
 
 static int get_store_path(uint64_t oid, uint8_t ec_index, char **path)
 {
+	int ret;
+
 	if (is_erasure_oid(oid)) {
 		if (unlikely(ec_index >= SD_MAX_COPIES)) {
 			panic("invalid ec_index %d", ec_index);
 			errno = EINVAL;
 			return -1;
 		}
-		return asprintf(path, "%s/%016"PRIx64"_%d",
-				md_get_object_dir(oid), oid, ec_index);
-	}
-
-	return asprintf(path, "%s/%016" PRIx64,
-			md_get_object_dir(oid), oid);
+		ret = asprintf(path, "%s/%016"PRIx64"_%d",
+			       md_get_object_dir(oid), oid, ec_index);
+	} else
+		ret = asprintf(path, "%s/%016" PRIx64,
+			       md_get_object_dir(oid), oid);
+	return ret < 0 ? ret : 0;
 }
 
 static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
@@ -40,7 +42,7 @@ static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
 
 	ret = asprintf(path, "%s.tmp", tmp_path);
 	free(tmp_path);
-	return ret;
+	return ret < 0 ? ret : 0;
 }
 
 static int get_store_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
