@@ -1200,6 +1200,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	case SD_OP_ENABLE_RECOVER:
 		break;
 	case SD_OP_DISABLE_RECOVER:
+		break;
 	default:
 		sd_warn("unhandled opcode %d", req->opcode);
 		return SD_RES_INVALID_PARMS;
