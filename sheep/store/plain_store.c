@@ -328,8 +328,8 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 		free(path);
 		ret = get_store_stale_path(oid, iocb->epoch,
 					   iocb->ec_index, &path);
-		if (ret < 0)
-			return SD_RES_NO_MEM;
+		if (ret != SD_RES_SUCCESS)
+			return ret;
 		ret = default_read_from_path(oid, path, iocb);
 	}
 	free(path);
@@ -477,9 +477,9 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 	if (ret < 0)
 		return SD_RES_NO_MEM;
 	ret = get_store_stale_path(oid, tgt_epoch, 0, &stale_path);
-	if (ret < 0) {
+	if (ret != SD_RES_SUCCESS) {
 		free(path);
-		return SD_RES_NO_MEM;
+		return ret;
 	}
 
 	if (link(stale_path, path) < 0) {
@@ -666,10 +666,14 @@ static int get_object_path(uint64_t oid, uint32_t epoch, char **path)
 			return SD_RES_NO_MEM;
 	} else {
 		ret = get_store_stale_path(oid, epoch, 0, path);
-		if (access(*path, F_OK) < 0) {
-			ret = SD_RES_EIO;
-			if (errno == ENOENT)
-				ret = SD_RES_NO_OBJ;
+		if (ret == SD_RES_SUCCESS) {
+			if (access(*path, F_OK) < 0) {
+				ret = SD_RES_EIO;
+				if (errno == ENOENT)
+					ret = SD_RES_NO_OBJ;
+			}
+		}
+		if (ret != SD_RES_SUCCESS) {
 			free(*path);
 			*path = NULL;
 			return ret;
