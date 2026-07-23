@@ -171,7 +171,7 @@ _cleanup()
     fi
 
     if [[ "$DRIVER" == etcd* ]]; then
-	for vol in $(docker volume ls | sed -n 's/.*\(sheepdog-etcd_sheep.*\)/\1/p'); do
+	for vol in $(docker volume ls --filter Name=sheepdog-etcd_sheep | tail -n +2 | cut -b 11-); do
 	    docker volume rm $vol 2> /dev/null
 	done
 	docker exec sheepdog-etcd-etcd0-1 etcdctl del --prefix sheepdog > /dev/null 2>&1
