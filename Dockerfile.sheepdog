@@ -1,4 +1,5 @@
 FROM registry.opensuse.org/opensuse/bci/gcc
+RUN zypper --non-interactive in coreutils
 RUN zypper --non-interactive in automake
 RUN zypper --non-interactive in autoconf
 RUN zypper --non-interactive in libtool
@@ -8,6 +9,7 @@ RUN zypper --non-interactive in liburcu-devel
 RUN zypper --non-interactive in libjson-c-devel
 RUN zypper --non-interactive in libuuid-devel
 RUN zypper --non-interactive in libneon-devel
+RUN zypper --non-interactive in valgrind
 ENV SHEEPSRC=/usr/src/sheepdog
 
 WORKDIR $SHEEPSRC
