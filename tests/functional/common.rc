@@ -343,7 +343,11 @@ _start_sheep()
     fi
 
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} start sheep$1 2> /tmp/sheep$i.log
+	if [[ "$2" == '-g' ]]; then
+	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep$1 2> /tmp/sheep$1.log
+	    SHEEP_VNODES=0 docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$1 2> /tmp/sheep$1.log
+	fi
+	docker compose ${DOCKER_ENV} ${DOCKER_YAML} start sheep$1 2> /tmp/sheep$1.log
     else
 	$SHEEP $STORE/$1$MD_STORE -z $1 -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
     fi

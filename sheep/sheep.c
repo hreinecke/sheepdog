@@ -903,8 +903,7 @@ int main(int argc, char **argv, char **envp)
 		if (errno != 0) {
 			sd_err("Invalid number of vnodes '%s'", opt);
 			nr_vnodes = -1;
-		}
-		if (nr_vnodes >= 0)
+		} else
 			sd_info("Using SHEEP_VNODES='%u'", nr_vnodes);
 	}
 	if ((opt = getenv("SHEEP_OPTS"))) {
@@ -932,6 +931,9 @@ int main(int argc, char **argv, char **envp)
 					break;
 				case 'W':
 					wildcard_recovery = true;
+					break;
+				case 'g':
+					nr_vnodes = 0;
 					break;
 				default:
 					break;

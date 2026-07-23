@@ -23,6 +23,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP0_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=0
     command: /usr/sbin/sheep -f
   sheep1:
     image: sheepdog
@@ -41,6 +43,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP1_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=1
     command: /usr/sbin/sheep -f
   sheep2:
     image: sheepdog
@@ -59,6 +63,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP2_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=2
     command: /usr/sbin/sheep -f
   sheep3:
     image: sheepdog
@@ -77,6 +83,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP3_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=3
     command: /usr/sbin/sheep -f
   sheep4:
     image: sheepdog
@@ -95,6 +103,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP4_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=4
     command: /usr/sbin/sheep -f
   sheep5:
     image: sheepdog
@@ -113,6 +123,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP5_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=5
     command: /usr/sbin/sheep -f
   sheep6:
     image: sheepdog
@@ -131,6 +143,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP6_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=6
     command: /usr/sbin/sheep -f
   sheep7:
     image: sheepdog
@@ -149,6 +163,8 @@ services:
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP7_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=7
     command: /usr/sbin/sheep -f
 
 volumes:
