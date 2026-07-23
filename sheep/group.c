@@ -291,10 +291,9 @@ static void cluster_op_done(struct work *work)
 		/*
 		 * Failed to unblock, shoot myself to let other sheep
 		 * unblock the event.
-		 * FIXME: handle it gracefully.
 		 */
 		sd_emerg("Failed to unblock, %s, exiting.", sd_strerror(ret));
-		exit(1);
+		goto drop;
 	}
 
 	free(msg);
@@ -306,6 +305,10 @@ drop:
 	req->rp.result = SD_RES_CLUSTER_ERROR;
 	put_request(req);
 	cluster_op_running = false;
+	if (ret != SD_RES_SUCCESS) {
+		leave_cluster();
+		sys_set_status(SD_STATUS_KILLED);
+	}
 }
 
 /*
@@ -1398,7 +1401,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	if (sys_get_status() == SD_STATUS_OK) {
 		if (is_gateway_only_cluster(nroot)) {
 			sd_info("only gateway nodes are remaining, exiting");
-			exit(0);
+			return;
 		}
 
 		ret = inc_and_log_epoch();
