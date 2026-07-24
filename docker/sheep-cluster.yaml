@@ -227,7 +227,7 @@ services:
     volumes:
       - sheep10-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:70010:7000"
+       - "127.0.0.1:7010:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE10_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -248,7 +248,7 @@ services:
     volumes:
       - sheep11-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:70011:7000"
+       - "127.0.0.1:7011:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE11_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -269,7 +269,7 @@ services:
     volumes:
       - sheep12-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:70012:7000"
+       - "127.0.0.1:7012:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE12_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -290,7 +290,7 @@ services:
     volumes:
       - sheep13-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:70013:7000"
+       - "127.0.0.1:7013:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE13_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -311,7 +311,7 @@ services:
     volumes:
       - sheep14-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:70014:7000"
+       - "127.0.0.1:7014:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE14_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -332,7 +332,7 @@ services:
     volumes:
       - sheep15-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:70015:7000"
+       - "127.0.0.1:7015:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE15_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -340,6 +340,174 @@ services:
       - SHEEP_ADDR=${SHEEP15_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=15
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep16:
+    image: sheepdog
+    hostname: ${SHEEP16_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP16_IP}
+      sheep-br:
+    volumes:
+      - sheep16-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7016:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE16_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP16_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=16
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep17:
+    image: sheepdog
+    hostname: ${SHEEP17_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP17_IP}
+      sheep-br:
+    volumes:
+      - sheep17-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7017:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE17_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP17_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=17
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep18:
+    image: sheepdog
+    hostname: ${SHEEP18_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP18_IP}
+      sheep-br:
+    volumes:
+      - sheep18-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7018:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE18_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP18_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=18
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep19:
+    image: sheepdog
+    hostname: ${SHEEP19_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP19_IP}
+      sheep-br:
+    volumes:
+      - sheep19-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7019:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE19_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP19_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=19
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep20:
+    image: sheepdog
+    hostname: ${SHEEP20_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP20_IP}
+      sheep-br:
+    volumes:
+      - sheep20-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7020:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE20_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP20_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=20
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep21:
+    image: sheepdog
+    hostname: ${SHEEP21_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP21_IP}
+      sheep-br:
+    volumes:
+      - sheep21-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7021:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE21_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP21_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=21
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep22:
+    image: sheepdog
+    hostname: ${SHEEP22_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP22_IP}
+      sheep-br:
+    volumes:
+      - sheep22-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7022:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE22_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP22_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=22
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep23:
+    image: sheepdog
+    hostname: ${SHEEP23_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP23_IP}
+      sheep-br:
+    volumes:
+      - sheep23-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7023:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE23_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP23_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=23
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
 
@@ -360,6 +528,14 @@ volumes:
   sheep13-data:
   sheep14-data:
   sheep15-data:
+  sheep16-data:
+  sheep17-data:
+  sheep18-data:
+  sheep19-data:
+  sheep20-data:
+  sheep21-data:
+  sheep22-data:
+  sheep23-data:
 
 networks:
   etcd-br:
