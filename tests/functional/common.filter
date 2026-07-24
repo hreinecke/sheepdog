@@ -141,7 +141,7 @@ _filter_short_date()
 
 _filter_port()
 {
-    sed -e 's/\(.*\)\(192.168.122.\)3\([0-9]\):7000\(.*\)/\1700\3\4/g'
+    cut -f 4 -d ' ' | xargs printf "70%02u\n"
 }
 
 _filter_ip_port()
