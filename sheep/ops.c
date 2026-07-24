@@ -713,6 +713,9 @@ static int cluster_recovery_completion(const struct sd_req *req,
 
 	node = (struct sd_node *)data;
 
+	if (sys_get_status() != SD_STATUS_OK)
+		return SD_RES_SUCCESS;
+
 	if (latest_epoch > epoch)
 		return SD_RES_SUCCESS;
 
