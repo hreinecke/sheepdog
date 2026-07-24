@@ -25,7 +25,8 @@ services:
       - SHEEP_ADDR=${SHEEP0_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=0
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep1:
     image: sheepdog
     hostname: ${SHEEP1_NAME}
@@ -45,7 +46,8 @@ services:
       - SHEEP_ADDR=${SHEEP1_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=1
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep2:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
@@ -65,7 +67,8 @@ services:
       - SHEEP_ADDR=${SHEEP2_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=2
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep3:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
@@ -85,7 +88,8 @@ services:
       - SHEEP_ADDR=${SHEEP3_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=3
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep4:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
@@ -105,7 +109,8 @@ services:
       - SHEEP_ADDR=${SHEEP4_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=4
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep5:
     image: sheepdog
     hostname: ${SHEEP5_NAME}
@@ -125,7 +130,8 @@ services:
       - SHEEP_ADDR=${SHEEP5_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=5
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep6:
     image: sheepdog
     hostname: ${SHEEP6_NAME}
@@ -145,7 +151,8 @@ services:
       - SHEEP_ADDR=${SHEEP6_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=6
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
   sheep7:
     image: sheepdog
     hostname: ${SHEEP7_NAME}
@@ -165,7 +172,176 @@ services:
       - SHEEP_ADDR=${SHEEP7_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=7
-    command: /usr/sbin/sheep -f
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep8:
+    image: sheepdog
+    hostname: ${SHEEP8_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP8_IP}
+      sheep-br:
+    volumes:
+      - sheep8-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7008:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE8_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP8_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=8
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep9:
+    image: sheepdog
+    hostname: ${SHEEP9_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP9_IP}
+      sheep-br:
+    volumes:
+      - sheep9-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:7009:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE9_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP9_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=9
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep10:
+    image: sheepdog
+    hostname: ${SHEEP10_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP10_IP}
+      sheep-br:
+    volumes:
+      - sheep10-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:70010:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE10_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP10_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=10
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep11:
+    image: sheepdog
+    hostname: ${SHEEP11_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP11_IP}
+      sheep-br:
+    volumes:
+      - sheep11-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:70011:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE11_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP11_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=11
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep12:
+    image: sheepdog
+    hostname: ${SHEEP12_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP12_IP}
+      sheep-br:
+    volumes:
+      - sheep12-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:70012:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE12_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP12_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=12
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep13:
+    image: sheepdog
+    hostname: ${SHEEP13_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP13_IP}
+      sheep-br:
+    volumes:
+      - sheep13-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:70013:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE13_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP13_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=13
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep14:
+    image: sheepdog
+    hostname: ${SHEEP14_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP14_IP}
+      sheep-br:
+    volumes:
+      - sheep14-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:70014:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE14_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP14_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=14
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
+  sheep15:
+    image: sheepdog
+    hostname: ${SHEEP15_NAME}
+    init: true
+    networks:
+      etcd-br:
+        ipv4_address: ${SHEEP15_IP}
+      sheep-br:
+    volumes:
+      - sheep15-data:/var/lib/sheep
+    ports:
+       - "127.0.0.1:70015:7000"
+    environment:
+      - SHEEP_CLUSTER_DRIVER=etcd:${NODE15_IP}
+      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_ADDR=${SHEEP15_IP}
+      - SHEEP_VNODES=${SHEEP_VNODES}
+      - SHEEP_ZONE=15
+      - VALGRIND=${VALGRIND}
+    command: ${VALGRIND} /usr/sbin/sheep -f
 
 volumes:
   sheep0-data:
@@ -176,6 +352,14 @@ volumes:
   sheep5-data:
   sheep6-data:
   sheep7-data:
+  sheep8-data:
+  sheep9-data:
+  sheep10-data:
+  sheep11-data:
+  sheep12-data:
+  sheep13-data:
+  sheep14-data:
+  sheep15-data:
 
 networks:
   etcd-br:

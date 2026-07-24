@@ -20,7 +20,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE0_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd1:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE1_NAME}
@@ -41,7 +41,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE1_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd2:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE2_NAME}
@@ -62,7 +62,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE2_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd3:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE3_NAME}
@@ -83,7 +83,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE3_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd4:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE4_NAME}
@@ -104,7 +104,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE4_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd5:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE5_NAME}
@@ -125,7 +125,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE5_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd6:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE6_NAME}
@@ -146,7 +146,7 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE6_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
   etcd7:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE7_NAME}
@@ -167,7 +167,175 @@ services:
       - ETCD_LISTEN_CLIENT_URLS=http://${NODE7_IP}:2379,http://127.0.0.1:2379
       - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
       - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
-      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd8:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE8_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE8_IP}
+    volumes:
+      - etcd8-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE8_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE8_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE8_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE8_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE8_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd9:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE9_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE9_IP}
+    volumes:
+      - etcd9-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE9_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE9_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE9_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE9_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE9_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd10:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE10_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE10_IP}
+    volumes:
+      - etcd10-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE10_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE10_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE10_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE10_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE10_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd11:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE11_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE11_IP}
+    volumes:
+      - etcd11-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE11_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE11_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE11_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE11_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE11_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd12:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE12_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE12_IP}
+    volumes:
+      - etcd12-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE12_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE12_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE12_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE12_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE12_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd13:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE13_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE13_IP}
+    volumes:
+      - etcd13-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE13_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE13_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE13_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE13_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE13_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd14:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE14_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE14_IP}
+    volumes:
+      - etcd14-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE14_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE14_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE14_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE14_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE14_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
+  etcd15:
+    image: gcr.io/etcd-development/etcd:v3.6.0
+    hostname: ${NODE15_NAME}
+    networks:
+      etcd-br:
+        ipv4_address: ${NODE15_IP}
+    volumes:
+      - etcd15-data:/var/lib/etcd
+    expose:
+      - "2379"
+      - "2380"
+    environment:
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_NAME=${NODE15_NAME}
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://${NODE15_IP}:2380
+      - ETCD_LISTEN_PEER_URLS=http://${NODE15_IP}:2380,http://127.0.0.1:2380
+      - ETCD_ADVERTISE_CLIENT_URLS=http://${NODE15_IP}:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://${NODE15_IP}:2379,http://127.0.0.1:2379
+      - ETCD_INITIAL_CLUSTER_TOKEN=${CLUSTER_TOKEN}
+      - ETCD_INITIAL_CLUSTER_STATE=${CLUSTER_STATE}
+      - ETCD_INITIAL_CLUSTER=${NODE0_NAME}=http://${NODE0_IP}:2380,${NODE1_NAME}=http://${NODE1_IP}:2380,${NODE2_NAME}=http://${NODE2_IP}:2380,${NODE3_NAME}=http://${NODE3_IP}:2380,${NODE4_NAME}=http://${NODE4_IP}:2380,${NODE5_NAME}=http://${NODE5_IP}:2380,${NODE6_NAME}=http://${NODE6_IP}:2380,${NODE7_NAME}=http://${NODE7_IP}:2380,${NODE8_NAME}=http://${NODE8_IP}:2380,${NODE9_NAME}=http://${NODE9_IP}:2380,${NODE10_NAME}=http://${NODE10_IP}:2380,${NODE11_NAME}=http://${NODE11_IP}:2380,${NODE12_NAME}=http://${NODE12_IP}:2380,${NODE13_NAME}=http://${NODE13_IP}:2380,${NODE14_NAME}=http://${NODE14_IP}:2380,${NODE15_NAME}=http://${NODE15_IP}:2380
 
 volumes:
   etcd0-data:
@@ -178,6 +346,14 @@ volumes:
   etcd5-data:
   etcd6-data:
   etcd7-data:
+  etcd8-data:
+  etcd9-data:
+  etcd10-data:
+  etcd11-data:
+  etcd12-data:
+  etcd13-data:
+  etcd14-data:
+  etcd15-data:
 
 networks:
   etcd-br:
