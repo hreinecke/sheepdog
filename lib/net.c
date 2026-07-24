@@ -138,7 +138,7 @@ int connect_to(const char *name, int port)
 {
 	char buf[64];
 	char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-	int fd, ret;
+	int fd, ret, nsec;
 	struct addrinfo hints, *res, *res0;
 	struct linger linger_opt = {1, 0};
 
@@ -185,16 +185,17 @@ int connect_to(const char *name, int port)
 			close(fd);
 			break;
 		}
-reconnect:
-		ret = connect(fd, res->ai_addr, res->ai_addrlen);
+		for (nsec = 1; nsec < 60; nsec <<= 1) {
+			ret = connect(fd, res->ai_addr, res->ai_addrlen);
+			if (!ret)
+				break;
+			sd_debug("retry connect to %s:%d: %m", name, port);
+		}
 		if (ret) {
-			if (errno == EINTR)
-				goto reconnect;
 			sd_err("failed to connect to %s:%d: %m", name, port);
 			close(fd);
 			continue;
 		}
-
 		ret = set_nodelay(fd);
 		if (ret) {
 			sd_err("%m");
