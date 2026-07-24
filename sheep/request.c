@@ -780,7 +780,6 @@ static void rx_work(struct work *work)
 
 	ret = do_read(conn->fd, &hdr, sizeof(hdr), NULL, 0, UINT32_MAX);
 	if (ret) {
-		sd_debug("failed to read a header");
 		conn->dead = true;
 		return;
 	}
