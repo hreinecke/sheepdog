@@ -328,6 +328,7 @@ then
 fi
 
 if $valgrind; then
+    export VALGRIND=valgrind
     export SHEEP=_valgrind_sheep
     export DOG=_valgrind_dog
 fi

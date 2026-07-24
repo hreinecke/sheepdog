@@ -14,6 +14,7 @@
 # dog:		check dog commands
 # md:		multi-disk tests
 # sheepfs	check sheepfs
+# qemu:         check qemu integration (obsolete)
 #
 001 auto quick cluster md
 002 auto quick cluster md
@@ -27,16 +28,16 @@
 010 auto quick store
 011 auto quick store md
 012 auto quick store md
-013 auto quick vdi md
+#013 auto quick vdi md qemu
 014 auto quick vdi md
 015 auto quick vdi md
 #016 auto quick vdi md
-017 auto quick vdi md
+#017 auto quick vdi md qemu
 021 auto quick cluster md
 022 auto quick cluster md
 023 auto quick cluster md
-024 auto quick cluster md
-025 auto quick cluster md
+#024 auto quick cluster md qemu
+#025 auto quick cluster md qemu
 026 auto quick vdi md
 027 auto quick store
 028 auto quick store md
@@ -50,7 +51,7 @@
 036 auto quick cluster md
 #037 auto quick cluster md
 #038 auto quick cluster md
-039 auto quick vdi md
+#039 auto quick vdi md
 040 auto quick cluste md
 041 auto quick vdi md
 042 auto quick store
@@ -68,7 +69,7 @@
 056 auto quick cluster md
 057 auto quick cluster md
 #058 auto quick cluster md
-#059 auto quick vdi md
+#059 auto quick vdi md qemu
 060 auto quick cluster md
 061 auto quick cluster md
 062 auto quick cluster md
@@ -82,7 +83,7 @@
 072 auto quick store
 073 auto quick sheepfs
 074 auto quick clster md
-075 auto quick vdi md
+#075 auto quick vdi md qemu
 076 auto quick vdi md
 #077 auto quick vdi
 #078 auto quick vdi md
