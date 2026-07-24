@@ -78,11 +78,16 @@ struct etcd_node {
 	char node_id[MAX_NODE_STR_LEN];
 	struct sd_node node;
 	enum etcd_status_type status;
-	bool callbacked;
 	bool is_master;
 	bool is_fallback;
 };
 
+struct etcd_block_node {
+	struct list_node list;
+	char node_id[MAX_NODE_STR_LEN];
+	struct etcd_node *node;
+	bool callbacked;
+};
 struct etcd_cluster_info {
 	uint8_t proto_ver;
 	uint8_t disable_recovery;
@@ -945,6 +950,19 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 	return nr_nodes;
 }
 
+static struct etcd_node *etcd_get_node_from_list(const char *node_id)
+{
+	struct etcd_node *node, lookup;
+
+	strcpy(lookup.node_id, node_id);
+	rb_init_node(&lookup.rb);
+	sd_mutex_lock(&etcd_node_mutex);
+	node = rb_search(&etcd_node_root, &lookup,
+			 rb, etcd_node_cmp);
+	sd_mutex_unlock(&etcd_node_mutex);
+	return node;
+}
+
 static inline int etcd_node_is_master(struct etcd_ctx *ctx,
 				      struct rb_root *root,
 				      struct etcd_node *node)
@@ -1006,14 +1024,14 @@ static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 
 static void block_event_list_del(struct etcd_node *n)
 {
-	struct etcd_node *node, *tmp;
+	struct etcd_block_node *blocked_node, *tmp;
 
 	sd_mutex_lock(&etcd_block_mutex);
-	list_for_each_entry_safe(node, tmp, &etcd_block_list, list) {
-		if (!node_eq(&node->node, &n->node))
+	list_for_each_entry_safe(blocked_node, tmp, &etcd_block_list, list) {
+		if (strcmp(blocked_node->node_id, n->node_id))
 			continue;
-		list_del(&node->list);
-		node->callbacked = false;
+		list_del(&blocked_node->list);
+		free(blocked_node);
 	}
 	sd_mutex_unlock(&etcd_block_mutex);
 }
@@ -1950,14 +1968,22 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 
 static void etcd_kick_block_event(void)
 {
-	struct etcd_node *block;
+	struct etcd_block_node *block;
 
 	sd_mutex_lock(&etcd_block_mutex);
 	if (!list_empty(&etcd_block_list)) {
 		block = list_first_entry(&etcd_block_list,
 					 typeof(*block), list);
-		if (!block->callbacked)
-			block->callbacked = sd_block_handler(&block->node);
+		if (!block->callbacked) {
+			struct etcd_node *node =
+				etcd_get_node_from_list(block->node_id);
+			if (!node)
+				sd_warn("blocked node %s not registered",
+					block->node_id);
+			else
+				block->callbacked =
+					sd_block_handler(&node->node);
+		}
 	}
 	sd_mutex_unlock(&etcd_block_mutex);
 }
@@ -1965,7 +1991,8 @@ static void etcd_kick_block_event(void)
 static void etcd_handle_block(struct etcd_ctx *ctx,
 			      struct json_object *obj)
 {
-	struct etcd_node block, *node, *tmp;
+	struct etcd_block_node *block;
+	struct etcd_node *node = NULL;
 	struct json_object *node_obj;
 
 	node_obj = json_object_object_get(obj, "node");
@@ -1973,37 +2000,33 @@ static void etcd_handle_block(struct etcd_ctx *ctx,
 		sd_warn("failed to retrieve 'node' object");
 		return;
 	}
-	strcpy(block.node_id, json_object_get_string(node_obj));
-	sd_debug("BLOCK %s", block.node_id);
-	rb_init_node(&block.rb);
-	sd_mutex_lock(&etcd_node_mutex);
-	node = rb_search(&etcd_node_root, &block, rb, etcd_node_cmp);
-	sd_mutex_unlock(&etcd_node_mutex);
-	if (!node) {
-		sd_warn("blocking node not registered");
-		return;
-	}
+	block = xzalloc(sizeof(*block));
+	INIT_LIST_NODE(&block->list);
+	strcpy(block->node_id, json_object_get_string(node_obj));
+	block->callbacked = false;
+	sd_debug("BLOCK %s", block->node_id);
+
 	sd_mutex_lock(&etcd_block_mutex);
-	list_for_each_entry(tmp, &etcd_block_list, list) {
-		if (tmp == node) {
-			sd_warn("node '%s' already on blocked list",
-				node->node_id);
-			node = NULL;
-			break;
-		}
+	list_add_tail(&block->list, &etcd_block_list);
+
+	block = list_first_entry(&etcd_block_list, typeof(*block), list);
+	if (!block->callbacked) {
+		node = etcd_get_node_from_list(block->node_id);
+		if (!node)
+			sd_warn("blocked node %s not registered",
+				block->node_id);
+		else
+			block->callbacked =
+				sd_block_handler(&node->node);
 	}
-	if (node)
-		list_add_tail(&node->list, &etcd_block_list);
-	node = list_first_entry(&etcd_block_list, typeof(*node), list);
-	if (!node->callbacked)
-		node->callbacked = sd_block_handler(&node->node);
 	sd_mutex_unlock(&etcd_block_mutex);
 }
 
 static void etcd_handle_unblock(struct etcd_ctx *ctx,
 				struct json_object *obj)
 {
-	struct etcd_node unblock, *block = NULL;
+	struct etcd_node unblock, *node = NULL;
+	struct etcd_block_node *block = NULL;
 	struct vdi_op_message *msg;
 	size_t msg_len = 0;
 
@@ -2014,15 +2037,19 @@ static void etcd_handle_unblock(struct etcd_ctx *ctx,
 	}
 	sd_debug("UNBLOCK %s", unblock.node_id);
 	sd_mutex_lock(&etcd_block_mutex);
-	if (!list_empty(&etcd_block_list)) {
-		block = list_first_entry(&etcd_block_list,
-					 typeof(*block), list);
+	if (!list_empty(&etcd_block_list) &&
+	    (block = list_first_entry(&etcd_block_list,
+				      typeof(*block), list))) {
 		list_del(&block->list);
-		block->callbacked = false;
+		node = etcd_get_node_from_list(block->node_id);
+		if (!node)
+			sd_warn("unblocked node %s not registered",
+				block->node_id);
+		free(block);
 	}
 	sd_mutex_unlock(&etcd_block_mutex);
-	if (block && !etcd_node_cmp(block, &this_node))
-		sd_notify_handler(&block->node, (void *)msg, msg_len);
+	if (node)
+		sd_notify_handler(&node->node, (void *)msg, msg_len);
 
 	free(msg);
 }
