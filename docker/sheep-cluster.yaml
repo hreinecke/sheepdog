@@ -17,7 +17,7 @@ services:
     volumes:
       - sheep0-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7000:7000"
+      - "127.0.0.1:7000:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE0_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -38,7 +38,7 @@ services:
     volumes:
       - sheep1-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7001:7000"
+      - "127.0.0.1:7001:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -59,7 +59,7 @@ services:
     volumes:
       - sheep2-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7002:7000"
+      - "127.0.0.1:7002:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -80,7 +80,7 @@ services:
     volumes:
       - sheep3-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7003:7000"
+      - "127.0.0.1:7003:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -101,7 +101,7 @@ services:
     volumes:
       - sheep4-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7004:7000"
+      - "127.0.0.1:7004:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -122,7 +122,7 @@ services:
     volumes:
       - sheep5-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7005:7000"
+      - "127.0.0.1:7005:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE5_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -143,7 +143,7 @@ services:
     volumes:
       - sheep6-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7006:7000"
+      - "127.0.0.1:7006:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE6_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -164,7 +164,7 @@ services:
     volumes:
       - sheep7-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7007:7000"
+      - "127.0.0.1:7007:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE7_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -185,7 +185,7 @@ services:
     volumes:
       - sheep8-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7008:7000"
+      - "127.0.0.1:7008:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE8_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -206,7 +206,7 @@ services:
     volumes:
       - sheep9-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7009:7000"
+      - "127.0.0.1:7009:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE9_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -227,7 +227,7 @@ services:
     volumes:
       - sheep10-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7010:7000"
+      - "127.0.0.1:7010:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE10_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -248,7 +248,7 @@ services:
     volumes:
       - sheep11-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7011:7000"
+      - "127.0.0.1:7011:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE11_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -269,7 +269,7 @@ services:
     volumes:
       - sheep12-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7012:7000"
+      - "127.0.0.1:7012:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE12_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -290,7 +290,7 @@ services:
     volumes:
       - sheep13-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7013:7000"
+      - "127.0.0.1:7013:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE13_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -311,7 +311,7 @@ services:
     volumes:
       - sheep14-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7014:7000"
+      - "127.0.0.1:7014:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE14_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -332,7 +332,7 @@ services:
     volumes:
       - sheep15-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7015:7000"
+      - "127.0.0.1:7015:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE15_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -353,7 +353,7 @@ services:
     volumes:
       - sheep16-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7016:7000"
+      - "127.0.0.1:7016:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE16_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -374,7 +374,7 @@ services:
     volumes:
       - sheep17-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7017:7000"
+      - "127.0.0.1:7017:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE17_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -395,7 +395,7 @@ services:
     volumes:
       - sheep18-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7018:7000"
+      - "127.0.0.1:7018:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE18_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -416,7 +416,7 @@ services:
     volumes:
       - sheep19-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7019:7000"
+      - "127.0.0.1:7019:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE19_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -437,7 +437,7 @@ services:
     volumes:
       - sheep20-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7020:7000"
+      - "127.0.0.1:7020:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE20_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -458,7 +458,7 @@ services:
     volumes:
       - sheep21-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7021:7000"
+      - "127.0.0.1:7021:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE21_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -479,7 +479,7 @@ services:
     volumes:
       - sheep22-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7022:7000"
+      - "127.0.0.1:7022:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE22_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
@@ -500,7 +500,7 @@ services:
     volumes:
       - sheep23-data:/var/lib/sheep
     ports:
-       - "127.0.0.1:7023:7000"
+      - "127.0.0.1:7023:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE23_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
