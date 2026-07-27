@@ -140,6 +140,7 @@ _die()
 
 _setup()
 {
+    mkdir -p $STORE
     if [[ "$DRIVER" == etcd* ]]; then
 	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start 2> /dev/null
     fi
@@ -155,7 +156,6 @@ _cleanup()
 
     _cleanup_devices
 
-    mkdir -p $STORE
     for i in $STORE/?; do
         rm -rf $i
     done
