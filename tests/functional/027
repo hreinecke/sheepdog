@@ -19,4 +19,4 @@ _kill_sheep 1
 
 _wait_for_sheep_recovery 0
 
-_find_data_obj 80fd32fc00000000
+_find_obj 80fd32fc00000000

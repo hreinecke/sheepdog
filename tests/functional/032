@@ -37,10 +37,10 @@ done
 _wait_for_sheep 8
 _wait_for_sheep_recovery 0
 
-_find_data_obj 807c2b2500000000
+_find_obj 807c2b2500000000
 for i in `seq 0 24`; do
     oid=$(printf "007c2b25000000%02x" $i)
-    _find_data_obj $oid
+    _find_obj $oid
 done
 ls $STORE/*/{obj,d[0-9]*}/.stale 2> /dev/null | \
 	_filter_store | _filter_md_store | sort -u

@@ -34,18 +34,8 @@ done
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
 $DOG cluster info | head -6 | _filter_cluster_info
-if [[ "$DRIVER" == etcd* ]]; then
-    for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names); do
-	sheep=$(eval echo $s)
-	num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
-	for obj in $(docker exec $sheep ls $DOCKER_STORE/obj); do
-	    echo STORE/${num}/obj/$obj
-	done
-    done | sort
-else
-    ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
-	_filter_store | _filter_md_store | sort
-fi
+_list_obj | \
+    _filter_store | filter_md_store | sort
 $DOG cluster recover disable
 for i in 3 4; do
     _start_sheep $i
@@ -61,7 +51,8 @@ done
 
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
+_wait_for_sheep 8
 $DOG cluster info | head -6 | _filter_cluster_info
-ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
+_list_obj | \
 	_filter_store | _filter_md_store | sort
 $DOG vdi read test 0 32m | md5sum

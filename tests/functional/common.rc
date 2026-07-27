@@ -546,10 +546,36 @@ _list_ledger_obj()
 
 _list_stale_obj()
 {
-    find $STORE/$1 | grep -E /[0-9a-f]\{16\} | grep .stale
+    if [[ "$DRIVER" == etcd* ]]; then
+	for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names | sort); do
+	    sheep=$(eval echo $s)
+	    num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
+	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj/.stale); do
+		echo STORE/${num}/obj/.stale/$obj
+	    done
+	done
+    else
+	find $STORE/$1 | grep -E /[0-9a-f]\{16\} | grep .stale
+    fi
 }
 
-_find_data_obj()
+_list_obj()
+{
+    if [[ "$DRIVER" == etcd* ]]; then
+	for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names | sort); do
+	    sheep=$(eval echo $s)
+	    num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
+	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj); do
+		echo STORE/${num}/obj/$obj
+	    done
+	done | sort
+    else
+	ls $STORE/*/{obj,d[0-9]*}/ 2> /dev/null | \
+	    _filter_store | _filter_md_store | sort
+    fi
+}
+
+_find_obj()
 {
     local oid=$1
 

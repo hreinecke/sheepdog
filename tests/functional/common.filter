@@ -163,7 +163,7 @@ _filter_spaces()
 # normalize dog cluster info output
 _filter_cluster_info()
 {
-    _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_date | _filter_iso_date
+    _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_date | _filter_iso_date | _filter_ip_port
 }
 
 # sanitize qemu-io output
