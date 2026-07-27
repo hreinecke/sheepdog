@@ -443,6 +443,8 @@ int fill_vdi_state_list(const struct sd_req *hdr,
 
 	if (hdr->data_length < last * sizeof(struct vdi_state)) {
 		free(vs);
+		sd_warn("response buffer length %u too small, need %lu",
+			hdr->data_length, last * sizeof(struct vdi_state));
 		return SD_RES_BUFFER_SMALL;
 	}
 
