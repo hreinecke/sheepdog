@@ -19,5 +19,5 @@ _start_sheep 1
 wait $!
 _wait_for_sheep 2
 
-_vdi_list -p 7000
-_vdi_list -p 7001
+_vdi_list -p 7000 | _filter_iso_date
+_vdi_list -p 7001 | _filter_iso_date
