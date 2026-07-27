@@ -1091,7 +1091,7 @@ static uint64_t *fetch_object_list(struct sd_node *e, uint32_t epoch,
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	size_t buf_size = list_buffer_size;
 	uint64_t *buf = xmalloc(buf_size);
-	int ret;
+	int ret, retries = 60;
 
 	sd_debug("%s", addr_to_str(e->nid.addr, e->nid.port));
 
@@ -1108,6 +1108,14 @@ retry:
 		buf_size *= 2;
 		buf = xrealloc(buf, buf_size);
 		goto retry;
+	case SD_RES_WAIT_FOR_JOIN:
+		sd_warn("waiting for %s to join the cluster",
+			addr_to_str(e->nid.addr, e->nid.port));
+		if (--retries) {
+			sleep(1);
+			goto retry;
+		}
+		/* fallthrough */
 	default:
 		sd_alert("cannot get object list from %s",
 			 addr_to_str(e->nid.addr, e->nid.port));
