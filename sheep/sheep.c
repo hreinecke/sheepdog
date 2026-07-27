@@ -896,7 +896,7 @@ int main(int argc, char **argv, char **envp)
 			zone = -1;
 		}
 		if (zone >= 0)
-			sd_info("Using SHEEP_ZONE='%lu", zone);
+			sd_info("Using SHEEP_ZONE='%lu'", zone);
 	}
 	if ((opt = getenv("SHEEP_VNODES"))) {
 		nr_vnodes = str_to_u32(opt);
