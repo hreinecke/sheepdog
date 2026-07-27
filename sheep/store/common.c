@@ -138,7 +138,7 @@ static int do_epoch_log_read_json(int fd, uint32_t epoch, struct sd_node *nodes,
 {
 	struct json_object *obj;
 	struct json_object_iterator itb, ite;
-	int max_nodes;
+	unsigned int max_nodes;
 
 	max_nodes = len / sizeof(struct sd_node);
 	obj = json_object_from_fd(fd);
@@ -162,10 +162,12 @@ static int do_epoch_log_read_json(int fd, uint32_t epoch, struct sd_node *nodes,
 			if (timestamp)
 				*timestamp = mktime(&tm);
 		} else if (!strcmp(key, "nodes")) {
-			if (json_object_array_length(val_obj) > max_nodes) {
+			unsigned int num_nodes =
+				json_object_array_length(val_obj);
+			if (num_nodes > max_nodes) {
 				json_object_put(obj);
-				sd_warn("Only have space for %u from %lu nodes of epoch log",
-					max_nodes, json_object_array_length(val_obj));
+				sd_warn("Only have space for %u from %u nodes of epoch log",
+					max_nodes, num_nodes);
 				return SD_RES_BUFFER_SMALL;
 			}
 			json_to_nodes(val_obj, nodes, nr_nodes);
