@@ -171,8 +171,9 @@ _cleanup()
     fi
 
     if [[ "$DRIVER" == etcd* ]]; then
+	docker compose ${DOCKER_ENV} ${DOCKER_YAML} down 2> /dev/null
 	for vol in $(docker volume ls --filter Name=sheepdog-etcd_sheep | tail -n +2 | cut -b 11-); do
-	    docker volume rm $vol 2> /dev/null
+	    docker volume rm $vol > /dev/null
 	done
 	docker exec sheepdog-etcd-etcd0-1 etcdctl del --prefix sheepdog > /dev/null 2>&1
     fi
