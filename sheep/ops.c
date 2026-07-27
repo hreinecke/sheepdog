@@ -515,8 +515,10 @@ static int local_stat_cluster(struct request *req)
 					nodes_nr * sizeof(struct sd_node),
 					&nr_nodes, (time_t *)&elog->time,
 					req->vinfo);
-			if (ret == SD_RES_BUFFER_SMALL)
+			if (ret == SD_RES_BUFFER_SMALL) {
+				rsp->cluster.nr_nodes = nr_nodes;
 				return ret;
+			}
 			elog->nr_nodes = nr_nodes;
 		} else
 			elog->nr_nodes = 0;

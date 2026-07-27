@@ -339,7 +339,10 @@ retry:
 	if (ret < 0)
 		goto error;
 	if (rsp->result == SD_RES_BUFFER_SMALL) {
-		nodes_nr *= 2;
+		if (rsp->cluster.nr_nodes > nodes_nr)
+			nodes_nr = rsp->cluster.nr_nodes;
+		else
+			nodes_nr *= 2;
 		log_length = sd_epoch * (sizeof(struct epoch_log)
 				+ nodes_nr * sizeof(struct sd_node));
 		logs = xrealloc(logs, log_length);
