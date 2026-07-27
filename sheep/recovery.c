@@ -617,7 +617,7 @@ static void recover_object_work(struct work *work)
 	int ret, epoch;
 
 	if (sd_store->exist(oid, local_ec_index(cur, oid))) {
-		sd_debug("the object is already recovered");
+		sd_debug("object %016"PRIx64" is already recovered", oid);
 		return;
 	}
 
