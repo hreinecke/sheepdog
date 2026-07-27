@@ -47,13 +47,14 @@ done
 
 _wait_for_sheep_recovery 0
 
-ls $STORE/*/{obj,d[0-9]*}/807c2b2500000000 2> /dev/null | \
+_find_obj 807c2b2500000000 2> /dev/null | \
 	_filter_store | _filter_md_store | sort
 for i in `seq 0 24`; do
-    ls $STORE/*/{obj,d[0-9]*}/007c2b25000000`printf "%02x" $i` 2> /dev/null | \
-		_filter_store | _filter_md_store | sort
+    oid=$(printf "007c2b25000000%02x" $i)
+    _find_obj $oid | \
+	_filter_store | _filter_md_store | sort
 done
-ls $STORE/*/{obj,d[0-9]*}/.stale 2> /dev/null | \
+_list_stale_obj | \
 	_filter_store | _filter_md_store | sort -u
 
 $DOG vdi read test | md5sum

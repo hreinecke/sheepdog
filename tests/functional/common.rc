@@ -550,10 +550,10 @@ _list_stale_obj()
 	for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names | sort); do
 	    sheep=$(eval echo $s)
 	    num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
-	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj/.stale); do
-		echo STORE/${num}/obj/.stale/$obj
+	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj); do
+		echo STORE/${num}/obj/$obj
 	    done
-	done
+	done | grep .stale
     else
 	find $STORE/$1 | grep -E /[0-9a-f]\{16\} | grep .stale
     fi
