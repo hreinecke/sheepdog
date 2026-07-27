@@ -122,7 +122,7 @@
 #define SD_INODE_INDEX_SIZE (sizeof(uint32_t) * MAX_DATA_OBJS)
 #define SD_INODE_DATA_INDEX (1ULL << 20)
 #define SD_INODE_DATA_INDEX_SIZE (sizeof(uint32_t) * SD_INODE_DATA_INDEX)
-#define SD_INODE_HEADER_SIZE offsetof(struct sd_inode, data_vdi_id)
+#define SD_INODE_HEADER_SIZE (sizeof(struct sd_inode_header))
 #define SD_ATTR_OBJ_SIZE (sizeof(struct sheepdog_vdi_attr))
 #define SD_LEDGER_OBJ_SIZE (UINT64_C(1) << 22)
 #define CURRENT_VDI_ID 0
