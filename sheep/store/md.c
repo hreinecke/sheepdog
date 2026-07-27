@@ -172,7 +172,8 @@ static int get_total_object_size(uint64_t oid, const char *wd, uint32_t epoch,
 
 static int64_t find_string_integer(const char *str, const char *delimiter)
 {
-	char *pos = strstr(str, delimiter), *p;
+	const char *pos = strstr(str, delimiter);
+	char *p;
 	int64_t ret;
 
 	ret = strtoll(pos + 1, &p, 10);
