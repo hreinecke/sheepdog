@@ -283,7 +283,7 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 		ti = i->header.create_time >> 32;
 		localtime_r(&ti, &tm);
 
-		strftime(buf, sizeof(buf), TIME_FORMAT, &tm);
+		strftime(buf, sizeof(buf), "[" TIME_FORMAT "]", &tm);
 	} else
 		pstrcpy(buf, sizeof(buf), "(you are here)");
 
