@@ -44,8 +44,8 @@ done
 $DOG vdi read test | md5sum
 $DOG vdi read test -p 7001 | md5sum
 
-$DOG vdi object location test | _filter_ip_port | _filter_ip_port
+$DOG vdi object location test | _filter_ip_port
 
 for i in `seq 0 24`; do
-    $DOG vdi object location -i $i test | _filter_ip_port | _filter_ip_port
+    $DOG vdi object location -i $i test | _filter_ip_port
 done

@@ -33,9 +33,10 @@ done
 
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
+_wait_for_sheep 6
 $DOG cluster info | head -6 | _filter_cluster_info
 _list_obj | \
-    _filter_store | filter_md_store | sort
+    _filter_store | _filter_md_store | sort
 $DOG cluster recover disable
 for i in 3 4; do
     _start_sheep $i
