@@ -20,8 +20,8 @@ $DOG cluster shutdown -p 7001
 _wait_for_sheep_stop
 
 # clean up sheep 0 and sheep 1
-rm -rf $STORE/0
-rm -rf $STORE/1
+_remove_store 0
+_remove_store 1
 
 for i in 0 1; do
     _start_sheep $i
@@ -38,6 +38,14 @@ _wait_for_sheep_stop
 # sheep 2 should fail to join because it was formatted at the different time
 _start_sheep 0
 _wait_for_sheep 1
+
+if [[ "$DRIVER" == etcd* ]]; then
+    # docker will have removed the network as no containers are running,
+    # so restart of sheep2 will fail as it still references to old
+    # network configuration
+    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep2 2> /dev/null
+    docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep2 2> /dev/null
+fi
 _start_sheep 2
 _wait_for_sheep_stop 2
 sleep 2
