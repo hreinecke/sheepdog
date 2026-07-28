@@ -81,7 +81,7 @@
 070 auto quick cluster md
 071 auto quick store md
 072 auto quick store
-073 auto quick sheepfs
+#073 auto quick sheepfs
 074 auto quick clster md
 #075 auto quick vdi md qemu
 076 auto quick vdi md
@@ -92,7 +92,7 @@
 081 auto quick vdi md
 082 auto quick vdi md
 #083 auto quick vdi
-084 auto quick sheepfs
+#084 auto quick sheepfs
 085 auto quick vdi md
 #086 auto quick vdi md
 087 auto quick vdi

@@ -13,7 +13,7 @@ _wait_for_sheep 3
 _cluster_format
 
 $DOG vdi create test 16P -y
-_vdi_list
+_vdi_list | _filter_iso_date
 
 # write many 2MB data from different offset of vdi
 for i in `seq 0 15`; do
@@ -29,7 +29,7 @@ for i in `seq 0 15`; do
 	diff -u -a $STORE/cs$i $STORE/csum$i
 done
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
 _cleanup
 
@@ -43,7 +43,7 @@ _wait_for_sheep 3
 _cluster_format
 
 $DOG vdi create test 16P -y
-_vdi_list
+_vdi_list | _filter_iso_date
 _random | $DOG vdi write test 15P 2M
 $DOG vdi read test 15P 2M | md5sum > $STORE/csum1
 
@@ -52,4 +52,4 @@ $DOG vdi read test 15P 2M | md5sum > $STORE/csum2
 
 diff -u $STORE/csum1 $STORE/csum2
 
-_vdi_list
+_vdi_list | _filter_iso_date

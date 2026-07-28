@@ -15,7 +15,7 @@ _cluster_format -c 4:2 -t
 $DOG vdi create test 10M
 $DOG node kill 3
 echo hello | $DOG vdi write test 0 512
-_vdi_list
+_vdi_list | _filter_iso_date
 
 # Should fail
 $DOG vdi create test1 10M
@@ -34,4 +34,4 @@ _wait_for_sheep 5
 $DOG vdi create test1 10M
 echo world | $DOG vdi write test 0 512
 
-_vdi_list
+_vdi_list | _filter_iso_date
