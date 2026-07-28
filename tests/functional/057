@@ -4,6 +4,8 @@
 
 . ./common
 
+_need_to_be_root
+
 MD=true
 
 if [ "$STORE" != "/tmp/sheepdog/057" ]; then

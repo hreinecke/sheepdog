@@ -15,25 +15,25 @@ _cluster_format -c 6
 echo "delete snapshot image before current one"
 _vdi_create test 4G
 $DOG vdi snapshot test -s snap
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG vdi delete test -s snap
 $DOG vdi delete test -s snap # error
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG vdi delete test
 $DOG vdi delete test # error
-_vdi_list
+_vdi_list | _filter_iso_date
 
 echo "delete current image before snapshot one"
 _vdi_create test 4G
 $DOG vdi snapshot test -s snap
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG vdi delete test
 $DOG vdi delete test # error
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG vdi delete test -s snap
 $DOG vdi delete test -s snap # error
-_vdi_list
+_vdi_list | _filter_iso_date

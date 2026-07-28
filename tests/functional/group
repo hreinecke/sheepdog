@@ -68,7 +68,7 @@
 #055 auto cluster md
 056 auto quick cluster md
 057 auto quick cluster md
-#058 auto quick cluster md
+#058 auto quick cluster md qemu
 #059 auto quick vdi md qemu
 060 auto quick cluster md
 061 auto quick cluster md
