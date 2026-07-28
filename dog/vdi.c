@@ -2927,7 +2927,7 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		JSON_ADD_INT(out_obj, "parent_vdi_id",
 			     hdr->parent_vdi_id);
 		JSON_ADD_INT(out_obj, "btree_counter",
-			     inode->btree_counter);
+			     hdr->btree_counter);
 		data_obj = json_object_new_array();
 	} else {
 		printf("copy_policy: %d\n", hdr->copy_policy);
@@ -2938,7 +2938,7 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		printf("snap_id: %"PRIu32"\n", hdr->snap_id);
 		printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
 		printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
-		printf("btree_counter: %"PRIu32"\n", inode->btree_counter);
+		printf("btree_counter: %"PRIu32"\n", hdr->btree_counter);
 		printf("data_vdi_id:\n");
 	}
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {

@@ -365,13 +365,12 @@ struct sd_inode_header {
 	uint32_t snap_id;
 	uint32_t vdi_id;
 	uint32_t parent_vdi_id;
+	uint32_t btree_counter;
+	uint32_t __unused[OLD_MAX_CHILDREN - 1];
 };
 
 struct sd_inode {
 	struct sd_inode_header header;
-
-	uint32_t btree_counter;
-	uint32_t __unused[OLD_MAX_CHILDREN - 1];
 
 	uint32_t data_vdi_id[SD_INODE_DATA_INDEX];
 	struct generation_reference gref[SD_INODE_DATA_INDEX];

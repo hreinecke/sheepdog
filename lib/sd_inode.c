@@ -452,9 +452,9 @@ static void transfer_to_idx_root(write_node_fn writer, struct sd_inode *inode)
 
 	/* write two nodes back */
 	left_oid = vid_to_btree_oid(inode->header.vdi_id,
-				    inode->btree_counter++);
+				    inode->header.btree_counter++);
 	right_oid = vid_to_btree_oid(inode->header.vdi_id,
-				     inode->btree_counter++);
+				     inode->header.btree_counter++);
 
 	writer(left_oid, left, SD_INODE_DATA_INDEX_SIZE, 0, 0,
 	       inode->header.nr_copies, inode->header.copy_policy, true, false);
@@ -577,7 +577,7 @@ static void split_index_node(write_node_fn writer, struct sd_inode *inode,
 	split_to_nodes(old, new_ext, old, num);
 
 	new_oid = vid_to_btree_oid(inode->header.vdi_id,
-				   inode->btree_counter++);
+				   inode->header.btree_counter++);
 	writer(new_oid, new_ext, SD_INODE_DATA_INDEX_SIZE, 0, 0,
 	       inode->header.nr_copies, inode->header.copy_policy, true, false);
 	writer(path->p_indirect_idx->oid, old, SD_INODE_DATA_INDEX_SIZE, 0, 0,
@@ -646,7 +646,7 @@ static int insert_new_node(write_node_fn writer, read_node_fn reader,
 			leaf_node = xvalloc(SD_INODE_DATA_INDEX_SIZE);
 			sd_inode_init(leaf_node, 1);
 			oid = vid_to_btree_oid(inode->header.vdi_id,
-					       inode->btree_counter++);
+					       inode->header.btree_counter++);
 			insert_index_nosearch(leaf_node,
 					      FIRST_INDEX(leaf_node), idx,
 					      vdi_id);
@@ -798,9 +798,9 @@ int sd_inode_write(struct sd_inode *inode, int flags, bool create, bool direct)
 		if (ret != SD_RES_SUCCESS)
 			goto out;
 		ret = inode_actor.writer(vid_to_vdi_oid(inode->header.vdi_id),
-					 &(inode->btree_counter),
+					 &(inode->header.btree_counter),
 					 sizeof(uint32_t),
-					 offsetof(struct sd_inode,
+					 offsetof(struct sd_inode_header,
 						  btree_counter),
 					 flags,
 					 inode->header.nr_copies,
@@ -861,7 +861,7 @@ void sd_inode_copy_vdis(write_node_fn writer, read_node_fn reader,
 			reader(old_iter_idx->oid, &tmp,
 			       SD_INODE_DATA_INDEX_SIZE, 0);
 			oid = vid_to_btree_oid(newi->header.vdi_id,
-					       newi->btree_counter++);
+					       newi->header.btree_counter++);
 			writer(oid, leaf_node, SD_INODE_DATA_INDEX_SIZE, 0, 0,
 			       nr_copies, copy_policy, true, false);
 			new_iter_idx->oid = oid;
