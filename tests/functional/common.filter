@@ -146,7 +146,7 @@ _filter_port()
 
 _filter_ip_port()
 {
-    sed -e 's/\(.*\)192.168.122.10\([0-9]\):7000\(.*\)/\1127.0.0.1:700\2\3/g'
+    sed -e 's/\(192.168.122.10\)\([0-9]\):7000/127.0.0.1:700\2/g'
 }
 
 _filter_ip()
@@ -163,7 +163,7 @@ _filter_spaces()
 # normalize dog cluster info output
 _filter_cluster_info()
 {
-    _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_ip_port | _filter_date | _filter_iso_date | _filter_ip_port
+    _filter_ip_port | _filter_date | _filter_iso_date
 }
 
 # sanitize qemu-io output
