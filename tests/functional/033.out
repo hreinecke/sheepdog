@@ -1,91 +1,30 @@
 QA output created by 033
 using backend plain store
 9c7766570b3be3aff2724f587c2f4107  -
-STORE/2/obj/807c2b2500000000
-STORE/4/obj/807c2b2500000000
-STORE/7/obj/807c2b2500000000
-STORE/1/obj/007c2b2500000000
-STORE/3/obj/007c2b2500000000
-STORE/6/obj/007c2b2500000000
-STORE/0/obj/007c2b2500000001
-STORE/1/obj/007c2b2500000001
-STORE/7/obj/007c2b2500000001
-STORE/0/obj/007c2b2500000002
-STORE/5/obj/007c2b2500000002
-STORE/6/obj/007c2b2500000002
-STORE/1/obj/007c2b2500000003
-STORE/3/obj/007c2b2500000003
-STORE/6/obj/007c2b2500000003
-STORE/2/obj/007c2b2500000004
-STORE/5/obj/007c2b2500000004
-STORE/6/obj/007c2b2500000004
-STORE/1/obj/007c2b2500000005
-STORE/2/obj/007c2b2500000005
-STORE/4/obj/007c2b2500000005
-STORE/0/obj/007c2b2500000006
-STORE/4/obj/007c2b2500000006
-STORE/7/obj/007c2b2500000006
-STORE/4/obj/007c2b2500000007
-STORE/5/obj/007c2b2500000007
-STORE/6/obj/007c2b2500000007
-STORE/3/obj/007c2b2500000008
-STORE/4/obj/007c2b2500000008
-STORE/6/obj/007c2b2500000008
-STORE/1/obj/007c2b2500000009
-STORE/5/obj/007c2b2500000009
-STORE/6/obj/007c2b2500000009
-STORE/1/obj/007c2b250000000a
-STORE/3/obj/007c2b250000000a
-STORE/6/obj/007c2b250000000a
-STORE/2/obj/007c2b250000000b
-STORE/3/obj/007c2b250000000b
-STORE/6/obj/007c2b250000000b
-STORE/1/obj/007c2b250000000c
-STORE/3/obj/007c2b250000000c
-STORE/7/obj/007c2b250000000c
-STORE/1/obj/007c2b250000000d
-STORE/5/obj/007c2b250000000d
-STORE/6/obj/007c2b250000000d
-STORE/2/obj/007c2b250000000e
-STORE/5/obj/007c2b250000000e
-STORE/7/obj/007c2b250000000e
-STORE/4/obj/007c2b250000000f
-STORE/6/obj/007c2b250000000f
-STORE/7/obj/007c2b250000000f
-STORE/0/obj/007c2b2500000010
-STORE/5/obj/007c2b2500000010
-STORE/7/obj/007c2b2500000010
-STORE/3/obj/007c2b2500000011
-STORE/4/obj/007c2b2500000011
-STORE/7/obj/007c2b2500000011
-STORE/3/obj/007c2b2500000012
-STORE/4/obj/007c2b2500000012
-STORE/7/obj/007c2b2500000012
-STORE/0/obj/007c2b2500000013
-STORE/2/obj/007c2b2500000013
-STORE/5/obj/007c2b2500000013
-STORE/1/obj/007c2b2500000014
-STORE/2/obj/007c2b2500000014
-STORE/6/obj/007c2b2500000014
-STORE/2/obj/007c2b2500000015
-STORE/6/obj/007c2b2500000015
-STORE/7/obj/007c2b2500000015
-STORE/0/obj/007c2b2500000016
-STORE/3/obj/007c2b2500000016
-STORE/4/obj/007c2b2500000016
-STORE/3/obj/007c2b2500000017
-STORE/5/obj/007c2b2500000017
-STORE/6/obj/007c2b2500000017
-STORE/1/obj/007c2b2500000018
-STORE/5/obj/007c2b2500000018
-STORE/6/obj/007c2b2500000018
-
-STORE/0/obj/.stale:
-STORE/1/obj/.stale:
-STORE/2/obj/.stale:
-STORE/3/obj/.stale:
-STORE/4/obj/.stale:
-STORE/5/obj/.stale:
-STORE/6/obj/.stale:
-STORE/7/obj/.stale:
+inode object is correctly placed
+data object 0 is correctly placed
+data object 1 is correctly placed
+data object 2 is correctly placed
+data object 3 is correctly placed
+data object 4 is correctly placed
+data object 5 is correctly placed
+data object 6 is correctly placed
+data object 7 is correctly placed
+data object 8 is correctly placed
+data object 9 is correctly placed
+data object 10 is correctly placed
+data object 11 is correctly placed
+data object 12 is correctly placed
+data object 13 is correctly placed
+data object 14 is correctly placed
+data object 15 is correctly placed
+data object 16 is correctly placed
+data object 17 is correctly placed
+data object 18 is correctly placed
+data object 19 is correctly placed
+data object 20 is correctly placed
+data object 21 is correctly placed
+data object 22 is correctly placed
+data object 23 is correctly placed
+data object 24 is correctly placed
 9c7766570b3be3aff2724f587c2f4107  -
