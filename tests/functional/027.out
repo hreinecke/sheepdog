@@ -1,5 +1,4 @@
 QA output created by 027
 using backend plain store
-STORE/0/obj/80fd32fc00000000
-STORE/1/obj/80fd32fc00000000
-STORE/2/obj/80fd32fc00000000
+inode object test0 is correctly placed
+inode object test1 is correctly placed

@@ -19,4 +19,8 @@ _kill_sheep 1
 
 _wait_for_sheep_recovery 0
 
-_find_obj 80fd32fc00000000
+for inode in test0 test1; do
+    if _check_obj_location ${inode}; then
+	echo "inode object ${inode} is correctly placed"
+    fi
+done
