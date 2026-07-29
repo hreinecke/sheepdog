@@ -44,8 +44,12 @@ done
 $DOG vdi read test | md5sum
 $DOG vdi read test -p 7001 | md5sum
 
-$DOG vdi object location test | _filter_ip_port
+if _check_obj_location test; then
+    echo "inode object is correctly placed"
+fi
 
 for i in `seq 0 24`; do
-    $DOG vdi object location -i $i test | _filter_ip_port
+    if _check_obj_location test $i; then
+	echo "data object $i is correctly placed"
+    fi
 done
