@@ -13,9 +13,13 @@ _check_recovery()
     $DOG cluster info | head -5 | _filter_cluster_info | _filter_epoch
     _count_obj
     for i in `seq 0 7`; do
-	_check_obj_location "data object $i" -i $i test
+	if _check_obj_location test $i; then
+	    echo "data object $i is correctly placed"
+	fi
     done
-    _check_obj_location "inode object" test
+    if _check_obj_location test; then
+	echo "inode object is correctly placed"
+    fi
 }
 
 for i in `seq 0 7`; do

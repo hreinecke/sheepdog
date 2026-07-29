@@ -615,20 +615,24 @@ _count_obj()
 }
 
 # Check that an object is stored on exactly those nodes that sheepdog's
-# placement algorithm selects for it.  Takes a label to print and the
-# arguments of 'dog vdi object location', i.e. [-i index] <vdiname>.
+# placement algorithm selects for it.  Takes a VDI name and an optional
+# index and returns 'true' if the object is correctly placed or 'false'
+# otherwise.
 _check_obj_location()
 {
-    local label=$1; shift
+    local vdi=$1
+    local DOG_ARGS="vdi object location -j"
 
-    $DOG vdi object location -j "$@" | \
-	jq -r --arg label "$label" \
-	   'if (.location | sort) == (.expected_location | sort) then
-		"\($label) is correctly placed"
-	    else
-		"\($label) is misplaced: on \(.location | sort | join(" "))"
-		+ ", should be on \(.expected_location | sort | join(" "))"
-	    end'
+    if [[ $# -gt 2 ]] ; then
+	DOG_ARGS="${DOG_ARGS} -i $2"
+    fi
+    cur=$($DOG $DOG_ARGS $vdi | jq '.location | length')
+    exp=$($DOG $DOG_ARGS $vdi | jq '.expected_location | length')
+    if [[ ${cur} -ne ${exp} ]]; then
+	return 1
+    else
+	return 0
+    fi
 }
 
 _find_obj()
