@@ -707,7 +707,10 @@ _cluster_format()
 
 _random()
 {
-	openssl enc -rc4 -pass pass:"$(date)" < /dev/zero 2>/dev/null
+	# RC4 was moved to the legacy provider in OpenSSL 3.x, where
+	# "openssl enc -rc4" fails after emitting just the 16 byte salt
+	# header.  AES-CTR lives in the default provider and is faster.
+	openssl enc -aes-128-ctr -pass pass:"$(date)" < /dev/zero 2>/dev/null
 }
 
 _one()

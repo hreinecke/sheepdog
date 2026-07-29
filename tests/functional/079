@@ -32,6 +32,7 @@ done
 _vdi_list | _filter_iso_date
 
 _cleanup
+_setup
 
 # test sheep recovery logic for hyper volume (B-tree)
 for i in `seq 0 2`; do
