@@ -599,9 +599,36 @@ _list_obj()
 	    done
 	done | sort
     else
-	ls $STORE/*/{obj,d[0-9]*}/ 2> /dev/null | \
+	ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
 	    _filter_store | _filter_md_store | sort
     fi
+}
+
+# Print the number of copies of every object in the cluster.  Which node an
+# object ends up on is a function of the node ids (address, port and zone),
+# so the raw object list differs between the local driver and the container
+# based ones.  The number of copies does not.
+_count_obj()
+{
+    _list_obj | sed -e 's|^STORE/[0-9]*/obj/||' | sort | uniq -c | \
+	awk '{ print $2, $1, "copies" }'
+}
+
+# Check that an object is stored on exactly those nodes that sheepdog's
+# placement algorithm selects for it.  Takes a label to print and the
+# arguments of 'dog vdi object location', i.e. [-i index] <vdiname>.
+_check_obj_location()
+{
+    local label=$1; shift
+
+    $DOG vdi object location -j "$@" | \
+	jq -r --arg label "$label" \
+	   'if (.location | sort) == (.expected_location | sort) then
+		"\($label) is correctly placed"
+	    else
+		"\($label) is misplaced: on \(.location | sort | join(" "))"
+		+ ", should be on \(.expected_location | sort | join(" "))"
+	    end'
 }
 
 _find_obj()

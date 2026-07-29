@@ -166,6 +166,15 @@ _filter_cluster_info()
     _filter_ip_port | _filter_date | _filter_iso_date
 }
 
+# Mask the epoch number of a 'dog cluster info' epoch line.  Whether two
+# nodes joining in quick succession end up in one epoch or in two depends on
+# how the cluster driver batches the join events, so the number is not
+# reproducible.
+_filter_epoch()
+{
+    sed -e 's/^\(DATE  *\)[0-9][0-9]* \[/\1EPOCH [/'
+}
+
 # sanitize qemu-io output
 _filter_qemu_io()
 {

@@ -4,6 +4,20 @@
 
 . ./common
 
+# Show the current node membership and where the objects ended up.  The
+# placement itself depends on the node ids and so on the cluster driver in
+# use, hence check it against the placement sheepdog computes rather than
+# against a hardcoded list of nodes.
+_check_recovery()
+{
+    $DOG cluster info | head -5 | _filter_cluster_info | _filter_epoch
+    _count_obj
+    for i in `seq 0 7`; do
+	_check_obj_location "data object $i" -i $i test
+    done
+    _check_obj_location "inode object" test
+}
+
 for i in `seq 0 7`; do
     _start_sheep $i
 done
@@ -34,8 +48,8 @@ done
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
 _wait_for_sheep 6
-$DOG cluster info | head -6 | _filter_cluster_info
-_list_obj
+_check_recovery
+
 $DOG cluster recover disable
 for i in 3 4; do
     _start_sheep $i
@@ -52,6 +66,5 @@ done
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
 _wait_for_sheep 8
-$DOG cluster info | head -6 | _filter_cluster_info
-_list_obj
+_check_recovery
 $DOG vdi read test 0 32m | md5sum
