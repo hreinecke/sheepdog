@@ -1397,9 +1397,11 @@ static int vdi_object_location(int argc, char **argv)
 		location_obj = json_object_new_array();
 	}
 	if (idx == ~0) {
-		if (json_output)
+		oid = vid_to_vdi_oid(vid);
+		if (json_output) {
 			JSON_ADD_INT(out_obj, "vdi_id", vid);
-		else
+			JSON_ADD_UINT64(out_obj, "oid", oid);
+		} else
 			printf("Looking for the inode object 0x%" PRIx32
 			       " with %d nodes\n\n", vid, sd_nodes_nr);
 		for_each_node_print(vid_to_vdi_oid(vid), vdi_obj);
@@ -1425,9 +1427,10 @@ static int vdi_object_location(int argc, char **argv)
 	vdi_id = sd_inode_get_vid(inode, idx);
 	oid = vid_to_data_oid(vdi_id, idx);
 	if (vdi_id) {
-		if (json_output)
+		if (json_output) {
 			JSON_ADD_INT(out_obj, "vdi_id", vdi_id);
-		else
+			JSON_ADD_UINT64(out_obj, "oid", oid);
+		} else
 			printf("Looking for the object %016" PRIx64
 			       " (vid 0x%" PRIx32 " idx %"PRIu64
 			       ", %u copies) with %d nodes\n\n",
