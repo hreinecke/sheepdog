@@ -37,12 +37,13 @@ done
 _wait_for_sheep 8
 _wait_for_sheep_recovery 0
 
-_find_obj 807c2b2500000000 | \
-	_filter_store | _filter_md_store | sort
+if _check_obj_location test; then
+    echo "inode object is correctly placed"
+fi
 for i in `seq 0 24`; do
-    oid=$(printf "007c2b25000000%02x" $i)
-    _find_obj $oid | |
-	_filter_store | _filter_md_store | sort
+    if _check_obj_location test $i; then
+	echo "data object $i is correctly placed"
+    fi
 done
 _list_stale_obj | \
 	_filter_store | _filter_md_store | sort -u
