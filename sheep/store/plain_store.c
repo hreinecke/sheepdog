@@ -478,10 +478,12 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 		return SD_RES_NO_MEM;
 	ret = get_store_stale_path(oid, tgt_epoch, 0, &stale_path);
 	if (ret != SD_RES_SUCCESS) {
+		sd_warn("get stale path for %016"PRIx64" failed, %s",
+			oid, sd_strerror(ret));
 		free(path);
 		return ret;
 	}
-
+	sd_debug("link %016"PRIx64" from %s to %s", oid, stale_path, path);
 	if (link(stale_path, path) < 0) {
 		/*
 		 * Recovery thread and main thread might try to recover the

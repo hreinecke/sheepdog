@@ -25,7 +25,7 @@
 007 auto quick cluster md
 #008 auto store md
 009 auto quick store md
-#010 auto quick store bad, store details differ
+010 auto quick store bad, store details differ
 011 auto quick store md
 012 auto quick store md
 #013 auto quick vdi md qemu
