@@ -4,31 +4,27 @@
 
 . ./common
 
-function oneTimeSetUp {
-	_start_sheep 0
-	_wait_for_sheep 1
-	_cluster_format -c 1
-}
-
 function setUp {
-	dog node recovery set-throttle -- 0 0
+	$DOG node recovery set-throttle -- 0 0
 }
 
 function testSetThrottleSuccess {
 	setUp
-	dog node recovery set-throttle -- "$@"
+	$DOG node recovery set-throttle -- "$@"
 	[ $? -eq 0 ] || exit 1
-	dog node recovery get-throttle
+	$DOG node recovery get-throttle
 }
 
 function testSetThrottleFailure {
 	setUp
-	! dog node recovery set-throttle -- "$@"
+	! $DOG node recovery set-throttle -- "$@"
 	[ $? -eq 0 ] || exit 1
-	dog node recovery get-throttle
+	$DOG node recovery get-throttle
 }
 
-oneTimeSetUp
+_start_sheep 0
+_wait_for_sheep 1
+_cluster_format -c 1
 
 testSetThrottleFailure  0  1
 testSetThrottleFailure  0 -1

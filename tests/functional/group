@@ -116,7 +116,7 @@
 105 auto quick vdi
 106 auto quick vdi
 107 auto quick dog
-108 auto quick
+#108 auto quick bad, port number has been tested already
 109 auto quick
 110 auto quick
 111 auto quick dog

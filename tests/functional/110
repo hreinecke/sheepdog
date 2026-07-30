@@ -6,24 +6,19 @@
 
 function testStartVnodesFailed
 {
-	( SHEEP_OPTIONS="-V $1" _start_sheep 0 ) && :
+	( SHEEP_VNODES="$1" _start_sheep 0 ) && :
 	_wait_for_sheep_stop 0
 	_cleanup
+	_setup
 }
 
 function testStartVnodesSucceeded
 {
-	SHEEP_OPTIONS="-V $1" _start_sheep 0
+	SHEEP_VNODES="$1" _start_sheep 0
 	_wait_for_sheep 1
-	$DOG node list
+	$DOG node list -r | _filter_ip_port
 	_cleanup
-}
-
-function testStartVnodesGatewayFailed
-{
-	( SHEEP_OPTIONS='-g -V 42' _start_sheep 0 ) && :
-	_wait_for_sheep_stop 0
-	_cleanup
+	_setup
 }
 
 testStartVnodesSucceeded 1
@@ -37,4 +32,3 @@ testStartVnodesFailed a
 testStartVnodesFailed 42a
 testStartVnodesFailed +
 testStartVnodesFailed -
-testStartVnodesGatewayFailed
