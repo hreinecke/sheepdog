@@ -6,8 +6,12 @@ $ ../../dog/dog cluster format -c 4:2
 using backend plain store
 
 $ ../../dog/dog cluster alter-copy -c 3
-The cluster's copy policy is erasure code, changing it is not supported yet.
-
+The cluster's redundancy level is set to 3, the old one was 6.
+    __
+   ()'`;
+   /\|`  Caution! Changing cluster's redundancy level will affect
+  /  |   all the VDIs to be created later.
+(/_)_|_  Are you sure you want to continue? [yes/no]: 
 $ ../../dog/dog vdi create test 4M
 
 $ ../../dog/dog vdi alter-copy test -c 3
@@ -26,11 +30,10 @@ $ ../../dog/dog cluster format -c 3
 
 $ ../../dog/dog cluster info -v
 Cluster status: running, auto-recovery enabled
-Cluster store: plain with 3 redundancy policy
+Cluster store: plain with 3 copies
 Cluster vnodes strategy: auto
 Cluster vnode mode: node
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 
@@ -81,11 +84,10 @@ The cluster's redundancy level is set to 2, the old one was 3.
 (/_)_|_  Are you sure you want to continue? [yes/no]: 
 $ ../../dog/dog cluster info -v
 Cluster status: running, auto-recovery enabled
-Cluster store: plain with 2 redundancy policy
+Cluster store: plain with 2 copies
 Cluster vnodes strategy: auto
 Cluster vnode mode: node
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 
@@ -94,20 +96,17 @@ $ ../../dog/dog vdi create test 12M -P
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      2                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 2 copies
+007c2b2500000001 2 copies
+007c2b2500000002 2 copies
+807c2b2500000000 2 copies
 
 -----
 
@@ -159,24 +158,17 @@ test's redundancy level is set to 3, the old one was 2.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      3                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 3 copies
+007c2b2500000001 3 copies
+007c2b2500000002 3 copies
+807c2b2500000000 3 copies
 
 ### CHANGE TO 4 REPLICA
 
@@ -190,28 +182,17 @@ test's redundancy level is set to 4, the old one was 3.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      4                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-/tmp/sheepdog/096/5/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/3/obj/007c2b2500000001
-/tmp/sheepdog/096/4/obj/007c2b2500000000
-/tmp/sheepdog/096/4/obj/007c2b2500000002
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 4 copies
+007c2b2500000001 4 copies
+007c2b2500000002 4 copies
+807c2b2500000000 4 copies
 
 ### CHANGE TO 5 REPLICA
 
@@ -225,32 +206,17 @@ test's redundancy level is set to 5, the old one was 4.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      5                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/3/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-/tmp/sheepdog/096/5/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/3/obj/007c2b2500000001
-/tmp/sheepdog/096/3/obj/007c2b2500000002
-/tmp/sheepdog/096/4/obj/007c2b2500000000
-/tmp/sheepdog/096/4/obj/007c2b2500000002
-/tmp/sheepdog/096/5/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 5 copies
+007c2b2500000001 5 copies
+007c2b2500000002 5 copies
+807c2b2500000000 5 copies
 
 ### CHANGE TO 6 REPLICA
 
@@ -264,36 +230,17 @@ test's redundancy level is set to 6, the old one was 5.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      6                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/0/obj/807c2b2500000000
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/3/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-/tmp/sheepdog/096/5/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/1/obj/007c2b2500000002
-/tmp/sheepdog/096/2/obj/007c2b2500000000
-/tmp/sheepdog/096/2/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/3/obj/007c2b2500000001
-/tmp/sheepdog/096/3/obj/007c2b2500000002
-/tmp/sheepdog/096/4/obj/007c2b2500000000
-/tmp/sheepdog/096/4/obj/007c2b2500000001
-/tmp/sheepdog/096/4/obj/007c2b2500000002
-/tmp/sheepdog/096/5/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 6 copies
+007c2b2500000001 6 copies
+007c2b2500000002 6 copies
+807c2b2500000000 6 copies
 
 -----
 
@@ -311,32 +258,17 @@ test's redundancy level is set to 5, the old one was 6.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      5                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/3/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-/tmp/sheepdog/096/5/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/3/obj/007c2b2500000001
-/tmp/sheepdog/096/3/obj/007c2b2500000002
-/tmp/sheepdog/096/4/obj/007c2b2500000000
-/tmp/sheepdog/096/4/obj/007c2b2500000002
-/tmp/sheepdog/096/5/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 5 copies
+007c2b2500000001 5 copies
+007c2b2500000002 5 copies
+807c2b2500000000 5 copies
 
 ### CHANGE TO 4 REPLICA
 
@@ -350,28 +282,17 @@ test's redundancy level is set to 4, the old one was 5.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      4                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-/tmp/sheepdog/096/5/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/3/obj/007c2b2500000001
-/tmp/sheepdog/096/4/obj/007c2b2500000000
-/tmp/sheepdog/096/4/obj/007c2b2500000002
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 4 copies
+007c2b2500000001 4 copies
+007c2b2500000002 4 copies
+807c2b2500000000 4 copies
 
 ### CHANGE TO 3 REPLICA
 
@@ -385,24 +306,17 @@ test's redundancy level is set to 3, the old one was 4.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      3                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/1/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000000
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/2/obj/007c2b2500000002
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000001
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 3 copies
+007c2b2500000001 3 copies
+007c2b2500000002 3 copies
+807c2b2500000000 3 copies
 
 ### CHANGE TO 2 REPLICA
 
@@ -416,20 +330,17 @@ test's redundancy level is set to 2, the old one was 3.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      2                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/4/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/007c2b2500000001
-/tmp/sheepdog/096/3/obj/007c2b2500000000
-/tmp/sheepdog/096/5/obj/007c2b2500000002
+007c2b2500000000 2 copies
+007c2b2500000001 2 copies
+007c2b2500000002 2 copies
+807c2b2500000000 2 copies
 
 ### CHANGE TO 1 REPLICA
 
@@ -443,16 +354,17 @@ test's redundancy level is set to 1, the old one was 2.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      1                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
+007c2b2500000000 1 copies
+007c2b2500000001 1 copies
+007c2b2500000002 1 copies
+807c2b2500000000 1 copies
 
 -----
 
@@ -473,18 +385,19 @@ $ ../../dog/dog vdi list
 s test         1   12 MB   12 MB  0.0 MB DATE   7c2b25      1            s1  22
   test         0   12 MB  0.0 MB   12 MB DATE   7c2b26      1                22
 c clone1       0   12 MB  0.0 MB   12 MB DATE   c8f989      1                22
+vdi test inode object is correctly placed
+vdi test data object 0 is correctly placed
+vdi test data object 1 is correctly placed
+vdi test data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/0/obj/807c2b2600000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/80c8f98900000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
+007c2b2500000000 1 copies
+007c2b2500000001 1 copies
+007c2b2500000002 1 copies
+807c2b2500000000 1 copies
+807c2b2600000000 1 copies
+80c8f98900000000 1 copies
 
 ### CHANGE TO 2 REPLICA
 
@@ -497,18 +410,19 @@ $ ../../dog/dog vdi list
 s test         1   12 MB   12 MB  0.0 MB DATE   7c2b25      1            s1  22
   test         0   12 MB  0.0 MB   12 MB DATE   7c2b26      1                22
 c clone1       0   12 MB  0.0 MB   12 MB DATE   c8f989      1                22
+vdi clone1 inode object is correctly placed
+vdi clone1 data object 0 is correctly placed
+vdi clone1 data object 1 is correctly placed
+vdi clone1 data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/0/obj/807c2b2600000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/80c8f98900000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/1/obj/007c2b2500000000
+007c2b2500000000 1 copies
+007c2b2500000001 1 copies
+007c2b2500000002 1 copies
+807c2b2500000000 1 copies
+807c2b2600000000 1 copies
+80c8f98900000000 1 copies
 
 -----
 
@@ -531,26 +445,23 @@ s test         1   12 MB   12 MB  0.0 MB DATE   7c2b25      1            s1  22
   test         0   12 MB  0.0 MB   12 MB DATE   7c2b26      1                22
   clone2       0   12 MB   12 MB  0.0 MB DATE   c8f470      2                22
 c clone1       0   12 MB  0.0 MB   12 MB DATE   c8f989      1                22
+vdi clone2 inode object is correctly placed
+vdi clone2 data object 0 is correctly placed
+vdi clone2 data object 1 is correctly placed
+vdi clone2 data object 2 is correctly placed
 
-#### VDI OBJECT LIST
+#### OBJECT LIST
 
-/tmp/sheepdog/096/0/obj/807c2b2600000000
-/tmp/sheepdog/096/2/obj/807c2b2500000000
-/tmp/sheepdog/096/2/obj/80c8f47000000000
-/tmp/sheepdog/096/2/obj/80c8f98900000000
-/tmp/sheepdog/096/5/obj/80c8f47000000000
-
-#### DATA OBJECT LIST
-
-/tmp/sheepdog/096/0/obj/007c2b2500000001
-/tmp/sheepdog/096/0/obj/007c2b2500000002
-/tmp/sheepdog/096/0/obj/00c8f47000000001
-/tmp/sheepdog/096/1/obj/007c2b2500000000
-/tmp/sheepdog/096/1/obj/00c8f47000000002
-/tmp/sheepdog/096/2/obj/00c8f47000000000
-/tmp/sheepdog/096/3/obj/00c8f47000000001
-/tmp/sheepdog/096/5/obj/00c8f47000000000
-/tmp/sheepdog/096/5/obj/00c8f47000000002
+007c2b2500000000 1 copies
+007c2b2500000001 1 copies
+007c2b2500000002 1 copies
+00c8f47000000000 2 copies
+00c8f47000000001 2 copies
+00c8f47000000002 2 copies
+807c2b2500000000 1 copies
+807c2b2600000000 1 copies
+80c8f47000000000 2 copies
+80c8f98900000000 1 copies
 
 -----
 

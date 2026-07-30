@@ -22,14 +22,14 @@ _list_obj_replicas()
 {
     local objname=$1
     if _check_obj_location ${objname}; then
-	echo -e "\ninode object test is correctly placed"
+	echo -e "vdi ${objname} inode object is correctly placed"
     fi
     for index in $($DOG vdi object map ${objname} -j | jq .[].index); do
-	if _check_obj_location test $index; then
-	    echo "\ndata object ${index} is correctly placed"
+	if _check_obj_location ${objname} $index; then
+	    echo -e "vdi ${objname} data object ${index} is correctly placed"
 	fi
     done
-    echo -e "\n#### VDI OBJECT LIST\n"
+    echo -e "\n#### OBJECT LIST\n"
     _list_obj 8
 }
 
@@ -38,8 +38,8 @@ _vdi_alter_copy()
     echo -e "\n### CHANGE TO $2 REPLICA"
 	_log_and_exec_force "$DOG vdi alter-copy $1 -c $2"
     _wait_for_sheep_recovery 0
-    _log_and_exec "$DOG vdi list" | _filter_short_date
-    _list_obj_replicas test
+    _log_and_exec "$DOG vdi list" | _filter_iso_date
+    _list_obj_replicas $1
 }
 
 for i in `seq 0 $(($num-1))`; do
@@ -70,8 +70,8 @@ echo -e "## VALID CLUSTER REPLICA"
 _log_and_exec_force "$DOG cluster alter-copy -c 2"
 _log_and_exec "$DOG cluster info -v" | _filter_cluster_info
 _log_and_exec "$DOG vdi create test 12M -P"
-_log_and_exec "$DOG vdi list" | _filter_short_date
-_list_obj_replicas
+_log_and_exec "$DOG vdi list" | _filter_iso_date
+_list_obj_replicas test
 echo -e "\n-----\n"
 
 echo -e "## INVALID VDI REPLICA"
@@ -104,6 +104,4 @@ echo -e "## IT IS OK IF OBJECTS NOT SHARED WITH OTHER VDI"
 _log_and_exec "$DOG vdi clone -n -s s1 test clone2"
 _vdi_alter_copy clone2 2
 echo -e "\n-----\n"
-
-$DOG cluster shutdown
 
