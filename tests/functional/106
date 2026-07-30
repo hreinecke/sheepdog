@@ -15,13 +15,13 @@ for i in `seq 0 7`; do
     $DOG vdi snapshot test
 done
 
-_vdi_list
+_vdi_list | _filter_iso_date
 _node_info
 
 echo "deletion a VDI with name \"test\""
 $DOG vdi delete test
 
-_vdi_list
+_vdi_list | _filter_iso_date
 _node_info
 
 echo "create a VDI with name \"test\" again, it must fail"
@@ -33,5 +33,5 @@ for i in `seq 1 8`; do
 done
 
 echo "every inode object should be cleaned"
-_vdi_list
+_vdi_list | _filter_iso_date
 _node_info
