@@ -903,8 +903,11 @@ int main(int argc, char **argv, char **envp)
 		if (errno != 0) {
 			sd_err("Invalid number of vnodes '%s'", opt);
 			nr_vnodes = -1;
-		} else
+		} else if (nr_vnodes > 0) {
+			sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
 			sd_info("Using SHEEP_VNODES='%u'", nr_vnodes);
+		} else
+			sd_info("Using SHEEP_VNODES='0' (gateway mode)");
 	}
 	if ((opt = getenv("SHEEP_OPTS"))) {
 		int o;
