@@ -19,14 +19,16 @@ _random | $DOG vdi write test2 0 512
 $DOG vdi delete test
 
 echo "check vdi/cluster status"
-$DOG vdi list | _filter_short_date
-$DOG node list
+$DOG vdi list | _filter_iso_date
+$DOG node list -r | _filter_ip_port
 $DOG cluster info | _filter_cluster_info | _filter_ip
 _node_info
 
 # restart sheepdog
 echo "restart sheepdog cluster"
 $DOG cluster shutdown
+_wait_for_sheep_stop
+
 for i in 0 1 2 3 ; do
     _start_sheep $i
 done
@@ -36,8 +38,8 @@ echo "operation should be fail"
 $DOG vdi clone -s 1 test test2
 
 echo "check vdi/cluster status again"
-$DOG vdi list | _filter_short_date
-$DOG node list
+$DOG vdi list | _filter_iso_date
+$DOG node list -r | _filter_ip_port
 $DOG cluster info | _filter_cluster_info | _filter_ip
 _node_info
 
