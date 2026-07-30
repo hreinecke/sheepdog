@@ -16,7 +16,7 @@ $DOG vdi create test 16M
 $DOG vdi snapshot test
 $DOG vdi snapshot test
 
-$DOG vdi list | _filter_short_date
+$DOG vdi list | _filter_iso_date
 
 $DOG vdi delete test -s 1
 $DOG vdi delete test -s 2
@@ -29,4 +29,4 @@ $DOG vdi snapshot test -R
 _random | $DOG vdi write test 0 512
 $DOG vdi snapshot test -R
 
-$DOG vdi list | _filter_short_date
+$DOG vdi list | _filter_iso_date
