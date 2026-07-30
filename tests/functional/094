@@ -4,6 +4,8 @@
 
 . ./common
 
+_needs_to_be_root
+
 # make different size of devices
 for i in `seq 0 2`; do
 	dd if=/dev/zero of=$STORE/big$i.img seek=1048576 bs=1M count=1 &> /dev/null
