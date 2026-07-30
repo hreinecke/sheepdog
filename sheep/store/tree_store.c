@@ -48,7 +48,7 @@ static int get_store_path(uint64_t oid, uint8_t ec_index, char **path)
 	free(tree_path);
 	if (ret < 0)
 		free(path);
-	return ret;
+	return ret < 0 ? ret : 0;
 }
 
 static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
@@ -398,8 +398,8 @@ int tree_read(uint64_t oid, const struct siocb *iocb)
 		free(path);
 		ret = get_store_stale_path(oid, iocb->epoch,
 					   iocb->ec_index, &path);
-		if (ret < 0)
-			return SD_RES_NO_MEM;
+		if (ret != SD_RES_SUCCESS)
+			return ret;
 		ret = tree_read_from_path(oid, path, iocb);
 	}
 	free(path);
@@ -556,6 +556,10 @@ int tree_link(uint64_t oid, uint32_t tgt_epoch)
 		return ret;
 
 	ret = get_store_stale_path(oid, tgt_epoch, 0, &stale_path);
+	if (ret != SD_RES_SUCCESS) {
+		free(path);
+		return ret;
+	}
 
 	if (link(stale_path, path) < 0) {
 		/*
@@ -769,9 +773,9 @@ static int get_object_path(uint64_t oid, uint32_t epoch, char **path)
 		}
 	} else {
 		ret = get_store_stale_path(oid, epoch, 0, path);
-		if (ret < 0) {
+		if (ret != SD_RES_SUCCESS) {
 			free(tree_path);
-			return SD_RES_NO_MEM;
+			return ret;
 		}
 		if (access(*path, F_OK) < 0) {
 			free(tree_path);
