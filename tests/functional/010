@@ -4,17 +4,11 @@
 
 . ./common
 
-# Show the current node membership and where the objects ended up.  The
-# placement itself depends on the node ids and so on the cluster driver in
-# use, hence check it against the placement sheepdog computes rather than
-# against a hardcoded list of nodes.
 _check_recovery()
 {
-    $DOG cluster info | head -5 | _filter_cluster_info | _filter_epoch
-    _count_obj
-    for i in `seq 0 7`; do
-	if _check_obj_location test $i; then
-	    echo "data object $i is correctly placed"
+    for index in $($DOG vdi object map test -j | jq .[].index); do
+	if _check_obj_location test $index; then
+	    echo "data object ${index} is correctly placed"
 	fi
     done
     if _check_obj_location test; then
@@ -52,6 +46,7 @@ done
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
 _wait_for_sheep 6
+$DOG cluster info | head -5 | _filter_cluster_info | _filter_epoch
 _check_recovery
 
 $DOG cluster recover disable
@@ -70,5 +65,7 @@ done
 $DOG cluster recover enable
 _wait_for_sheep_recovery 0
 _wait_for_sheep 8
+$DOG cluster info | head -5 | _filter_cluster_info | _filter_epoch
+_list_obj 8
 _check_recovery
 $DOG vdi read test 0 32m | md5sum

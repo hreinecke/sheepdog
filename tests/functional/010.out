@@ -11,15 +11,6 @@ Cluster status: running, auto-recovery enabled
 Cluster created at DATE
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      EPOCH [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128, 127.0.0.1:7007:128]
-007c2b2500000000 6 copies
-007c2b2500000001 6 copies
-007c2b2500000002 6 copies
-007c2b2500000003 6 copies
-007c2b2500000004 6 copies
-007c2b2500000005 6 copies
-007c2b2500000006 6 copies
-007c2b2500000007 6 copies
-807c2b2500000000 6 copies
 data object 0 is correctly placed
 data object 1 is correctly placed
 data object 2 is correctly placed

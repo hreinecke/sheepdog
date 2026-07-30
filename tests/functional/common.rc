@@ -588,30 +588,24 @@ _list_stale_obj()
     fi
 }
 
-_list_obj()
+_list_obj_on_node()
 {
+    local node=$1
     if [[ "$DRIVER" == etcd* ]]; then
-	for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names | sort); do
-	    sheep=$(eval echo $s)
-	    num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
-	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj); do
-		echo STORE/${num}/obj/$obj
-	    done
-	done | sort
+	echo "ls /tmp/sheepdog/obj" | \
+	    docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${node}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
     else
-	ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
-	    _filter_store | _filter_md_store | sort
+	ls $STORE/${node}/{obj,d[0-9]*} 2> /dev/null
     fi
 }
 
-# Print the number of copies of every object in the cluster.  Which node an
-# object ends up on is a function of the node ids (address, port and zone),
-# so the raw object list differs between the local driver and the container
-# based ones.  The number of copies does not.
-_count_obj()
+_list_obj()
 {
-    _list_obj | sed -e 's|^STORE/[0-9]*/obj/||' | sort | uniq -c | \
-	awk '{ print $2, $1, "copies" }'
+    for i in $(seq 0 $1); do
+	_list_obj_on_node $i
+    done | sort | uniq -c | awk '{ print $2, $1, "copies" }'
 }
 
 # Check that an object is stored on exactly those nodes that sheepdog's
@@ -642,10 +636,10 @@ _find_obj()
     if [[ "$DRIVER" == etcd* ]]; then
 	for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names | sort); do
 	    sheep=$(eval echo $s)
-	    num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
-	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj); do
-		echo STORE/${num}/obj/$obj
-	    done
+	    echo "ls /tmp/sheepdog/obj/${oid}" | \
+		docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${sheep}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
 	done | grep ${oid} | sort
     else
 	ls $STORE/*/{obj,d[0-9]*}/$oid 2> /dev/null | \
