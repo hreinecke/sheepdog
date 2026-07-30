@@ -548,51 +548,11 @@ _cleanup_devices()
     done
 }
 
-_list_data_obj()
-{
-    find $STORE/$1 | grep -E /00[0-9a-f]\{14\} | grep -v .stale
-}
-
-_list_vdi_obj()
-{
-    find $STORE/$1 | grep -E /8[0-9a-f]\{15\} | grep -v .stale
-}
-
-_list_vmstate_obj()
-{
-    find $STORE/$1 | grep -E /4[0-9a-f]\{15\} | grep -v .stale
-}
-
-_list_attr_obj()
-{
-    find $STORE/$1 | grep -E /2[0-9a-f]\{15\} | grep -v .stale
-}
-
-_list_ledger_obj()
-{
-    find $STORE/$1 | grep -E /08[0-9a-f]\{14\} | grep -v .stale
-}
-
-_list_stale_obj()
-{
-    if [[ "$DRIVER" == etcd* ]]; then
-	for s in $(docker container ls --filter Name=sheepdog-etcd-sheep --format json | jq .Names | sort); do
-	    sheep=$(eval echo $s)
-	    num=$(echo $sheep | sed -n 's/.*-sheep\([0-9]*\)-1/\1/p')
-	    for obj in $(docker exec $sheep ls $DOCKER_STORE/obj); do
-		echo STORE/${num}/obj/$obj
-	    done
-	done | grep .stale
-    else
-	find $STORE/$1 | grep -E /[0-9a-f]\{16\} | grep .stale
-    fi
-}
-
 _list_obj_on_node()
 {
     local node=$1
     if [[ "$DRIVER" == etcd* ]]; then
-	echo "ls /tmp/sheepdog/obj" | \
+	echo "find /tmp/sheepdog/obj -print" | \
 	    docker run -i --rm \
 		   --volume sheepdog-etcd_sheep${node}-data:/tmp/sheepdog \
 		   busybox 2> /dev/null
@@ -601,11 +561,49 @@ _list_obj_on_node()
     fi
 }
 
+_list_all_obj() {
+    if [[ "$DRIVER" == etcd* ]]; then
+	echo "find /var/lib/sheepdog/ -print" | \
+	    docker run -i --rm \
+		   --volume sheepdog-etcd_sheep0-data:/var/lib/sheepdog/0 \
+		   --volume sheepdog-etcd_sheep1-data:/var/lib/sheepdog/1 \
+		   --volume sheepdog-etcd_sheep2-data:/var/lib/sheepdog/2 \
+		   --volume sheepdog-etcd_sheep3-data:/var/lib/sheepdog/3 \
+		   --volume sheepdog-etcd_sheep4-data:/var/lib/sheepdog/4 \
+		   --volume sheepdog-etcd_sheep5-data:/var/lib/sheepdog/5 \
+		   --volume sheepdog-etcd_sheep6-data:/var/lib/sheepdog/6 \
+		   --volume sheepdog-etcd_sheep7-data:/var/lib/sheepdog/7 \
+		   --volume sheepdog-etcd_sheep8-data:/var/lib/sheepdog/8 \
+		   --volume sheepdog-etcd_sheep9-data:/var/lib/sheepdog/9 \
+		   --volume sheepdog-etcd_sheep10-data:/var/lib/sheepdog/10 \
+		   --volume sheepdog-etcd_sheep11-data:/var/lib/sheepdog/11 \
+		   --volume sheepdog-etcd_sheep12-data:/var/lib/sheepdog/12 \
+		   --volume sheepdog-etcd_sheep13-data:/var/lib/sheepdog/13 \
+		   --volume sheepdog-etcd_sheep14-data:/var/lib/sheepdog/14 \
+		   --volume sheepdog-etcd_sheep15-data:/var/lib/sheepdog/15 \
+		   --volume sheepdog-etcd_sheep16-data:/var/lib/sheepdog/16 \
+		   --volume sheepdog-etcd_sheep17-data:/var/lib/sheepdog/17 \
+		   --volume sheepdog-etcd_sheep18-data:/var/lib/sheepdog/18 \
+		   --volume sheepdog-etcd_sheep19-data:/var/lib/sheepdog/19 \
+		   --volume sheepdog-etcd_sheep20-data:/var/lib/sheepdog/20 \
+		   --volume sheepdog-etcd_sheep21-data:/var/lib/sheepdog/21 \
+		   --volume sheepdog-etcd_sheep22-data:/var/lib/sheepdog/22 \
+		   --volume sheepdog-etcd_sheep23-data:/var/lib/sheepdog/23 \
+		   --volume sheepdog-etcd_sheep24-data:/var/lib/sheepdog/24 \
+		   busybox 2> /dev/null
+    else
+	ls $STORE/*/{obj,d[0-9]*} 2> /dev/null
+    fi
+}
+
+_list_stale_obj()
+{
+    _list_all_obj | grep -E /[0-9a-f]\{16\} | grep .stale
+}
+
 _list_obj()
 {
-    for i in $(seq 0 $1); do
-	_list_obj_on_node $i
-    done | sort | uniq -c | awk '{ print $2, $1, "copies" }'
+    _list_all_obj | _filter_obj | sort | uniq -c | awk '{ print $2, $1, "copies" }'
 }
 
 # Check that an object is stored on exactly those nodes that sheepdog's
@@ -647,30 +645,64 @@ _find_obj()
     fi
 }
 
-_stat_store()
+_md_info()
 {
-    local pattern=$1
-    local idx
-    echo -e "STORE\tDATA\tVDI\tVMSTATE\tATTR\tLEDGER\tSTALE"
-    for idx in `ls -d $STORE/$pattern | sed s#$STORE/##g`; do
-	local data_obj=$(_list_data_obj $idx | wc -l)
-	local vdi_obj=$(_list_vdi_obj $idx | wc -l)
-	local vmstate_obj=$(_list_vmstate_obj $idx | wc -l)
-	local attr_obj=$(_list_attr_obj $idx | wc -l)
-	local ledger_obj=$(_list_ledger_obj $idx | wc -l)
-	local stale_obj=$(_list_stale_obj $idx | wc -l)
-	echo -e "$idx\t$data_obj\t$vdi_obj\t$vmstate_obj\t$attr_obj\t$ledger_obj\t$stale_obj"
-    done
+    objs=$(_list_all_obj)
+
+    echo -n "DATA: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_data_obj | wc -l
+    echo -n "VDI: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_vdi_obj | wc -l
+    echo -n "VMSTATE: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_vmstate_obj | wc -l
+    echo -n "ATTR: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_attr_obj | wc -l
+    echo -n "LEDGER: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_ledger_obj | wc -l
+    echo -n "STALE: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_stale_obj | wc -l
 }
 
 _node_info()
 {
-    _stat_store '?'
-}
+    objs=$(_list_all_obj)
 
-_md_info()
-{
-    _stat_store '?/d?'
+    echo -n "DATA: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_data_obj | wc -l
+    echo -n "VDI: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_vdi_obj | wc -l
+    echo -n "VMSTATE: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_vmstate_obj | wc -l
+    echo -n "ATTR: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_attr_obj | wc -l
+    echo -n "LEDGER: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_ledger_obj | wc -l
+    echo -n "STALE: "
+    for n in ${objs}; do
+	echo $n
+    done | _filter_stale_obj | wc -l
 }
 
 _cluster_format()

@@ -20,7 +20,7 @@ _random | $DOG vdi write test 0 512
 $DOG vdi clone -s 1 test test2
 _random | $DOG vdi write test2 0 512
 $DOG vdi delete test
-$DOG vdi list | _filter_short_date
+$DOG vdi list | _filter_iso_date
 
 _node_info
 
@@ -37,7 +37,7 @@ echo "create inode/data erasure code objects"
 
 $DOG vdi create -c 4:2 test 16M
 _random | $DOG vdi write test 0 512
-$DOG vdi list | _filter_short_date
+$DOG vdi list | _filter_iso_date
 
 _node_info
 
