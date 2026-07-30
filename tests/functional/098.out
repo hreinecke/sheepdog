@@ -1,20 +1,17 @@
 QA output created by 098
 using backend plain store
-  Id   Host:Port         V-Nodes       Zone
-   0   127.0.0.1:7000      	128          0
-   1   127.0.0.1:7001      	128          1
-   2   127.0.0.1:7002      	128          2
+0 127.0.0.1:7000 128 0
+1 127.0.0.1:7001 128 1
+2 127.0.0.1:7002 128 2
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7002:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128]
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7002:128]
@@ -22,15 +19,13 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128]
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      5 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128]
 DATE      4 [127.0.0.1:7000:128, 127.0.0.1:7001:128]
 DATE      3 [127.0.0.1:7000:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7002:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128]
-  Id   Host:Port         V-Nodes       Zone
-   0   127.0.0.1:7000      	128          0
-   1   127.0.0.1:7001      	128          1
-   2   127.0.0.1:7002      	128          2
+0 127.0.0.1:7000 128 0
+1 127.0.0.1:7001 128 1
+2 127.0.0.1:7002 128 2
 checksum matched, success

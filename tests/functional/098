@@ -14,7 +14,7 @@ $DOG vdi create test 64M
 
 _random | $DOG vdi write test 0 $((4 * 1024 * 1024 * 64))
 
-$DOG node list
+$DOG node list -r | _filter_ip_port
 
 BEFORE=`$DOG vdi read test | md5sum`
 
@@ -32,7 +32,7 @@ done
 _wait_for_sheep 3
 $DOG cluster info | _filter_cluster_info
 
-$DOG node list
+$DOG node list -r | _filter_ip_port
 
 AFTER=`$DOG vdi read test | md5sum`
 
