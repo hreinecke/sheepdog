@@ -1378,7 +1378,7 @@ static int vdi_object_location(int argc, char **argv)
 	const char *vdiname = argv[optind];
 	uint64_t idx = vdi_cmd_data.index, oid;
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
-	uint32_t vid, vdi_id;
+	uint32_t vid, vdi_id, snap_id;
 	struct json_object *vdi_obj = NULL, *location_obj = NULL;
 	int ret;
 
@@ -1390,6 +1390,7 @@ static int vdi_object_location(int argc, char **argv)
 		goto out;
 	}
 	vid = inode->header.vdi_id;
+	snap_id = inode->header.snap_id;
 
 	if (json_output) {
 		out_obj = json_object_new_object();
@@ -1401,6 +1402,11 @@ static int vdi_object_location(int argc, char **argv)
 		if (json_output) {
 			JSON_ADD_INT(out_obj, "vdi_id", vid);
 			JSON_ADD_UINT64(out_obj, "oid", oid);
+			if (snap_id)
+				JSON_ADD_INT(out_obj, "snap_id", snap_id);
+			if (strlen(inode->header.tag))
+				JSON_ADD_STRING(out_obj, "tag",
+						inode->header.tag);
 		} else
 			printf("Looking for the inode object 0x%" PRIx32
 			       " with %d nodes\n\n", vid, sd_nodes_nr);
