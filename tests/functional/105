@@ -19,7 +19,7 @@ for i in `seq 0 7`; do
     $DOG vdi snapshot 00471718
 done
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
 echo "deletion with wrap around"
 
@@ -27,7 +27,7 @@ for i in `seq 1 7`; do
     $DOG vdi delete 00471718 -s $i
 done
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
 echo "create snapshots again"
 
@@ -35,5 +35,5 @@ for i in `seq 0 7`; do
     $DOG vdi snapshot 00471718
 done
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
