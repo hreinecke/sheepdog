@@ -4,10 +4,9 @@ Failed to create snapshot for base, maybe snapshot id (0) or tag (tag) is existe
 there should be no vdi
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
 there should be no object
-STORE	DATA	VDI	VMSTATE	ATTR	LEDGER	STALE
-0	0	3	0	0	0	0
-1	0	3	0	0	0	0
-2	0	3	0	0	0	0
-3	0	3	0	0	0	0
-4	0	3	0	0	0	0
-5	0	3	0	0	0	0
+DATA: 0
+VDI: 18
+VMSTATE: 0
+ATTR: 0
+LEDGER: 0
+STALE: 0
