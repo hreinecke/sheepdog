@@ -44,7 +44,8 @@ _vdi_list | _filter_iso_date
 for i in `seq 2 9`; do
     oid=$(_check_obj_location test$i 1)
     if [[ "$oid" ]]; then
-	echo "data object $oid is correctly placed"
+	o=$(printf "%016x" ${oid})
+	echo "data object ${o} is correctly placed"
     fi
 done
 
