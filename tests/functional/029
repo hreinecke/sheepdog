@@ -33,8 +33,8 @@ for i in `seq 2 3`; do
 	_start_sheep $i;
 done
 
-_wait_for_sheep 24
 _wait_for_sheep_recovery 0
+_wait_for_sheep 24
 
 $DOG vdi delete clone
 $DOG vdi delete -s 1 test2
