@@ -11,6 +11,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "compiler.h"
 #include "sheepdog.h"
 #include "internal.h"
 
