@@ -479,7 +479,7 @@ static int visit_vdi_obj_entry(struct trunk_entry *entry, void *data)
 {
 	size_t size;
 	void *slice;
-	struct sd_inode inode = {};
+	struct sd_inode *inode;
 	struct vdi_option *opt = (struct vdi_option *)data;
 
 	if (!is_vdi_obj(entry->oid))
@@ -490,21 +490,31 @@ static int visit_vdi_obj_entry(struct trunk_entry *entry, void *data)
 		sd_err("Fail to load vdi object, oid %016"PRIx64, entry->oid);
 		return -1;
 	}
-	memcpy(&inode, slice, size);
+	inode = xmalloc(sizeof(*inode));
+	if (size > sizeof(*inode)) {
+		sd_err("trying to load %lu of %lu bytes of inode data",
+		       size, sizeof(*inode));
+		size = sizeof(*inode);
+	} else if (size < sizeof(*inode)) {
+		sd_warn("only load %lu of %lu bytes of inode data",
+			size, sizeof(*inode));
+	}
+	memcpy(inode, slice, size);
 	free(slice);
 	if (opt->count == 0) {
 		if (opt->enable_if_blank)
-			opt->func(&inode);
-	} else if (inode.header.name[0] == '\0') {
+			opt->func(inode);
+	} else if (inode->header.name[0] == '\0') {
 		if (opt->enable_if_deleted)
-			opt->func(&inode);
+			opt->func(inode);
 	} else {
 		for (int i = 0; i < opt->count; i++)
-			if (!strcmp(inode.header.name, opt->name[i])) {
-				opt->func(&inode);
+			if (!strcmp(inode->header.name, opt->name[i])) {
+				opt->func(inode);
 				break;
 			}
 	}
+	free(inode);
 	return 0;
 }
 
@@ -541,6 +551,7 @@ int farm_load_snapshot(uint32_t idx, const char *tag, int count, char **name)
 	unsigned char trunk_sha1[SHA1_DIGEST_SIZE];
 	struct vdi_option opt;
 
+	memset(trunk_sha1, 0, sizeof(trunk_sha1));
 	if (get_trunk_sha1(idx, tag, trunk_sha1) < 0)
 		goto out;
 
