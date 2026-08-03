@@ -837,7 +837,7 @@ static int vdi_snapshot(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint32_t vid, new_vid;
 	int ret;
-	struct sd_inode_header inode;
+	struct sd_inode_header *inode;
 	bool fail_if_snapshot = false;
 
 	if (vdi_cmd_data.snapshot_id != 0) {
@@ -860,28 +860,36 @@ static int vdi_snapshot(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (fail_if_snapshot) {
-		ret = dog_read_object(vid_to_vdi_oid(vid), &inode,
-				      SD_INODE_HEADER_SIZE, 0, true);
-		if (ret != EXIT_SUCCESS)
-			return ret;
+	inode = xmalloc(sizeof(*inode));
 
-		if (vdi_is_snapshot(&inode)) {
+	if (fail_if_snapshot) {
+		ret = dog_read_object(vid_to_vdi_oid(vid), inode,
+				      SD_INODE_HEADER_SIZE, 0, true);
+		if (ret != SD_RES_SUCCESS) {
+			free(inode);
+			return EXIT_FAILURE;
+		}
+
+		if (vdi_is_snapshot(inode)) {
 			sd_err("Failed to create snapshot for %s, maybe "
 			       "snapshot id (%d) or tag (%s) is existed",
 			       vdiname, vdi_cmd_data.snapshot_id,
 			       vdi_cmd_data.snapshot_tag);
+			free(inode);
 			return EXIT_FAILURE;
 		}
 	} else {
-		ret = read_vdi_obj(vdiname, 0, "", &vid, &inode,
+		ret = read_vdi_obj(vdiname, 0, "", &vid, inode,
 				   SD_INODE_HEADER_SIZE);
-		if (ret != EXIT_SUCCESS)
-			return ret;
+		if (ret != SD_RES_SUCCESS) {
+			free(inode);
+			return EXIT_FAILURE;
+		}
 	}
 
-	if (sd_store_policy_is_hyper(&inode)) {
+	if (sd_store_policy_is_hyper(inode)) {
 		sd_err("creating a snapshot of hypervolume is not supported");
+		free(inode);
 		return EXIT_FAILURE;
 	}
 
@@ -906,17 +914,17 @@ static int vdi_snapshot(int argc, char **argv)
 			       vdi_cmd_data.snapshot_tag,
 			       SD_MAX_VDI_TAG_LEN,
 			       offsetof(struct sd_inode_header, tag),
-			       0, inode.nr_copies, inode.copy_policy,
+			       0, inode->nr_copies, inode->copy_policy,
 			       false, false);
 	if (ret != SD_RES_SUCCESS)
 		goto out;
 
-	ret = do_vdi_create(vdiname, inode.vdi_size,
+	ret = do_vdi_create(vdiname, inode->vdi_size,
 			    vid, &new_vid, true,
-			    inode.nr_copies, inode.copy_policy,
-			    inode.store_policy, inode.block_size_shift);
+			    inode->nr_copies, inode->copy_policy,
+			    inode->store_policy, inode->block_size_shift);
 
-	if (ret == EXIT_SUCCESS && verbose) {
+	if (ret == SD_RES_SUCCESS && verbose) {
 		if (json_output) {
 			const char *o;
 
@@ -930,11 +938,13 @@ static int vdi_snapshot(int argc, char **argv)
 			printf("%x %x\n", new_vid, vid);
 		else
 			printf("new VID of original VDI: %x,"
-			       " VDI ID of newly created snapshot: %x\n", new_vid, vid);
+			       " VDI ID of newly created snapshot: %x\n",
+			       new_vid, vid);
 	}
 
 out:
-	return ret;
+	free(inode);
+	return ret == SD_RES_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 static int vdi_clone(int argc, char **argv)
