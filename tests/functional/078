@@ -15,7 +15,7 @@ _cluster_format -c 4:2
 $DOG vdi create test1 20M
 $DOG vdi create -c 2 test2 20M
 $DOG vdi create -c 2:1 test3 20M
-_vdi_list
+_vdi_list | _filter_iso_date
 $DOG cluster shutdown
 _wait_for_sheep_stop
 
@@ -24,4 +24,4 @@ for i in `seq 0 6`; do
 done
 _wait_for_sheep 7
 $DOG vdi create test4 20M
-_vdi_list
+_vdi_list | _filter_iso_date
