@@ -11,14 +11,14 @@ Cluster status: running, auto-recovery enabled
 Cluster created at DATE
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      EPOCH [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128, 127.0.0.1:7007:128]
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
+data object 007c2b2500000000 is correctly placed
+data object 007c2b2500000001 is correctly placed
+data object 007c2b2500000002 is correctly placed
+data object 007c2b2500000003 is correctly placed
+data object 007c2b2500000004 is correctly placed
+data object 007c2b2500000005 is correctly placed
+data object 007c2b2500000006 is correctly placed
+data object 007c2b2500000007 is correctly placed
 inode object 807c2b2500000000 is correctly placed
 Cluster recovery: disable
 e0b27e7466a3c21d0a4dedfed8bb9184  -
@@ -40,13 +40,13 @@ DATE      EPOCH [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127
 007c2b2500000006 6 copies
 007c2b2500000007 6 copies
 807c2b2500000000 6 copies
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
-data object 807c2b2500000000 is correctly placed
+data object 007c2b2500000000 is correctly placed
+data object 007c2b2500000001 is correctly placed
+data object 007c2b2500000002 is correctly placed
+data object 007c2b2500000003 is correctly placed
+data object 007c2b2500000004 is correctly placed
+data object 007c2b2500000005 is correctly placed
+data object 007c2b2500000006 is correctly placed
+data object 007c2b2500000007 is correctly placed
 inode object 807c2b2500000000 is correctly placed
 dc5bfba305d41bc126940b324945c54e  -
