@@ -7,12 +7,16 @@
 _check_recovery()
 {
     for index in $($DOG vdi object map test -j | jq .[].index); do
-	if _check_obj_location test $index; then
-	    echo "data object ${index} is correctly placed"
+	oid=$(_check_obj_location test $index)
+	if [[ "$oid" ]]; then
+	    o=$(printf "%016x" ${oid})
+	    echo "data object ${o} is correctly placed"
 	fi
     done
-    if _check_obj_location test; then
-	echo "inode object is correctly placed"
+    oid=$(_check_obj_location test)
+    if [[ "$oid" ]]; then
+	o=$(printf "%016x" ${oid})
+	echo "inode object ${o} is correctly placed"
     fi
 }
 
