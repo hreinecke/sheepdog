@@ -1,30 +1,30 @@
 QA output created by 032
 using backend plain store
 9c7766570b3be3aff2724f587c2f4107  -
-inode object is correctly placed
-data object 0 is correctly placed
-data object 1 is correctly placed
-data object 2 is correctly placed
-data object 3 is correctly placed
-data object 4 is correctly placed
-data object 5 is correctly placed
-data object 6 is correctly placed
-data object 7 is correctly placed
-data object 8 is correctly placed
-data object 9 is correctly placed
-data object 10 is correctly placed
-data object 11 is correctly placed
-data object 12 is correctly placed
-data object 13 is correctly placed
-data object 14 is correctly placed
-data object 15 is correctly placed
-data object 16 is correctly placed
-data object 17 is correctly placed
-data object 18 is correctly placed
-data object 19 is correctly placed
-data object 20 is correctly placed
-data object 21 is correctly placed
-data object 22 is correctly placed
-data object 23 is correctly placed
-data object 24 is correctly placed
+inode object 807c2b2500000000 is correctly placed
+data object 007c2b2500000000 is correctly placed
+data object 007c2b2500000001 is correctly placed
+data object 007c2b2500000002 is correctly placed
+data object 007c2b2500000003 is correctly placed
+data object 007c2b2500000004 is correctly placed
+data object 007c2b2500000005 is correctly placed
+data object 007c2b2500000006 is correctly placed
+data object 007c2b2500000007 is correctly placed
+data object 007c2b2500000008 is correctly placed
+data object 007c2b2500000009 is correctly placed
+data object 007c2b250000000a is correctly placed
+data object 007c2b250000000b is correctly placed
+data object 007c2b250000000c is correctly placed
+data object 007c2b250000000d is correctly placed
+data object 007c2b250000000e is correctly placed
+data object 007c2b250000000f is correctly placed
+data object 007c2b2500000010 is correctly placed
+data object 007c2b2500000011 is correctly placed
+data object 007c2b2500000012 is correctly placed
+data object 007c2b2500000013 is correctly placed
+data object 007c2b2500000014 is correctly placed
+data object 007c2b2500000015 is correctly placed
+data object 007c2b2500000016 is correctly placed
+data object 007c2b2500000017 is correctly placed
+data object 007c2b2500000018 is correctly placed
 9c7766570b3be3aff2724f587c2f4107  -

@@ -37,12 +37,16 @@ done
 _wait_for_sheep 8
 _wait_for_sheep_recovery 0
 
-if _check_obj_location test; then
-    echo "inode object is correctly placed"
+oid=$(_check_obj_location test)
+if [[ "$oid" ]]; then
+    o=$(printf "%016x" $oid)
+    echo "inode object ${o} is correctly placed"
 fi
 for i in `seq 0 24`; do
-    if _check_obj_location test $i; then
-	echo "data object $i is correctly placed"
+    oid=$(_check_obj_location test $i)
+    if [[ "$oid" ]]; then
+	o=$(printf "%016x" $oid)
+	echo "data object ${o} is correctly placed"
     fi
 done
 _list_stale_obj | \
