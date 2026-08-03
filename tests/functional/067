@@ -33,5 +33,5 @@ sleep 1
 
 echo check whether all nodes have the same cluster info
 for i in 1 2; do
-    $DOG node list -p 700$i
+    $DOG node list -p 700$i -r | _filter_ip_port
 done
