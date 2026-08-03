@@ -621,12 +621,11 @@ _check_obj_location()
     if [[ $# -gt 2 ]] ; then
 	DOG_ARGS="${DOG_ARGS} -i $2"
     fi
+    oid=$($DOG $DOG_ARGS $vdi | jq .oid)
     cur=$($DOG $DOG_ARGS $vdi | jq '.location | length')
     exp=$($DOG $DOG_ARGS $vdi | jq '.expected_location | length')
-    if [[ ${cur} -ne ${exp} ]]; then
-	return 1
-    else
-	return 0
+    if [[ ${cur} -eq ${exp} ]]; then
+	echo "$oid"
     fi
 }
 

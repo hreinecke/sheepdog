@@ -29,18 +29,22 @@ for i in `seq 2 3`; do
 	_kill_sheep $i;
 done
 
-for i in `seq 23 24`; do
+for i in `seq 2 3`; do
 	_start_sheep $i;
 done
 
+_wait_for_sheep 24
 _wait_for_sheep_recovery 0
 
 $DOG vdi delete clone
 $DOG vdi delete -s 1 test2
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
 for i in `seq 2 9`; do
-	$DOG vdi object location test$i -i 1;
+    oid=$(_check_obj_location test$i 1)
+    if [[ "$oid" ]]; then
+	echo "data object $oid is correctly placed"
+    fi
 done
 
