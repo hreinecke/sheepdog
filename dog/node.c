@@ -286,17 +286,22 @@ static int node_recovery_info(int argc, char **argv)
 						       json_object_new_int(state.nr_finished));
 				json_object_object_add(node_obj, "nr_total",
 						       json_object_new_int(state.nr_total));
-				json_object_array_add(node_obj, out_obj);
+				json_object_array_add(out_obj, node_obj);
 			} else if (raw_output)
 				printf("%d %s %d %d %"PRIu64" %"PRIu64"\n", i,
 				       host, n->nr_vnodes,
 				       n->zone, state.nr_finished,
 				       state.nr_total);
-			else
+			else {
+				double pct = 0;
+
+				if (state.nr_total != 0) {
+					pct = 100 * (double)state.nr_finished;
+					pct = pct / (double)state.nr_total;
+				}
 				printf("%4d   %-20s%5d%11d%11.1f%%\n", i, host,
-				       n->nr_vnodes, n->zone,
-				       100 * (float)state.nr_finished
-				       / state.nr_total);
+				       n->nr_vnodes, n->zone, pct);
+			}
 		}
 		i++;
 	}
@@ -725,6 +730,7 @@ static struct sd_option node_options[] = {
 	{'w', "watch", false, "watch the stat every second"},
 	{'l', "local", false, "issue request to local node"},
 	{'f', "force", false, "ignore the confirmation"},
+	{'j', "json", false, "generate json output"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -971,7 +977,7 @@ static struct subcommand node_cmd[] = {
 	 CMD_NEED_NODELIST, node_list},
 	{"info", NULL, "ajprhT", "show information about each node", NULL,
 	 CMD_NEED_NODELIST, node_info},
-	{"recovery", "<max> <interval>", "aphPrT",
+	{"recovery", "<max> <interval>", "ajphPrT",
 	 "show recovery information or set/get recovery speed throttling of nodes",
 	 node_recovery_cmd, 0, node_recovery, node_options},
 	{"md", "[disks]", "ajprAfhT", "See 'dog node md' for more information",
