@@ -1145,7 +1145,7 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 {
 	struct etcd_ctx *ctx;
 	unsigned long port = default_etcd_port;
-	int ret;
+	int ret, tmo;
 
 	ctx = malloc(sizeof(struct etcd_ctx));
 	if (!ctx) {
@@ -1198,10 +1198,17 @@ struct etcd_ctx *etcd_init(const char *url, const char *node_name,
 	ctx->cluster_size = CLUSTER_DEFAULT_SIZE;
 	ctx->cluster_id = -1;
 	pthread_mutex_init(&ctx->conn_mutex, NULL);
+	tmo = ctx->ttl;
+retry:
 	ret = etcd_member_id(ctx);
 	if (ret < 0) {
 		sd_debug("%s: cluster id failed, error %d",
 		       __func__, ret);
+		if (ret == -ENETUNREACH && tmo) {
+			sleep(1);
+			tmo--;
+			goto retry;
+		}
 		etcd_exit(ctx);
 		errno = -ret;
 		return NULL;
