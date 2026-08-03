@@ -20,7 +20,9 @@ _kill_sheep 1
 _wait_for_sheep_recovery 0
 
 for inode in test0 test1; do
-    if _check_obj_location ${inode}; then
-	echo "inode object ${inode} is correctly placed"
+    oid=$(_check_obj_location ${inode})
+    if [[ "$oid" ]]; then
+	o=$(printf "%016x" ${oid})
+	echo "inode object ${o} is correctly placed"
     fi
 done

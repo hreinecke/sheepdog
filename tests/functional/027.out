@@ -1,4 +1,4 @@
 QA output created by 027
 using backend plain store
-inode object test0 is correctly placed
-inode object test1 is correctly placed
+inode object 80fd34af00000000 is correctly placed
+inode object 80fd32fc00000000 is correctly placed

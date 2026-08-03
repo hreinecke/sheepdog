@@ -249,7 +249,9 @@ static int node_recovery_info(int argc, char **argv)
 	if (node_cmd_data.recovery_progress)
 		return node_recovery_progress();
 
-	if (!raw_output) {
+	if (json_output) {
+		out_obj = json_object_new_array();
+	} else if (!raw_output) {
 		printf("Nodes In Recovery:\n");
 		printf("  Id   Host:Port         V-Nodes       Zone"
 		       "       Progress\n");
@@ -276,7 +278,16 @@ static int node_recovery_info(int argc, char **argv)
 		if (state.in_recovery) {
 			const char *host = addr_to_str(n->nid.addr,
 						       n->nid.port);
-			if (raw_output)
+			if (json_output) {
+				struct json_object *node_obj =
+					json_object_new_object();
+				node_to_json(n, node_obj);
+				json_object_object_add(node_obj, "nr_finished",
+						       json_object_new_int(state.nr_finished));
+				json_object_object_add(node_obj, "nr_total",
+						       json_object_new_int(state.nr_total));
+				json_object_array_add(node_obj, out_obj);
+			} else if (raw_output)
 				printf("%d %s %d %d %"PRIu64" %"PRIu64"\n", i,
 				       host, n->nr_vnodes,
 				       n->zone, state.nr_finished,
@@ -289,7 +300,12 @@ static int node_recovery_info(int argc, char **argv)
 		}
 		i++;
 	}
+	if (json_output) {
+		const char *o = json_object_to_json_string(out_obj);
 
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -713,7 +729,7 @@ static struct sd_option node_options[] = {
 };
 
 static struct subcommand node_recovery_cmd[] = {
-	{"info", NULL, "aphPrT", "show recovery information of nodes (default)",
+	{"info", NULL, "aphjPrT", "show recovery information of nodes (default)",
 	 NULL, CMD_NEED_NODELIST, node_recovery_info, node_options},
 	{"set-throttle", "<max> <interval>", NULL, "set new throttling", NULL,
 	 CMD_NEED_ARG|CMD_NEED_NODELIST, node_recovery_set, node_options},
