@@ -15,7 +15,7 @@ done
 
 $DOG vdi create -c 4:2 test4 400M
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG cluster shutdown
 _wait_for_sheep_stop
@@ -23,4 +23,4 @@ _wait_for_sheep_stop
 for i in `seq 0 5`;do _start_sheep $i;done
 _wait_for_sheep 6
 
-_vdi_list
+_vdi_list | _filter_iso_date
