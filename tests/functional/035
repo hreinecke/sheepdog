@@ -4,6 +4,8 @@
 
 . ./common
 
+_needs_to_be_root
+
 trap "_uninit; exit \$status" 0 1 2 3 15
 _uninit()
 {
