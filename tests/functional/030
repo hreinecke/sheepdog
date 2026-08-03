@@ -11,6 +11,8 @@ _wait_for_sheep 6
 TMPDIR="$STORE/tmp"
 rm -rf $TMPDIR
 
+echo "Step 1: create snapshots"
+
 _cluster_format -c 6
 
 _vdi_create test1 10M
@@ -23,7 +25,7 @@ $DOG vdi read test2 | md5sum > $STORE/csum.21.org
 $DOG vdi snapshot test1
 $DOG vdi snapshot test2
 $DOG cluster snapshot save s1 $TMPDIR
-$DOG cluster snapshot list $TMPDIR | _filter_date
+$DOG cluster snapshot list $TMPDIR | _filter_iso_date
 
 _random | $DOG vdi write test1
 _random | $DOG vdi write test2
@@ -32,11 +34,12 @@ $DOG vdi read test2 | md5sum > $STORE/csum.22.org
 $DOG vdi snapshot test1
 $DOG vdi snapshot test2
 $DOG cluster snapshot save s2 $TMPDIR
-$DOG cluster snapshot list $TMPDIR | _filter_date
+$DOG cluster snapshot list $TMPDIR | _filter_iso_date
 
-_vdi_list
+_vdi_list | _filter_iso_date
 
 _cleanup
+_setup
 for i in `seq 0 5`; do
 	_start_sheep $i;
 done
@@ -44,7 +47,7 @@ _wait_for_sheep 6
 
 _cluster_format -c 6
 $DOG cluster snapshot load s1 $TMPDIR
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG vdi read test1 | md5sum > $STORE/csum.11.new
 $DOG vdi read test2 | md5sum > $STORE/csum.21.new
@@ -52,22 +55,28 @@ diff -u $STORE/csum.11.org $STORE/csum.11.new
 diff -u $STORE/csum.21.org $STORE/csum.21.new
 
 _cleanup
+_setup
 for i in `seq 0 5`; do
 	_start_sheep $i;
 done
 _wait_for_sheep 6
+
+echo "Step 2: load snapshot s2"
 
 $DOG cluster snapshot load s2 $TMPDIR
-_vdi_list
+_vdi_list | _filter_iso_date
 
 _cleanup
+_setup
 for i in `seq 0 5`; do
 	_start_sheep $i;
 done
 _wait_for_sheep 6
 
+echo "Step 3: load snapshot 2"
+
 $DOG cluster snapshot load 2 $TMPDIR
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG vdi read -s 2 test1 | md5sum > $STORE/csum.12.new
 $DOG vdi read -s 2 test2 | md5sum > $STORE/csum.22.new
@@ -86,16 +95,19 @@ diff -u $STORE/csum.21.org $STORE/csum.21.new
 
 $DOG cluster info -v | _filter_cluster_info
 _vdi_create test3 10M
-_vdi_list
+_vdi_list | _filter_iso_date
 
 
 # save or load specified vdi
 
 _cleanup
+_setup
 for i in `seq 0 5`; do
 	_start_sheep $i
 done
 _wait_for_sheep 6
+
+echo "Step 4: create new VDIs and create snapshot s3"
 
 _cluster_format
 
@@ -105,21 +117,24 @@ for i in `seq 0 9`; do
 	$DOG vdi read test$i | md5sum > $STORE/csum.${i}3.org
 	$DOG vdi snapshot test$i -s snap
 done
-_vdi_list
+_vdi_list | _filter_iso_date
 
 $DOG cluster snapshot save s3 $TMPDIR test0 test2 test4 test6 test8
 
 $DOG cluster snapshot show s3 $TMPDIR
 
 _cleanup
+_setup
 for i in `seq 0 5`; do
 	_start_sheep $i
 done
 _wait_for_sheep 6
 
+echo "Step 5: load snaphot s3 for new VDIs"
+
 _cluster_format
 $DOG cluster snapshot load s3 $TMPDIR
-_vdi_list
+_vdi_list | _filter_iso_date
 
 for i in 0 2 4 6 8; do
 	$DOG vdi read test$i | md5sum > $STORE/csum.${i}3.new
@@ -127,14 +142,18 @@ for i in 0 2 4 6 8; do
 done
 
 _cleanup
+_setup
 for i in `seq 0 5`; do
 	_start_sheep $i
 done
 _wait_for_sheep 6
 
+echo "Step 6: load individual VDIs from snapshot s3"
+
 _cluster_format
+
 $DOG cluster snapshot load s3 $TMPDIR test0 test4 test8
-_vdi_list
+_vdi_list | _filter_iso_date
 
 for i in 0 4 8; do
 	$DOG vdi read test$i | md5sum > $STORE/csum.${i}3.new
@@ -144,16 +163,20 @@ done
 
 # delete vdi snapshot before saving cluster snapshot
 
+echo "Step 7: create new VDIs and save snapshots s4 and s5"
+
 echo "yes" | _cluster_format
 $DOG vdi create test 10M
 _random | $DOG vdi write test
 $DOG vdi snapshot -s vs1 test
 $DOG cluster snapshot save s4 $TMPDIR
-$DOG vdi delete -s 1 test
+_vdi_list | _filter_iso_date
+$DOG vdi delete -s vs1 test
+_vdi_list | _filter_iso_date
 $DOG cluster snapshot save s5 $TMPDIR
 $DOG vdi snapshot -s vs2 test
 $DOG cluster snapshot save s5 $TMPDIR
 echo "yes" | $DOG cluster snapshot load s5 $TMPDIR
-_vdi_list
+_vdi_list | _filter_iso_date
 echo "yes" | $DOG cluster snapshot load s5 $TMPDIR test
-_vdi_list
+_vdi_list | _filter_iso_date
