@@ -1664,8 +1664,7 @@ int vdi_snapshot(const struct vdi_iocb *iocb, uint32_t *new_vid)
 	int ret;
 
 	ret = vdi_lookup(iocb, &info);
-	if (ret == SD_RES_SUCCESS) {
-	} else {
+	if (ret != SD_RES_SUCCESS) {
 		sd_err("%s", sd_strerror(ret));
 		return ret;
 	}

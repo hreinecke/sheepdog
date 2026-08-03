@@ -277,7 +277,7 @@ static void cluster_op_done(struct work *work)
 	struct request *req = container_of(work, struct request, work);
 	struct vdi_op_message *msg;
 	size_t size;
-	int ret;
+	int ret = SD_RES_SUCCESS;
 
 	if (req->status == REQUEST_DROPPED)
 		goto drop;

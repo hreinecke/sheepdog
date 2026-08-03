@@ -51,18 +51,18 @@ struct lock_entry {
 	struct sd_mutex *mutex;
 };
 
+struct local_node {
+	struct sd_node node;
+	pid_t pid;
+	bool gateway;
+};
+
 static int shmfd;
 static int sigfd;
 static int block_event_pos;
 static int nonblock_event_pos;
 static struct local_node this_node;
 static bool joined;
-
-struct local_node {
-	struct sd_node node;
-	pid_t pid;
-	bool gateway;
-};
 
 static const char *lnode_to_str(struct local_node *lnode)
 {
