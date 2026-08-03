@@ -3,22 +3,11 @@ using backend plain store
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 Cluster status: Waiting for other nodes to join cluster
 
 Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-Failed to read object 807c2b2500000000 Waiting for other nodes to join cluster
-Failed to read inode header
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-Cluster status: Waiting for other nodes to join cluster
-
-Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 Failed to read object 807c2b2500000000 Waiting for other nodes to join cluster
@@ -27,7 +16,6 @@ Failed to read inode header
 Cluster status: Waiting for other nodes to join cluster
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 Failed to read object 807c2b2500000000 Waiting for other nodes to join cluster
@@ -36,7 +24,6 @@ Failed to read inode header
 Cluster status: Waiting for other nodes to join cluster
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 Failed to read object 807c2b2500000000 Waiting for other nodes to join cluster
@@ -45,7 +32,14 @@ Failed to read inode header
 Cluster status: Waiting for other nodes to join cluster
 
 Cluster created at DATE
+Epoch Time           Version [Host:Port:V-Nodes,,,]
+DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
+Failed to read object 807c2b2500000000 Waiting for other nodes to join cluster
+Failed to read inode header
+  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+Cluster status: Waiting for other nodes to join cluster
 
+Cluster created at DATE
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
 Failed to read object 807c2b2500000000 Waiting for other nodes to join cluster
@@ -65,10 +59,15 @@ The cluster may need to be force recovered if:
 
 Are you sure you want to continue? [yes/no]: 
 finish check&repair test
+fixed missing 007c2b2500000000
+fixed missing 007c2b2500000001
+fixed missing 007c2b2500000002
+fixed missing 007c2b2500000003
+fixed missing 007c2b2500000004
+fixed missing 807c2b2500000000
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
@@ -77,7 +76,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
@@ -86,7 +84,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
@@ -95,7 +92,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
@@ -104,7 +100,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
@@ -113,7 +108,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
@@ -122,17 +116,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  test         0   20 MB   20 MB  0.0 MB DATE   7c2b25      6                22
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
@@ -142,7 +125,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
@@ -152,7 +134,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
@@ -162,7 +143,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
@@ -172,7 +152,6 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
@@ -182,7 +161,15 @@ DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0
 Cluster status: running, auto-recovery enabled
 
 Cluster created at DATE
+Epoch Time           Version [Host:Port:V-Nodes,,,]
+DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
+DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]
+DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
+  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+  test         0   20 MB   20 MB  0.0 MB DATE   7c2b25      6                22
+Cluster status: running, auto-recovery enabled
 
+Cluster created at DATE
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128, 127.0.0.1:7006:128]
 DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7006:128]

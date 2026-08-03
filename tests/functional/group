@@ -49,7 +49,7 @@
 034 auto quick store md
 035 auto quick cluster md
 036 auto quick cluster md
-#039 auto quick vdi md
+#039 auto quick vdi md qemu
 040 auto quick cluste md
 041 auto quick vdi md
 #042 auto quick store bad, need to rework clone tree output
@@ -60,7 +60,7 @@
 #048 auto quick dog
 050 auto quick cluster md
 051 auto quick cluster md
-#052 auto quick cluster md
+052 auto quick cluster md
 #053 auto quick cluster md
 054 auto quick cluster md
 #055 auto cluster md
