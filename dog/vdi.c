@@ -1647,7 +1647,7 @@ static int do_vdi_check_exist(const struct sd_inode *inode)
 	}
 }
 
-static int do_track_object(uint64_t oid, uint8_t nr_copies)
+static int do_track_object(uint64_t oid, uint8_t nr_copies, void *data)
 {
 	int i, j, ret;
 	struct sd_req hdr;
@@ -1680,7 +1680,7 @@ retry:
 		goto retry;
 	}
 	if (rsp->result != SD_RES_SUCCESS) {
-		printf("%s\n", sd_strerror(rsp->result));
+		sd_warn("%s\n", sd_strerror(rsp->result));
 		goto error;
 	}
 
@@ -1692,6 +1692,16 @@ retry:
 		struct rb_root nroot = RB_ROOT;
 
 		log = (struct epoch_log *)next_log;
+		if (json_output) {
+			struct json_object *epoch_obj =
+				json_object_new_object();
+			struct json_object *epoch_arr_obj = data;
+			JSON_ADD_UINT64(epoch_obj, "oid", oid);
+			JSON_ADD_INT(epoch_obj, "epoch", log->epoch);
+			JSON_ADD_INT(epoch_obj, "nr_nodes", log->nr_nodes);
+			json_object_array_add(epoch_arr_obj, epoch_obj);
+			goto next;
+		}
 		printf("\nobj %016"PRIx64" locations at epoch %d, copies = %d\n",
 		       oid, log->epoch, nr_copies);
 		printf("---------------------------------------------------\n");
@@ -1721,6 +1731,7 @@ retry:
 			printf("%s\n", addr_to_str(n->addr, n->port));
 		}
 		rb_destroy(&vroot, struct sd_vnode, rb);
+	next:
 		next_log = (char *)log->nodes
 				+ nodes_nr * sizeof(struct sd_node);
 	}
@@ -1741,46 +1752,79 @@ static int vdi_track(int argc, char **argv)
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
 	uint32_t vid, vdi_id;
 	int ret;
+	struct json_object *epoch_objs = NULL;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
 			   vdi_cmd_data.snapshot_tag, NULL, inode,
 			   SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
-		goto err;
+		return ret;
 	}
 	vid = inode->header.vdi_id;
 	nr_copies = inode->header.nr_copies;
 
+	if (json_output) {
+		out_obj = json_object_new_object();
+		epoch_objs = json_object_new_array();
+	}
 	if (!oid) {
 		if (idx == ~0) {
-			printf("Tracking the inode object 0x%" PRIx32
-			       " with %d nodes\n", vid, sd_nodes_nr);
-			free(inode);
-			return do_track_object(vid_to_vdi_oid(vid), nr_copies);
+			if (json_output) {
+				JSON_ADD_INT(out_obj, "vdi_id", vid);
+					json_object_object_add(out_obj,
+							       "epochs",
+							       epoch_objs);
+			} else
+				printf("Tracking the inode object 0x%" PRIx32
+				       " with %d nodes\n", vid, sd_nodes_nr);
+			ret = do_track_object(vid_to_vdi_oid(vid), nr_copies,
+					      epoch_objs);
+			goto out;
 		}
 
 		if (idx >= MAX_DATA_OBJS) {
-			printf("The offset is too large!\n");
-			goto err;
+			sd_warn("The offset is too large!\n");
+			ret = EXIT_FAILURE;
+			goto out;
 		}
 
 		vdi_id = sd_inode_get_vid(inode, idx);
 		oid = vid_to_data_oid(vdi_id, idx);
 
-		printf("Tracking the object %016" PRIx64
-		       " (the inode vid 0x%" PRIx32 " idx %u)"
-		       " with %d nodes\n", oid, vid, idx, sd_nodes_nr);
-	} else
-		printf("Tracking the object %016" PRIx64
-		       " (the inode vid 0x%" PRIx32 ")"
-		       " with %d nodes\n", oid, vid, sd_nodes_nr);
+		if (json_output) {
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			JSON_ADD_UINT64(out_obj, "oid", oid);
+			JSON_ADD_INT(out_obj, "idx", idx);
+			json_object_object_add(out_obj, "epochs",
+					       epoch_objs);
+		} else
+			printf("Tracking the object %016" PRIx64
+			       " (the inode vid 0x%" PRIx32 " idx %u)"
+			       " with %d nodes\n", oid, vid, idx, sd_nodes_nr);
+	} else {
+		if (json_output) {
+			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			JSON_ADD_UINT64(out_obj, "oid", oid);
+			json_object_object_add(out_obj, "epochs",
+					       epoch_objs);
+		} else {
+			printf("Tracking the object %016" PRIx64
+			       " (the inode vid 0x%" PRIx32 ")"
+			       " with %d nodes\n", oid, vid, sd_nodes_nr);
+		}
+	}
+	ret = do_track_object(oid, nr_copies, epoch_objs);
+out:
+	free(inode);
+	if (json_output) {
+		const char *o;
 
-	free(inode);
-	return do_track_object(oid, nr_copies);
-err:
-	free(inode);
-	return EXIT_FAILURE;
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
+	return ret;
 }
 
 static int find_vdi_attr_oid(const char *vdiname, const char *tag, uint32_t snapid,
@@ -3356,7 +3400,7 @@ static struct subcommand vdi_cmd[] = {
 	 "show object information in the image",
 	 vdi_object_cmd, CMD_NEED_ARG,
 	 vdi_object, vdi_options},
-	{"track", "<vdiname>", "isaphoT",
+	{"track", "<vdiname>", "isajphoT",
 	 "show the object epoch trace in the image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ARG,
 	 vdi_track, vdi_options},

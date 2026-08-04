@@ -658,6 +658,21 @@ _find_obj()
     fi
 }
 
+_clear_data_obj()
+{
+    local sheep=$1
+    local oid=$2
+
+    if [[ "$DRIVER" == etcd* ]]; then
+	    echo "dd if=/dev/zero of=/tmp/sheepdog/obj/${oid} bs=1M count=4" | \
+		docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${sheep}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
+    else
+	dd if=/dev/zero of=$STORE/${sheep}/obj/${oid} bs=1M count=4 > /dev/null 2>&1
+    fi
+}
+
 _md_info()
 {
     objs=$(_list_all_obj)
@@ -686,6 +701,14 @@ _md_info()
     for n in ${objs}; do
 	echo $n
     done | _filter_stale_obj | wc -l
+}
+
+_node_list()
+{
+    local DOG_ARGS=$*
+
+    DOG_ARGS="$DOG_ARGS -r"
+    $DOG node list $DOG_ARGS | _filter_ip_port
 }
 
 _node_info()
