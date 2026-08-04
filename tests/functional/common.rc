@@ -774,7 +774,12 @@ _kill_zk_session()
 _vdi_list()
 {
 	local args=$*
-	$DOG vdi list $args | _filter_short_date
+	$DOG vdi list $args | _filter_iso_date
+}
+
+_vdi_tree()
+{
+    $DOG vdi tree -j | jq | grep -v create_time
 }
 
 _vdi_create()
