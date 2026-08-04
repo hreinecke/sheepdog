@@ -26,8 +26,8 @@ echo 2 | $DOG vdi write test 0 512
 $DOG vdi snapshot test -s snap3
 
 # check vdis
-_vdi_list | _filter_iso_date
-$DOG vdi tree -j | jq | grep -v create_time
+_vdi_list
+_vdi_tree
 for i in `seq 1 3`; do
     $DOG vdi read test -s snap$i | md5sum
 done
