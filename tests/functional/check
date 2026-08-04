@@ -489,6 +489,10 @@ do
 	start=`_wallclock`
 	$timestamp && echo -n "	["`date "+%T"`"]"
 	[ ! -x $seq ] && chmod u+x $seq # ensure we can run it
+	# A failed test is not cleaned up, so start from a known state
+	# instead of inheriting sheeps, stores and cluster keys from
+	# whatever ran (and failed) before us.
+	_cleanup
 	_setup
 	./$seq >$tmp.out 2>&1
 	sts=$?
