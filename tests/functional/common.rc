@@ -278,7 +278,7 @@ _wait_for_sheep_stop()
 	sleep 1
     done
 
-    _die "sheep $1 is expected to be stopped, but not."
+    _die "sheep $1 is expected to be stopped."
 }
 
 # wait for all sheep to join completely
