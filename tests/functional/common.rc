@@ -219,9 +219,9 @@ _count_sheep_processes()
 
 _check_sheep()
 {
-    local num_sheep
+    local num_sheeps
     if [[ "$DRIVER" == etcd* ]];then
-	num_sheep=$(docker container list | grep etcd-sheep$1 | wc -l)
+	num_sheeps=$(docker container list | grep etcd-sheep$1 | wc -l)
     else
 	num_sheeps=`pgrep -f "$SHEEP_PROG $STORE/$1 " | wc -l`
     fi
