@@ -674,6 +674,21 @@ _clear_data_obj()
     fi
 }
 
+_move_obj_to_stale()
+{
+    local sheep=$1
+    local oid=$2
+
+    if [[ "$DRIVER" == etcd* ]]; then
+	    echo "mv /tmp/sheepdog/obj/${oid} /tmp/sheepdog/obj/.stale/${oid}.1" | \
+		docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${sheep}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
+   else
+	mv $STORE/${sheep}/obj/${oid} $STORE/${sheep}/obj/.stale/${oid}.1
+    fi
+}
+
 _md_info()
 {
     objs=$(_list_all_obj)
