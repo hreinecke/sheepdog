@@ -556,7 +556,7 @@ static void print_list(void *buf, unsigned len)
 		} else {
 			printf("%d\t\t", log_buf->idx);
 			printf("%s\t\t", log_buf->tag);
-			printf("%s", time_str);
+			printf("%s\n", time_str);
 		}
 	}
 }
