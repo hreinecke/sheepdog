@@ -271,6 +271,39 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	}
 }
 
+static struct json_object *get_parent_obj(struct json_object *cur,
+					  uint32_t parent_vid)
+{
+	struct json_object *parent_obj = NULL;
+	int nr_inodes, i;
+
+	nr_inodes = json_object_array_length(cur);
+	for (i = 0; i < nr_inodes; i++) {
+		struct json_object *inode_obj =
+			json_object_array_get_idx(cur, i);
+		struct json_object *vid_obj, *children_obj;
+		uint32_t vid;
+
+		vid_obj = json_object_object_get(inode_obj, "vdi_id");
+		if (!vid_obj)
+			continue;
+		vid = json_object_get_int(vid_obj);
+		children_obj = json_object_object_get(inode_obj,
+						      "children");
+		if (!children_obj)
+			continue;
+		if (vid == parent_vid) {
+			parent_obj = children_obj;
+			break;
+		}
+		parent_obj = get_parent_obj(children_obj,
+					    parent_vid);
+		if (parent_obj)
+			break;
+	}
+	return parent_obj;
+}
+
 static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 			   uint32_t snapid, uint32_t flags,
 			   const struct sd_inode *i, void *data)
@@ -279,6 +312,30 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 	struct tm tm;
 	char buf[128];
 
+	if (json_output) {
+		struct json_object *children_obj, *cur_obj =
+			json_object_new_object();
+		struct json_object *parent_obj;
+
+		JSON_ADD_STRING(cur_obj, "name", name);
+		JSON_ADD_INT(cur_obj, "vdi_id", vid);
+		if (snapid > 0)
+			JSON_ADD_INT(cur_obj, "snap_id", snapid);
+		if (strlen(i->header.tag))
+			JSON_ADD_STRING(cur_obj, "tag", i->header.tag);
+		if (vdi_is_snapshot(&i->header))
+			JSON_ADD_UINT64(cur_obj, "create_time",
+					i->header.create_time);
+		children_obj = json_object_new_array();
+		json_object_object_add(cur_obj, "children", children_obj);
+
+		parent_obj = get_parent_obj(out_obj, i->header.parent_vdi_id);
+		if (parent_obj)
+			json_object_array_add(parent_obj, cur_obj);
+		else
+			json_object_array_add(out_obj, cur_obj);
+		return;
+	}
 	if (vdi_is_snapshot(&i->header)) {
 		ti = i->header.create_time >> 32;
 		localtime_r(&ti, &tm);
@@ -508,11 +565,21 @@ static int vdi_list(int argc, char **argv)
 
 static int vdi_tree(int argc, char **argv)
 {
+	if (json_output)
+		out_obj = json_object_new_array();
+
 	init_tree();
-	if (parse_vdi(print_vdi_tree, SD_INODE_HEADER_SIZE, NULL, true) < 0)
+	if (parse_vdi(print_vdi_tree, SD_INODE_HEADER_SIZE, out_obj, true) < 0)
 		return EXIT_SYSFAIL;
 	dump_tree();
 
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -3281,7 +3348,7 @@ static struct subcommand vdi_cmd[] = {
 	 vdi_rollback, vdi_options},
 	{"list", "[vdiname]", "ajprhoT", "list images",
 	 NULL, 0, vdi_list, vdi_options},
-	{"tree", NULL, "aphT", "show images in tree view format",
+	{"tree", NULL, "ajphT", "show images in tree view format",
 	 NULL, 0, vdi_tree, vdi_options},
 	{"graph", NULL, "aphT", "show images in Graphviz dot format",
 	 NULL, 0, vdi_graph, vdi_options},
