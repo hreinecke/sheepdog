@@ -22,6 +22,7 @@ struct get_vdis_work {
 	DECLARE_BITMAP(vdi_deleted, SD_NR_VDIS);
 	struct sd_node joined;
 	struct rb_root nroot;
+	int epoch;
 };
 
 static struct sd_mutex wait_vdis_lock = SD_MUTEX_INITIALIZER;
@@ -34,6 +35,40 @@ static struct sd_mutex pending_notify_mutex = SD_MUTEX_INITIALIZER;
 static main_thread(struct vnode_info *) current_vnode_info;
 static main_thread(struct list_head *) pending_block_list;
 static main_thread(struct list_head *) pending_notify_list;
+
+/*
+ * The current members of the cluster, as a copy the worker threads may look at.
+ *
+ * current_vnode_info is owned by the main thread, but do_get_vdis() runs in a
+ * worker and walks the node list which was handed to it when it was queued.
+ * A node can leave while that work is queued or running, and the worker has to
+ * be able to tell a node which is simply gone from one which is broken.
+ */
+static struct sd_rw_lock cluster_nodes_lock = SD_RW_LOCK_INITIALIZER;
+static struct rb_root cluster_nodes = RB_ROOT;
+
+static main_fn void update_cluster_nodes(const struct rb_root *nroot)
+{
+	struct rb_root nodes = RB_ROOT;
+
+	rb_copy(nroot, struct sd_node, rb, &nodes, node_cmp);
+
+	sd_write_lock(&cluster_nodes_lock);
+	rb_destroy(&cluster_nodes, struct sd_node, rb);
+	cluster_nodes = nodes;
+	sd_rw_unlock(&cluster_nodes_lock);
+}
+
+static bool node_is_member(struct sd_node *node)
+{
+	bool member;
+
+	sd_read_lock(&cluster_nodes_lock);
+	member = rb_search(&cluster_nodes, node, rb, node_cmp) != NULL;
+	sd_rw_unlock(&cluster_nodes_lock);
+
+	return member;
+}
 
 bool wildcard_recovery;
 
@@ -548,7 +583,7 @@ static enum sd_status cluster_wait_check(const struct sd_node *joining,
 	return sys_get_status();
 }
 
-static int get_vdis_from(struct sd_node *node)
+static int get_vdis_from(struct sd_node *node, int epoch)
 {
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -566,7 +601,7 @@ static int get_vdis_from(struct sd_node *node)
 retry:
 	sd_init_req(&hdr, SD_OP_GET_VDI_COPIES);
 	hdr.data_length = rlen;
-	hdr.epoch = sys_epoch();
+	hdr.epoch = epoch;
 	ret = sheep_exec_req(&node->nid, &hdr, (char *)vs);
 	switch (ret) {
 	case SD_RES_SUCCESS:
@@ -594,18 +629,66 @@ out:
 	return ret;
 }
 
+/*
+ * A sheep stops accepting connections as soon as it begins to shut down, which
+ * is well before the cluster driver reports that it left.  Until the leave
+ * event arrives we cannot tell such a node from one which is still a member
+ * and merely unreachable, so give the event some seconds to show up.
+ */
+#define GET_VDIS_MAX_RETRY 10
+
+/*
+ * Collect the vdi bitmap of a peer, returning false only if the peer is still
+ * a member of the cluster but doesn't answer.
+ *
+ * A node which has left has nothing for us to collect: the vdi bitmap is
+ * cluster wide state which the remaining members carry as well, so leaving it
+ * out doesn't give us an incomplete bitmap.
+ */
+static bool collect_vdis_from(struct get_vdis_work *w, struct sd_node *node)
+{
+	int retry;
+
+	for (retry = 0; ; retry++) {
+		/*
+		 * Check this before every attempt, not just after a failed
+		 * one: talking to a node which is already gone costs us a
+		 * connect timeout, and the caller is blocking a join on us.
+		 */
+		if (!node_is_member(node)) {
+			sd_warn("%s left the cluster, no vdi bitmap to get"
+				" from it", node_to_str(node));
+			return true;
+		}
+
+		if (retry > GET_VDIS_MAX_RETRY)
+			return false;
+
+		sd_debug("try to get vdi bitmap from %s at epoch %u",
+			 node_to_str(node), w->epoch);
+
+		if (get_vdis_from(node, w->epoch) == SD_RES_SUCCESS)
+			return true;
+
+		if (sys_epoch() != w->epoch) {
+			/* the request was addressed at the wrong epoch */
+			sd_warn("epoch changed, retrying");
+			w->epoch = sys_epoch();
+			continue;
+		}
+
+		sleep(1);
+	}
+}
+
 static void do_get_vdis(struct work *work)
 {
 	struct get_vdis_work *w =
 		container_of(work, struct get_vdis_work, work);
 	struct sd_node *n;
-	int ret;
 
 	if (!node_is_local(&w->joined)) {
-		sd_debug("try to get vdi bitmap from %s",
-			 node_to_str(&w->joined));
-		ret = get_vdis_from(&w->joined);
-		if (ret != SD_RES_SUCCESS) {
+		if (!collect_vdis_from(w, &w->joined)) {
 			if (sys_get_status() == SD_STATUS_OK)
 				/*
 				 * SD_STATUS_OK means enough zones are gathered,
@@ -626,9 +709,7 @@ static void do_get_vdis(struct work *work)
 		if (node_is_local(n))
 			continue;
 
-		sd_debug("try to get vdi bitmap from %s", node_to_str(n));
-		ret = get_vdis_from(n);
-		if (ret != SD_RES_SUCCESS)
+		if (!collect_vdis_from(w, n))
 			/*
 			 * It means this sheep has missing vdi bitmap, and
 			 * reading bitmap from other sheep cannot be guaranteed
@@ -639,7 +720,6 @@ static void do_get_vdis(struct work *work)
 			 */
 			panic("failed to get vdi bitmap from %s",
 			      node_to_str(n));
-
 		/*
 		 * TODO: If the target node has a valid vdi bitmap (the node has
 		 * already called do_get_vdis against all the nodes), we can
@@ -757,6 +837,7 @@ static void get_vdis(const struct rb_root *nroot, const struct sd_node *joined)
 
 	w->work.fn = do_get_vdis;
 	w->work.done = get_vdis_done;
+	w->epoch = sys_epoch();
 	queue_work(sys->block_wqueue, &w->work);
 }
 
@@ -1005,6 +1086,7 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 	 */
 	old_vnode_info = main_thread_get(current_vnode_info);
 	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
+	update_cluster_nodes(nroot);
 
 	if (node_is_local(joined)) {
 		sockfd_cache_add_group(nroot);
@@ -1398,6 +1480,7 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	 */
 	old_vnode_info = main_thread_get(current_vnode_info);
 	main_thread_set(current_vnode_info, alloc_vnode_info(nroot));
+	update_cluster_nodes(nroot);
 	if (sys_get_status() == SD_STATUS_OK) {
 		if (is_gateway_only_cluster(nroot)) {
 			sd_info("only gateway nodes are remaining, exiting");
