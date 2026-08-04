@@ -73,6 +73,19 @@ static struct vdi_family_member *lookup_vdi_family_member(uint32_t vid,
 	return NULL;
 }
 
+static struct vdi_family_member *lookup_family_member(uint32_t vid)
+{
+	struct vdi_family_member *vdi, *ret;
+
+	list_for_each_entry(vdi, &vdi_family_roots, roots_list) {
+		ret = lookup_vdi_family_member(vid, vdi);
+		if (ret)
+			return ret;
+	}
+
+	return NULL;
+}
+
 static void update_vdi_family(uint32_t parent_vid,
 			      struct vdi_state_entry *entry, bool unordered)
 {
@@ -107,12 +120,10 @@ static void update_vdi_family(uint32_t parent_vid,
 	INIT_LIST_HEAD(&new->child_list_head);
 	INIT_LIST_NODE(&new->child_list_node);
 
-	list_for_each_entry(vdi, &vdi_family_roots, roots_list) {
-		parent = lookup_vdi_family_member(parent_vid, vdi);
-		if (parent) {
-			new->parent = parent;
-			goto found;
-		}
+	parent = lookup_family_member(parent_vid);
+	if (parent) {
+		new->parent = parent;
+		goto found;
 	}
 
 	if (unordered) {
@@ -148,6 +159,61 @@ out:
 	}
 
 ret:
+	sd_mutex_unlock(&vdi_family_mutex);
+}
+
+/*
+ * A VDI can become known before its parent does: dog reserves every vid of a
+ * cluster snapshot up front and only links the family together once all the
+ * objects are loaded.  Move such a member below its parent instead of leaving
+ * it a root of its own, otherwise vid recycling collects it in isolation and
+ * drops objects which its descendants still share.
+ */
+static void reparent_vdi_family(uint32_t parent_vid,
+				struct vdi_state_entry *entry)
+{
+	struct vdi_family_member *member = entry->family_member;
+	struct vdi_family_member *parent, *vdi;
+
+	sd_mutex_lock(&vdi_family_mutex);
+
+	if (member->parent && member->parent->vid == parent_vid)
+		goto out;	/* already linked to this parent */
+
+	parent = lookup_family_member(parent_vid);
+	if (!parent) {
+		/*
+		 * Unlike update_vdi_family() we don't panic here: the parent
+		 * vid can come from a cluster snapshot store we have no
+		 * control over, and a missing family link only keeps the vid
+		 * from being recycled.
+		 */
+		sd_err("parent VID: %"PRIx32" of VID: %"PRIx32" not found",
+		       parent_vid, member->vid);
+		goto out;
+	}
+
+	for (vdi = parent; vdi; vdi = vdi->parent) {
+		if (vdi != member)
+			continue;
+
+		sd_err("VID: %"PRIx32" cannot become a child of its own"
+		       " descendant %"PRIx32, member->vid, parent_vid);
+		goto out;
+	}
+
+	if (list_linked(&member->roots_list))
+		list_del(&member->roots_list);
+	if (list_linked(&member->child_list_node))
+		list_del(&member->child_list_node);
+
+	member->parent_vid = parent_vid;
+	member->parent = parent;
+	list_add_tail(&member->child_list_node, &parent->child_list_head);
+
+	sd_debug("vid %"PRIx32" is moved below its parent %"PRIx32,
+		 member->vid, parent_vid);
+out:
 	sd_mutex_unlock(&vdi_family_mutex);
 }
 
@@ -334,7 +400,6 @@ static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
 			    uint32_t parent_vid, bool unordered)
 {
 	struct vdi_state_entry *entry, *old;
-	bool already_exists = false;
 
 	entry = xzalloc(sizeof(*entry));
 	entry->vid = vid;
@@ -380,12 +445,19 @@ static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
 
 			entry->parent_vid = parent_vid;
 		}
-
-		already_exists = true;
 	}
 
-	if (sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID && !already_exists)
-		update_vdi_family(parent_vid, entry, unordered);
+	if (sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID) {
+		/*
+		 * A vid can be registered without a parent and be told about
+		 * its parent only later on, so keep the family tree in sync
+		 * instead of building it once and for all.
+		 */
+		if (!entry->family_member)
+			update_vdi_family(parent_vid, entry, unordered);
+		else if (parent_vid)
+			reparent_vdi_family(parent_vid, entry);
+	}
 
 	sd_rw_unlock(&vdi_state_lock);
 

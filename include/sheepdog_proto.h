@@ -185,6 +185,9 @@ struct sd_req {
 						    /* others mean true */
 			uint8_t		copy_policy;
 			uint8_t		block_size_shift;
+			uint8_t		set_deleted; /* 0 means false */
+						     /* others mean true */
+			uint8_t		reserved[3];
 		} vdi_state;
 		struct {
 			uint64_t	oid;

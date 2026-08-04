@@ -685,6 +685,17 @@ static int cluster_notify_vdi_add(const struct sd_req *req, struct sd_rsp *rsp,
 		      req->vdi_state.copy_policy,
 		      req->vdi_state.block_size_shift, req->vdi_state.old_vid);
 
+	/*
+	 * The vid is only referenced by objects of its descendants, its own
+	 * inode object is gone.  Keep the vid reserved so that it cannot be
+	 * reused, but mark it deleted so that walkers of the in-use bitmap
+	 * don't try to read the missing inode object.
+	 */
+	if (req->vdi_state.set_deleted) {
+		atomic_set_bit(req->vdi_state.new_vid, sys->vdi_deleted);
+		vdi_mark_deleted(req->vdi_state.new_vid);
+	}
+
 	return SD_RES_SUCCESS;
 }
 

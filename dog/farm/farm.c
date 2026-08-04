@@ -22,11 +22,17 @@ static char farm_object_dir[PATH_MAX];
 static char farm_dir[PATH_MAX];
 
 static struct sd_rw_lock active_vdi_lock = SD_RW_LOCK_INITIALIZER;
-static struct sd_rw_lock registered_vdi_lock = SD_RW_LOCK_INITIALIZER;
 
-struct registered_vdi_entry {
+struct load_vdi_entry {
 	struct rb_node rb;
 	uint32_t vid;
+	uint32_t parent_vid;
+	uint8_t nr_copies;
+	uint8_t copy_policy;
+	uint8_t block_size_shift;
+	/* the snapshot carries an inode object for this vid */
+	bool has_inode;
+	bool notified;
 };
 
 struct active_vdi_entry {
@@ -49,7 +55,7 @@ struct registered_obj_entry {
 /* We use active_vdi_tree to create active vdi on top of the snapshot chain */
 static struct rb_root active_vdi_tree = RB_ROOT;
 /* We have to register vdi information first before loading objects */
-static struct rb_root registered_vdi_tree = RB_ROOT;
+static struct rb_root load_vdi_tree = RB_ROOT;
 /* register object iff vdi specified */
 static struct rb_root registered_obj_tree = RB_ROOT;
 static uint64_t obj_to_load;
@@ -97,30 +103,35 @@ static void add_active_vdi(struct sd_inode_header *new)
 	sd_rw_unlock(&active_vdi_lock);
 }
 
-static int registered_vdi_cmp(struct registered_vdi_entry *a,
-			      struct registered_vdi_entry *b)
+static int load_vdi_cmp(struct load_vdi_entry *a, struct load_vdi_entry *b)
 {
 	return intcmp(a->vid, b->vid);
 }
 
-static bool register_vdi(uint32_t vid)
+/*
+ * load_vdi_tree is built and walked before the load work queue is started, so
+ * it needs no locking.
+ */
+static struct load_vdi_entry *lookup_load_vdi(uint32_t vid)
 {
-	struct registered_vdi_entry *new = xmalloc(sizeof(*new)), *ret;
+	struct load_vdi_entry key = { .vid = vid };
+
+	return rb_search(&load_vdi_tree, &key, rb, load_vdi_cmp);
+}
+
+static struct load_vdi_entry *register_load_vdi(uint32_t vid)
+{
+	struct load_vdi_entry *new = xzalloc(sizeof(*new)), *ret;
 
 	new->vid = vid;
 
-	sd_read_lock(&registered_vdi_lock);
-	ret = rb_search(&registered_vdi_tree, new, rb, registered_vdi_cmp);
-	sd_rw_unlock(&registered_vdi_lock);
+	ret = rb_insert(&load_vdi_tree, new, rb, load_vdi_cmp);
 	if (ret) {
 		free(new);
-		return false;
+		return ret;
 	}
 
-	sd_write_lock(&registered_vdi_lock);
-	rb_insert(&registered_vdi_tree, new, rb, registered_vdi_cmp);
-	sd_rw_unlock(&registered_vdi_lock);
-	return true;
+	return new;
 }
 
 static int create_active_vdis(void)
@@ -205,7 +216,8 @@ out:
 }
 
 static int notify_vdi_add(uint32_t vdi_id, uint8_t nr_copies,
-			  uint8_t copy_policy, uint8_t block_size_shift)
+			  uint8_t copy_policy, uint8_t block_size_shift,
+			  uint32_t old_vid, bool deleted)
 {
 	int ret;
 	struct sd_req hdr;
@@ -213,11 +225,13 @@ static int notify_vdi_add(uint32_t vdi_id, uint8_t nr_copies,
 	char *buf = NULL;
 
 	sd_init_req(&hdr, SD_OP_NOTIFY_VDI_ADD);
+	hdr.vdi_state.old_vid = old_vid;
 	hdr.vdi_state.new_vid = vdi_id;
 	hdr.vdi_state.copies = nr_copies;
 	hdr.vdi_state.copy_policy = copy_policy;
 	hdr.vdi_state.block_size_shift = block_size_shift;
 	hdr.vdi_state.set_bitmap = true;
+	hdr.vdi_state.set_deleted = deleted;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 
@@ -401,7 +415,6 @@ static void do_load_object(struct work *work)
 	size_t size;
 	struct snapshot_work *sw;
 	static unsigned long loaded;
-	uint32_t vid;
 
 	if (uatomic_is_true(&work_error))
 		return;
@@ -413,14 +426,7 @@ static void do_load_object(struct work *work)
 	if (!buffer)
 		goto error;
 
-	vid = oid_to_vid(sw->entry.oid);
-	if (register_vdi(vid)) {
-		if (notify_vdi_add(vid, sw->entry.nr_copies,
-				   sw->entry.copy_policy,
-				   sw->entry.block_size_shift) < 0)
-			goto error;
-	}
-
+	/* the vids of all objects have been reserved by reserve_load_vdis() */
 	if (dog_write_object(sw->entry.oid, 0, buffer, size, 0, 0,
 			     sw->entry.nr_copies, sw->entry.copy_policy,
 			     true, true) != 0)
@@ -453,17 +459,149 @@ static int registered_obj_cmp(struct registered_obj_entry *a,
 	return intcmp(a->oid, b->oid);
 }
 
+/* Is this trunk entry part of the set of objects we are going to load? */
+static bool entry_to_load(struct trunk_entry *entry)
+{
+	struct registered_obj_entry key;
+
+	if (obj_to_load == 0)
+		return true;
+
+	key.oid = entry->oid;
+	return rb_search(&registered_obj_tree, &key, rb,
+			 registered_obj_cmp) != NULL;
+}
+
+/*
+ * Collect the vid of every object we are going to load, together with the
+ * parent vid of the ones which come with an inode object.
+ */
+static int collect_load_vdi_entry(struct trunk_entry *entry, void *data)
+{
+	struct load_vdi_entry *lv;
+	struct sd_inode_header *header;
+	size_t size;
+
+	if (!entry_to_load(entry))
+		return 0;
+
+	lv = register_load_vdi(oid_to_vid(entry->oid));
+
+	if (!is_vdi_obj(entry->oid)) {
+		/*
+		 * Data objects are shared with the descendants of their owner,
+		 * so this vid might not have an inode object of its own.  Do
+		 * not overwrite the values taken from an inode object.
+		 */
+		if (!lv->has_inode) {
+			lv->nr_copies = entry->nr_copies;
+			lv->copy_policy = entry->copy_policy;
+			lv->block_size_shift = entry->block_size_shift;
+		}
+		return 0;
+	}
+
+	header = slice_read(entry->sha1, &size);
+	if (!header) {
+		sd_err("Fail to load vdi object, oid %016"PRIx64, entry->oid);
+		return -1;
+	}
+
+	lv->has_inode = true;
+	lv->nr_copies = entry->nr_copies;
+	lv->copy_policy = entry->copy_policy;
+	lv->block_size_shift = entry->block_size_shift;
+	if (size < sizeof(*header))
+		sd_warn("only %zu of %zu bytes of inode header, cannot tell"
+			" the parent of oid %016"PRIx64, size, sizeof(*header),
+			entry->oid);
+	else
+		lv->parent_vid = header->parent_vdi_id;
+	free(header);
+
+	return 0;
+}
+
+/*
+ * Make the cluster aware of every vid we are about to load, without saying
+ * anything about the snapshot chain yet: a vid which is known to be a snapshot
+ * has read-only data objects, so linking the family here would make the load
+ * of those very objects fail.  That is left to link_load_vdis().
+ */
+static int reserve_load_vdis(void)
+{
+	struct load_vdi_entry *lv;
+
+	rb_for_each_entry(lv, &load_vdi_tree, rb) {
+		/*
+		 * A vid without an inode object of its own is a snapshot which
+		 * got deleted while its data objects were still shared by a
+		 * descendant.  Reserve the vid so that a later vdi creation
+		 * cannot reuse it and clobber those data objects, and mark it
+		 * deleted so that it is skipped when walking the in-use
+		 * bitmap.
+		 */
+		if (notify_vdi_add(lv->vid, lv->nr_copies, lv->copy_policy,
+				   lv->block_size_shift, 0,
+				   !lv->has_inode) < 0)
+			return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * Tell the cluster about the parent of a vid so that the sheeps can rebuild
+ * the VDI family and recycle the whole of it once all its members are deleted.
+ *
+ * Ancestors go first: a vid is passed as the old vid of its child, which turns
+ * it into a snapshot, and as the new vid of its own notification, which turns
+ * it back into a working VDI.  Parents first leaves every vid with a child a
+ * snapshot and the tip of each chain a working VDI.
+ */
+static int link_load_vdi(struct load_vdi_entry *lv)
+{
+	struct load_vdi_entry *parent;
+
+	if (lv->notified)
+		return 0;
+	lv->notified = true;
+
+	/*
+	 * Only pass on a parent which is part of this snapshot, registering a
+	 * vid we don't restore would add a family member which never gets
+	 * deleted and thus pins the whole family.
+	 */
+	parent = lv->parent_vid ? lookup_load_vdi(lv->parent_vid) : NULL;
+	if (!parent)
+		return 0;
+
+	if (link_load_vdi(parent) < 0)
+		return -1;
+
+	return notify_vdi_add(lv->vid, lv->nr_copies, lv->copy_policy,
+			      lv->block_size_shift, parent->vid,
+			      !lv->has_inode);
+}
+
+static int link_load_vdis(void)
+{
+	struct load_vdi_entry *lv;
+
+	rb_for_each_entry(lv, &load_vdi_tree, rb) {
+		if (link_load_vdi(lv) < 0)
+			return -1;
+	}
+
+	return 0;
+}
+
 static int queue_load_snapshot_work(struct trunk_entry *entry, void *data)
 {
 	struct snapshot_work *sw;
-	struct registered_obj_entry key;
 
-	if (obj_to_load > 0) {
-		key.oid = entry->oid;
-		if (!rb_search(&registered_obj_tree, &key, rb,
-				registered_obj_cmp))
-			return 0;
-	}
+	if (!entry_to_load(entry))
+		return 0;
 
 	sw = xzalloc(sizeof(struct snapshot_work));
 
@@ -570,6 +708,17 @@ int farm_load_snapshot(uint32_t idx, const char *tag, int count, char **name)
 		goto out;
 	}
 
+	/*
+	 * Reserve all vids before starting the workers, the objects themselves
+	 * are loaded in arbitrary order.
+	 */
+	if (for_each_entry_in_trunk(trunk_sha1, collect_load_vdi_entry,
+				    NULL) < 0)
+		goto out;
+
+	if (reserve_load_vdis() < 0)
+		goto out;
+
 	wq = create_work_queue("load snapshot", WQ_DYNAMIC);
 	if (for_each_entry_in_trunk(trunk_sha1, queue_load_snapshot_work,
 				    NULL) < 0)
@@ -579,13 +728,17 @@ int farm_load_snapshot(uint32_t idx, const char *tag, int count, char **name)
 	if (uatomic_is_true(&work_error))
 		goto out;
 
+	/* all objects are in place, the snapshot chain can be rebuilt now */
+	if (link_load_vdis() < 0)
+		goto out;
+
 	if (create_active_vdis() < 0)
 		goto out;
 
 	ret = 0;
 out:
 	rb_destroy(&active_vdi_tree, struct active_vdi_entry, rb);
-	rb_destroy(&registered_vdi_tree, struct registered_vdi_entry, rb);
+	rb_destroy(&load_vdi_tree, struct load_vdi_entry, rb);
 	rb_destroy(&registered_obj_tree, struct registered_obj_entry, rb);
 	return ret;
 }
