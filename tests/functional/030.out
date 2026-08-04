@@ -1,4 +1,5 @@
 QA output created by 030
+Step 1: create snapshots
 using backend plain store
 Index		Tag		Snapshot Time
 1		s1		DATE
@@ -19,6 +20,7 @@ s test1        1   10 MB   12 MB  0.0 MB DATE   fd32fc      6                22
   test1        0   10 MB  0.0 MB   12 MB DATE   fd32fd      6                22
 s test2        1   10 MB   12 MB  0.0 MB DATE   fd3815      3                22
   test2        0   10 MB  0.0 MB   12 MB DATE   fd3816      3                22
+Step 2: load snapshot s2
 using backend plain store
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
 s test1        1   10 MB   12 MB  0.0 MB DATE   fd32fc      6                22
@@ -27,6 +29,7 @@ s test1        2   10 MB   12 MB  0.0 MB DATE   fd32fd      6                22
 s test2        1   10 MB   12 MB  0.0 MB DATE   fd3815      3                22
 s test2        2   10 MB   12 MB  0.0 MB DATE   fd3816      3                22
   test2        0   10 MB  0.0 MB   12 MB DATE   fd3817      3                22
+Step 3: load snapshot 2
 using backend plain store
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
 s test1        1   10 MB   12 MB  0.0 MB DATE   fd32fc      6                22
@@ -36,11 +39,10 @@ s test2        1   10 MB   12 MB  0.0 MB DATE   fd3815      3                22
 s test2        2   10 MB   12 MB  0.0 MB DATE   fd3816      3                22
   test2        0   10 MB  0.0 MB   12 MB DATE   fd3817      3                22
 Cluster status: running, auto-recovery enabled
-Cluster store: plain with 6 redundancy policy
+Cluster store: plain with 6 copies
 Cluster vnodes strategy: auto
 Cluster vnode mode: node
 Cluster created at DATE
-
 Epoch Time           Version [Host:Port:V-Nodes,,,]
 DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
@@ -51,6 +53,7 @@ s test1        2   10 MB   12 MB  0.0 MB DATE   fd32fd      6                22
 s test2        1   10 MB   12 MB  0.0 MB DATE   fd3815      3                22
 s test2        2   10 MB   12 MB  0.0 MB DATE   fd3816      3                22
   test2        0   10 MB  0.0 MB   12 MB DATE   fd3817      3                22
+Step 4: create new VDIs and create snapshot s3
 using backend plain store
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
 s test5        1   10 MB   12 MB  0.0 MB DATE   fd2c30      3          snap  22
@@ -78,6 +81,7 @@ s test8        1   10 MB   12 MB  0.0 MB DATE   fd4247      3          snap  22
 3. VDI id: fd34af, name: test0, tag: snap
 4. VDI id: fd3815, name: test2, tag: snap
 5. VDI id: fd4247, name: test8, tag: snap
+Step 5: load snaphot s3 for new VDIs
 using backend plain store
 using backend plain store
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
@@ -91,6 +95,7 @@ s test2        1   10 MB   12 MB  0.0 MB DATE   fd3815      3          snap  22
   test2        0   10 MB  0.0 MB   12 MB DATE   fd3816      3                22
 s test8        1   10 MB   12 MB  0.0 MB DATE   fd4247      3          snap  22
   test8        0   10 MB  0.0 MB   12 MB DATE   fd4248      3                22
+Step 6: load individual VDIs from snapshot s3
 using backend plain store
 using backend plain store
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
@@ -100,11 +105,17 @@ s test0        1   10 MB   12 MB  0.0 MB DATE   fd34af      3          snap  22
   test0        0   10 MB  0.0 MB   12 MB DATE   fd34b0      3                22
 s test8        1   10 MB   12 MB  0.0 MB DATE   fd4247      3          snap  22
   test8        0   10 MB  0.0 MB   12 MB DATE   fd4248      3                22
+Step 7: create new VDIs and save snapshots s4 and s5
     __
    ()'`;
    /\|`
   /  |   Caution! The cluster is not empty.
 (/_)_|_  Are you sure you want to continue? [yes/no]: using backend plain store
+  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+s test         1   10 MB   12 MB  0.0 MB DATE   7c2b25      3           vs1  22
+  test         0   10 MB  0.0 MB   12 MB DATE   7c2b26      3                22
+  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+  test         0   10 MB  0.0 MB   12 MB DATE   7c2b26      3                22
 Cannot execute. It may be caused by:
 1. The cluster is empty.
 2. All VDIs of the cluster don't have snapshots.
