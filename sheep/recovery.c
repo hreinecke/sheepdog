@@ -69,6 +69,12 @@ struct recovery_info {
 	uint64_t count;
 	uint64_t *oids;
 
+	/*
+	 * Number of pipeline slots which gave up queueing an object because it
+	 * was already being recovered, see recover_next_object().
+	 */
+	uint32_t nr_stalled;
+
 	struct vnode_info *old_vinfo;
 	struct vnode_info *cur_vinfo;
 
@@ -94,6 +100,7 @@ static main_thread(struct recovery_info *) current_rinfo;
 
 static void queue_recovery_work(struct recovery_info *rinfo);
 static void free_recovery_obj_work(struct recovery_obj_work *row);
+static void recover_next_object(struct recovery_info *rinfo);
 
 /* Dynamically grown list buffer default as 4M (2T storage) */
 #define DEFAULT_LIST_BUFFER_SIZE (UINT64_C(1) << 22)
@@ -102,6 +109,60 @@ static size_t list_buffer_size = DEFAULT_LIST_BUFFER_SIZE;
 static int obj_cmp(const uint64_t *oid1, const uint64_t *oid2)
 {
 	return intcmp(*oid1, *oid2);
+}
+
+/*
+ * Objects which have a recovery work in flight right now.
+ *
+ * The sequential recovery pipeline and a request which is blocked on an object
+ * (see direct_queue_recovery_work()) can both decide to recover the very same
+ * object.  Two workers recovering one object write it at the same time, so
+ * remember what is being worked on and let only the first one through.
+ *
+ * Only the main thread touches this, all the queueing and completion happens
+ * there.
+ */
+struct recovering_oid {
+	uint64_t oid;
+	struct rb_node rb;
+};
+
+static struct rb_root recovering_oids = RB_ROOT;
+
+static int recovering_oid_cmp(const struct recovering_oid *a,
+			      const struct recovering_oid *b)
+{
+	return intcmp(a->oid, b->oid);
+}
+
+/* Return false if somebody is recovering this object already */
+static main_fn bool claim_recovering_oid(uint64_t oid)
+{
+	struct recovering_oid *roid = xzalloc(sizeof(*roid));
+
+	roid->oid = oid;
+	if (rb_insert(&recovering_oids, roid, rb, recovering_oid_cmp)) {
+		sd_debug("%016"PRIx64" is being recovered already", oid);
+		free(roid);
+		return false;
+	}
+
+	return true;
+}
+
+static main_fn void release_recovering_oid(uint64_t oid)
+{
+	struct recovering_oid key = { .oid = oid };
+	struct recovering_oid *roid;
+
+	roid = rb_search(&recovering_oids, &key, rb, recovering_oid_cmp);
+	if (!roid) {
+		sd_alert("%016"PRIx64" was never claimed", oid);
+		return;
+	}
+
+	rb_erase(&roid->rb, &recovering_oids);
+	free(roid);
 }
 
 static inline bool node_is_gateway_only(void)
@@ -677,16 +738,47 @@ static void direct_recover_object_main(struct work *work)
 						struct recovery_obj_work,
 						base);
 
+	struct recovery_info *rinfo;
+	uint32_t stalled;
+
+	release_recovering_oid(row->oid);
 	wakeup_requests_on_oid(row->oid);
 	free_recovery_obj_work(row);
+
+	/*
+	 * Pipeline slots which ran into this object being claimed did not queue
+	 * anything, see recover_next_object().  Nobody else is going to kick
+	 * them, so refill the pipeline now that the object is free again.
+	 */
+	rinfo = main_thread_get(current_rinfo);
+	if (!rinfo)
+		return;
+
+	stalled = rinfo->nr_stalled;
+	rinfo->nr_stalled = 0;
+	for (uint32_t i = 0; i < stalled; i++) {
+		if (main_thread_get(current_rinfo) != rinfo)
+			/* the recovery was superseded or has finished */
+			break;
+		recover_next_object(rinfo);
+	}
 }
 
-static inline void direct_queue_recovery_work(uint64_t oid)
+static void direct_queue_recovery_work(uint64_t oid)
 {
 	struct recovery_info *rinfo = main_thread_get(current_rinfo);
 
 	struct recovery_work *rw;
 	struct recovery_obj_work *row;
+
+	if (!claim_recovering_oid(oid))
+		/*
+		 * Somebody is recovering this object already.  The request
+		 * which brought us here stays blocked and gets woken up when
+		 * that work completes.
+		 */
+		return;
+
 	row = xzalloc(sizeof(*row));
 	row->oid = oid;
 	row->wildcard = rinfo->wildcard;
@@ -754,7 +846,7 @@ main_fn bool oid_in_recovery(uint64_t oid)
 		 * FIXME: do we need more efficient yet complex data structure?
 		 */
 		if (xlfind(&oid, rinfo->oids + rinfo->next,
-			   rinfo->count - rinfo->next + 1, oid_cmp))
+			   rinfo->count - rinfo->next, oid_cmp))
 			break;
 
 		/*
@@ -898,6 +990,17 @@ static void recover_next_object(struct recovery_info *rinfo)
 	if (rinfo->next >= rinfo->count)
 		return;
 
+	/*
+	 * A request blocked on this object has jumped the queue and is
+	 * recovering it already.  Leave this slot idle rather than recover the
+	 * object a second time; direct_recover_object_main() kicks us again
+	 * once it is done.
+	 */
+	if (!claim_recovering_oid(rinfo->oids[rinfo->next])) {
+		rinfo->nr_stalled++;
+		return;
+	}
+
 	/* Try recover next object */
 	queue_recovery_work(rinfo);
 	rinfo->next++;
@@ -1006,6 +1109,8 @@ static void recover_object_main(struct work *work)
 						     struct recovery_obj_work,
 						     base);
 	struct recovery_info *rinfo = main_thread_get(current_rinfo);
+
+	release_recovering_oid(row->oid);
 
 	/* ->oids[done, next] is out of order since finish order is random */
 	if (rinfo->oids[rinfo->done] != row->oid) {
