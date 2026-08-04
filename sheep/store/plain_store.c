@@ -31,6 +31,17 @@ static int get_store_path(uint64_t oid, uint8_t ec_index, char **path)
 	return ret < 0 ? ret : 0;
 }
 
+/*
+ * Every writer gets a temporary file of its own.
+ *
+ * Two writers can legitimately create the same object at the same time; a
+ * retried gateway CREATE racing the recovery of that very object, say, or two
+ * recovery workers which were handed the same oid.  They write identical data,
+ * so whoever renames last wins and the object becomes visible as soon as the
+ * first of them is done.  Sharing a single temporary name instead means the
+ * second writer finds the file already there and has no way to tell whether
+ * the other one has reached its rename() yet.
+ */
 static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
 {
 	char *tmp_path;
@@ -40,7 +51,7 @@ static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
 	if (ret < 0)
 		return ret;
 
-	ret = asprintf(path, "%s.tmp", tmp_path);
+	ret = asprintf(path, "%s.tmp.%d", tmp_path, gettid());
 	free(tmp_path);
 	return ret < 0 ? ret : 0;
 }
@@ -368,20 +379,6 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 
 	fd = open(tmp_path, flags, sd_def_fmode);
 	if (fd < 0) {
-		if (errno == EEXIST) {
-			/*
-			 * This happens if node membership changes during object
-			 * creation; while gateway retries a CREATE request,
-			 * recovery process could also recover the object at the
-			 * same time.  They should try to write the same date,
-			 * so it is okay to simply return success here.
-			 */
-			sd_debug("%s exists", tmp_path);
-			free(tmp_path);
-			free(path);
-			return SD_RES_SUCCESS;
-		}
-
 		sd_err("failed to open %s: %m", tmp_path);
 		free(tmp_path);
 		ret = err_to_sderr(path, oid, errno);
@@ -429,7 +426,8 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 		return SD_RES_SUCCESS;
 	}
 
-	pstrcpy(tmp_path, sizeof(tmp_path), path);
+	/* dirname() may modify its argument, and tmp_path is longer than path */
+	pstrcpy(tmp_path, strlen(tmp_path) + 1, path);
 	dir = dirname(tmp_path);
 	fd = open(dir, O_DIRECTORY | O_RDONLY);
 	if (fd < 0) {

@@ -634,9 +634,34 @@ static void recover_object_work(struct work *work)
 			}
 		}
 
-	ret = do_recover_object(row);
-	if (ret != 0)
-		sd_err("failed to recover object %016"PRIx64, oid);
+	/*
+	 * Any node may schedule recovery, so use the number of
+	 * nodes as the upper limit for retrying.
+	 */
+	for (int retry = 0; retry <= cur->nr_nodes; retry++) {
+		ret = do_recover_object(row);
+		if (ret != 0) {
+			sd_err("failed to recover object %016"PRIx64, oid);
+			return;
+		}
+
+		/*
+		 * recover_object_main() is about to count this object as done
+		 * and wake every request which is blocked on it, so it has to
+		 * be readable by now.  A store driver which reports success
+		 * without publishing the object would turn those requests into
+		 * spurious SD_RES_NO_OBJ failures, which the client sees as
+		 * data loss.
+		 */
+		if (sd_store->exist(oid, local_ec_index(cur, oid)))
+			return;
+
+		sd_warn("object %016"PRIx64" is not readable after being"
+			" recovered, retrying", oid);
+	}
+
+	sd_err("giving up on object %016"PRIx64", it stays unreadable after"
+	       " being recovered", oid);
 }
 
 bool node_in_recovery(void)

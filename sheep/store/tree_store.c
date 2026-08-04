@@ -51,6 +51,7 @@ static int get_store_path(uint64_t oid, uint8_t ec_index, char **path)
 	return ret < 0 ? ret : 0;
 }
 
+/* Every writer gets a temporary file of its own, see plain_store.c */
 static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
 {
 	char *tmp_path;
@@ -59,7 +60,7 @@ static int get_store_tmp_path(uint64_t oid, uint8_t ec_index, char **path)
 	ret = get_store_path(oid, ec_index, &tmp_path);
 	if (ret < 0)
 		return ret;
-	ret = asprintf(path, "%s.tmp", tmp_path);
+	ret = asprintf(path, "%s.tmp.%d", tmp_path, gettid());
 	free(tmp_path);
 	return ret;
 }
@@ -438,20 +439,6 @@ int tree_create_and_write(uint64_t oid, const struct siocb *iocb)
 
 	fd = open(tmp_path, flags, sd_def_fmode);
 	if (fd < 0) {
-		if (errno == EEXIST) {
-			/*
-			 * This happens if node membership changes during object
-			 * creation; while gateway retries a CREATE request,
-			 * recovery process could also recover the object at the
-			 * same time.  They should try to write the same date,
-			 * so it is okay to simply return success here.
-			 */
-			sd_debug("%s exists", tmp_path);
-			free(tmp_path);
-			free(path);
-			return SD_RES_SUCCESS;
-		}
-
 		sd_err("failed to open %s: %m", tmp_path);
 		free(tmp_path);
 		ret = err_to_sderr(path, oid, errno);
@@ -498,7 +485,8 @@ int tree_create_and_write(uint64_t oid, const struct siocb *iocb)
 		goto out_free;
 	}
 
-	pstrcpy(tmp_path, sizeof(tmp_path), path);
+	/* dirname() may modify its argument, and tmp_path is longer than path */
+	pstrcpy(tmp_path, strlen(tmp_path) + 1, path);
 	dir = dirname(tmp_path);
 	fd = open(dir, O_DIRECTORY | O_RDONLY);
 	if (fd < 0) {

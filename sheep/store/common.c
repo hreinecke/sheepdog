@@ -42,8 +42,14 @@ int prepare_iocb(uint64_t oid, const struct siocb *iocb, bool create)
 		flags |= O_DIRECT;
 	}
 
+	/*
+	 * The file a creating caller opens is its own temporary one (see
+	 * get_store_tmp_path()), so there is nobody else's data to clobber
+	 * here.  Truncate rather than insist on O_EXCL: a leftover from a
+	 * previous incarnation of this thread must not stop us from writing.
+	 */
 	if (create)
-		flags |= O_CREAT | O_EXCL;
+		flags |= O_CREAT | O_TRUNC;
 
 	return flags;
 }
