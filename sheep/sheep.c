@@ -899,10 +899,10 @@ int main(int argc, char **argv, char **envp)
 			sd_info("Using SHEEP_ZONE='%lu'", zone);
 	}
 	if ((opt = getenv("SHEEP_VNODES")) && strlen(opt)) {
-		nr_vnodes = str_to_u32(opt);
+		nr_vnodes = str_to_u16(opt);
 		if (errno != 0) {
 			sd_err("Invalid number of vnodes '%s'", opt);
-			nr_vnodes = -1;
+			exit(1);
 		} else if (nr_vnodes > 0) {
 			sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
 			sd_info("Using SHEEP_VNODES='%u'", nr_vnodes);
