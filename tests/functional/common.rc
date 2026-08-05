@@ -679,6 +679,21 @@ _clear_data_obj()
     fi
 }
 
+_delete_data_obj()
+{
+    local sheep=$1
+    local oid=$2
+
+    if [[ "$DRIVER" == etcd* ]]; then
+	    echo "rm /tmp/sheepdog/obj/${oid}" | \
+		docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${sheep}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
+    else
+	rm ${STORE}/${sheep}/obj/${oid}
+    fi
+}
+
 _move_obj_to_stale()
 {
     local sheep=$1

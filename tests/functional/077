@@ -21,7 +21,7 @@ $DOG cluster shutdown
 
 # single object lost
 
-rm $STORE/0/obj/007c2b2500000000
+_delete_data_obj 0 007c2b2500000000
 
 for i in `seq 0 2`; do
     _start_sheep $i
@@ -57,8 +57,8 @@ $DOG cluster shutdown
 
 # two object lost
 
-rm $STORE/0/obj/007c2b2500000000
-rm $STORE/1/obj/007c2b2500000000
+_delete_data_obj 0 007c2b2500000000
+_delete_data_obj 1 007c2b2500000000
 
 for i in `seq 0 2`; do
     _start_sheep $i
@@ -76,7 +76,7 @@ $DOG cluster shutdown
 
 # single object lost, single broken object. no majority
 
-rm $STORE/0/obj/007c2b2500000000
+_delete_data_obj 0 007c2b2500000000
 _random | dd of=$STORE/1/obj/007c2b2500000000 bs=4096 count=1024 &> /dev/null
 
 for i in `seq 0 2`; do
