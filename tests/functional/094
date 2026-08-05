@@ -4,7 +4,7 @@
 
 . ./common
 
-_needs_to_be_root
+_need_to_be_root
 
 # make different size of devices
 for i in `seq 0 2`; do

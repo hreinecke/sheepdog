@@ -89,18 +89,18 @@
 080 auto quick vdi md
 081 auto quick vdi md
 082 auto quick vdi md
-#083 auto quick vdi
+#083 auto quick vdi bad, need to configure zones
 #084 auto quick sheepfs
 #085 auto quick vdi md bad, is using MD storage
 086 auto quick vdi md
 087 auto quick vdi
-#088 auto quick cluster
+#088 auto quick cluster bad, requiring to change sheep address
 089 auto quick sheepfs
 090 auto quick vdi md
 #091 auto quick cluster md
 #092 auto quick vdi
 #093 auto quick vdi
-094 auto quick store md
+#094 auto quick store md bad, needs access to MD storage
 095 auto quick store md
 096 auto cluster
 097 vdi cluster
