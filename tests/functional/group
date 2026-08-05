@@ -53,7 +53,7 @@
 040 auto quick cluste md
 041 auto quick vdi md
 042 auto quick store
-#043 auto quick store bad, check if 'dog vdi write' error message is correct
+043 auto quick store
 045 auto quick store md
 046 auto quick vdi md
 #047 auto quick vdi md bad, need to configure zones

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <semaphore.h>
@@ -88,6 +89,23 @@ struct etcd_block_node {
 	struct etcd_node *node;
 	bool callbacked;
 };
+
+/*
+ * A key/value pair received by the watcher thread, queued up for the main
+ * thread.  This is a private copy of 'struct etcd_kv'; the original is owned
+ * by the watcher and freed as soon as the callback returns.
+ */
+struct etcd_event {
+	struct list_node list;
+	char *key;
+	char *value;
+	size_t value_len;
+	int64_t create_revision;
+	int64_t mod_revision;
+	bool deleted;
+};
+
+
 struct etcd_cluster_info {
 	uint8_t proto_ver;
 	uint8_t disable_recovery;
@@ -107,6 +125,9 @@ static LIST_HEAD(etcd_block_list);
 static struct sd_mutex etcd_node_mutex = SD_MUTEX_INITIALIZER;
 static struct rb_root etcd_node_root = RB_ROOT;
 static struct etcd_cluster_info etcd_cinfo = {};
+static struct sd_mutex etcd_event_mutex = SD_MUTEX_INITIALIZER;
+static LIST_HEAD(etcd_event_list);
+static int etcd_efd = -1;
 
 struct etcd_lock_entry {
 	struct rb_node rb;
@@ -2092,23 +2113,24 @@ static void etcd_handle_update_node(struct etcd_ctx *ctx,
 	sd_update_node_handler(&node->node);
 }
 
-static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
+/*
+ * Dispatch a single event.  Must run in the main thread: the group handlers
+ * called from here update main-thread-only state (current_vnode_info,
+ * current_rinfo, ...), and the epoch bump in sd_leave_handler() is only
+ * atomic with respect to request processing if both happen in the same
+ * thread.
+ */
+static void etcd_handle_event(struct etcd_ctx *ctx, struct etcd_event *ev)
 {
-	struct etcd_ctx *ctx = arg;
 	struct json_object *obj, *event_obj;
 	const char *event;
-	char *base, *key;
+	char *key;
 	enum etcd_event_type type = EVENT_UPDATE_NODE;
 	int i;
 
-	base = kv->key + strlen(DEFAULT_BASE CLUSTER_ZNODE);
-	if (!strncmp(base, LOCK_ZNODE, strlen(LOCK_ZNODE))) {
-		etcd_lock_wakeup(ctx, kv->deleted);
-		return;
-	}
-	key = strrchr(kv->key, '/');
+	key = strrchr(ev->key, '/');
 	if (!key) {
-		sd_debug("skipping updates to '%s'", kv->key);
+		sd_debug("skipping updates to '%s'", ev->key);
 		return;
 	}
 	key++;
@@ -2118,22 +2140,22 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		if (!strcmp(key, "status")) {
 			enum sd_status status;
 
-			status = sd_string_to_status(kv->value);
+			status = sd_string_to_status(ev->value);
 			if (status != SD_STATUS_INVALID &&
 			    etcd_cinfo.status != status) {
 				sd_debug("update status to '%s' (%d)",
-					 kv->value, status);
+					 ev->value, status);
 				etcd_cinfo.status = status;
 			}
 			return;
 		}
 		if (!strcmp(key, "default_store")) {
-			if (kv->value_len)
+			if (ev->value_len)
 				strcpy((char *)etcd_cinfo.default_store,
-				       kv->value);
+				       ev->value);
 			return;
 		}
-		val = strtoul(kv->value, NULL, 10);
+		val = strtoul(ev->value, NULL, 10);
 		if (!strcmp(key, "proto_ver"))
 			etcd_cinfo.proto_ver = val;
 		UPDATE_CINFO_FROM_ETCD(&etcd_cinfo, disable_recovery,
@@ -2150,10 +2172,10 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 			sd_debug("skipping updates to '%s'", key);
 		return;
 	}
-	if (kv->value_len) {
-		obj = json_tokener_parse(kv->value);
+	if (ev->value_len) {
+		obj = json_tokener_parse(ev->value);
 		if (!obj) {
-			sd_warn("failed to parse value '%s'", kv->value);
+			sd_warn("failed to parse value '%s'", ev->value);
 			return;
 		}
 	} else {
@@ -2178,8 +2200,8 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		}
 	}
 	sd_debug("event %s (%d) value '%s' deleted %d created %lu mod %lu",
-		 event, type, kv->value_len ? kv->value : "{}",
-		 kv->deleted, kv->create_revision, kv->mod_revision);
+		 event, type, ev->value_len ? ev->value : "{}",
+		 ev->deleted, ev->create_revision, ev->mod_revision);
 
 	switch (type) {
 	case EVENT_JOIN:
@@ -2204,11 +2226,92 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		etcd_handle_update_node(ctx, obj);
 		break;
 	default:
-		sd_err("invalid event '%s'", kv->key);
+		sd_err("invalid event '%s'", ev->key);
 		return;
 	}
 	json_object_put(obj);
 	etcd_kick_block_event();
+}
+
+static void etcd_event_free(struct etcd_event *ev)
+{
+	free(ev->key);
+	free(ev->value);
+	free(ev);
+}
+
+/*
+ * Drain the event queue from the main event loop, one event per wakeup, so
+ * that a long-running handler doesn't starve the rest of the loop.
+ */
+static void etcd_event_handler(int fd, int events, void *data)
+{
+	struct etcd_event *ev = NULL;
+	bool more;
+
+	if (events & EPOLLHUP) {
+		sd_err("etcd driver received EPOLLHUP event, exiting.");
+		log_close();
+		exit(1);
+	}
+
+	eventfd_xread(fd);
+
+	sd_mutex_lock(&etcd_event_mutex);
+	if (!list_empty(&etcd_event_list)) {
+		ev = list_first_entry(&etcd_event_list, typeof(*ev), list);
+		list_del(&ev->list);
+	}
+	more = !list_empty(&etcd_event_list);
+	sd_mutex_unlock(&etcd_event_mutex);
+
+	if (ev) {
+		etcd_handle_event(this_ctx, ev);
+		etcd_event_free(ev);
+	}
+	if (more)
+		/* More events pending, kick ourselves again. */
+		eventfd_xwrite(fd, 1);
+}
+
+/*
+ * Called from the watcher thread.  Everything but the lock wakeup is handed
+ * over to the main thread; see etcd_handle_event().
+ */
+static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
+{
+	struct etcd_ctx *ctx = arg;
+	struct etcd_event *ev;
+	char *base;
+
+	base = kv->key + strlen(DEFAULT_BASE CLUSTER_ZNODE);
+	if (!strncmp(base, LOCK_ZNODE, strlen(LOCK_ZNODE))) {
+		/*
+		 * Lock wakeups only touch driver-local state, and the waiter
+		 * is a worker thread blocked in etcd_lock().  Handle them
+		 * here; queueing them would add latency for no gain.
+		 */
+		etcd_lock_wakeup(ctx, kv->deleted);
+		return;
+	}
+
+	ev = xzalloc(sizeof(*ev));
+	INIT_LIST_NODE(&ev->list);
+	ev->key = xstrdup(kv->key);
+	/* Handlers treat the value as a string, so always NUL-terminate. */
+	ev->value = xzalloc(kv->value_len + 1);
+	if (kv->value_len)
+		memcpy(ev->value, kv->value, kv->value_len);
+	ev->value_len = kv->value_len;
+	ev->create_revision = kv->create_revision;
+	ev->mod_revision = kv->mod_revision;
+	ev->deleted = kv->deleted;
+
+	sd_mutex_lock(&etcd_event_mutex);
+	list_add_tail(&ev->list, &etcd_event_list);
+	sd_mutex_unlock(&etcd_event_mutex);
+
+	eventfd_xwrite(etcd_efd, 1);
 }
 
 static uint32_t etcd_lock(uint32_t lock_id)
@@ -2432,6 +2535,23 @@ static int etcd_cluster_init(const char *option)
 	if (!this_ctx) {
 		sd_err("failed to initialize etcd '%s'",
 		       addr ? addr: "localhost");
+		ret = -1;
+		goto out;
+	}
+
+	/*
+	 * Set up the event queue before the watcher thread is started in
+	 * etcd_join(), so that no event can be dropped.
+	 */
+	etcd_efd = eventfd(0, EFD_NONBLOCK);
+	if (etcd_efd < 0) {
+		sd_err("failed to create an event fd: %m");
+		ret = -1;
+		goto out;
+	}
+	ret = register_event(etcd_efd, etcd_event_handler, NULL);
+	if (ret) {
+		sd_err("failed to register etcd event handler (%d)", ret);
 		ret = -1;
 		goto out;
 	}
