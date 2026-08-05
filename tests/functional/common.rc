@@ -633,10 +633,12 @@ _check_obj_location()
     if [[ "$index" ]] ; then
 	DOG_ARGS="${DOG_ARGS} -i $index"
     fi
-    oid=$($DOG $DOG_ARGS $vdi | jq .oid)
-    cur=$($DOG $DOG_ARGS $vdi | jq '.location | length')
-    exp=$($DOG $DOG_ARGS $vdi | jq '.expected_location | length')
-    if [[ ${cur} -eq ${exp} ]]; then
+    map=$($DOG $DOG_ARGS $vdi)
+    oid=$(echo "$map" | jq .oid)
+    nr_copies=$(echo "$map" | jq .nr_copies)
+    cur=$(echo "$map" | jq '.location | length')
+    exp=$(echo "$map" | jq '.expected_location | length')
+    if [[ ${cur} -eq ${exp} ]] && [[ ${cur} -eq ${nr_copies} ]]; then
 	echo "$oid"
     fi
 }
