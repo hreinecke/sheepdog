@@ -1880,6 +1880,12 @@ static struct sd_op_template sd_ops[] = {
 	[SD_OP_GET_VNODES] = {
 		.name = "GET_VNODES",
 		.type = SD_OP_TYPE_LOCAL,
+		/*
+		 * A gateway only node queries this during MAKE_FS, while
+		 * every node is still in SD_STATUS_WAIT, so it has to be
+		 * answered before the cluster is formatted.
+		 */
+		.force = true,
 		.process_work = local_get_vnodes,
 	},
 
