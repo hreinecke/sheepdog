@@ -96,10 +96,10 @@ $ ../../dog/dog vdi create test 12M -P
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      2                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -158,10 +158,10 @@ test's redundancy level is set to 3, the old one was 2.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      3                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -182,10 +182,10 @@ test's redundancy level is set to 4, the old one was 3.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      4                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -206,10 +206,10 @@ test's redundancy level is set to 5, the old one was 4.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      5                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -230,10 +230,10 @@ test's redundancy level is set to 6, the old one was 5.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      6                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -258,10 +258,10 @@ test's redundancy level is set to 5, the old one was 6.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      5                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -282,10 +282,10 @@ test's redundancy level is set to 4, the old one was 5.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      4                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -306,10 +306,10 @@ test's redundancy level is set to 3, the old one was 4.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      3                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -330,10 +330,10 @@ test's redundancy level is set to 2, the old one was 3.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      2                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -354,10 +354,10 @@ test's redundancy level is set to 1, the old one was 2.
 $ ../../dog/dog vdi list
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   test         0   12 MB   12 MB  0.0 MB DATE   7c2b25      1                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -385,10 +385,10 @@ $ ../../dog/dog vdi list
 s test         1   12 MB   12 MB  0.0 MB DATE   7c2b25      1            s1  22
   test         0   12 MB  0.0 MB   12 MB DATE   7c2b26      1                22
 c clone1       0   12 MB  0.0 MB   12 MB DATE   c8f989      1                22
-vdi test inode object is correctly placed
-vdi test data object 0 is correctly placed
-vdi test data object 1 is correctly placed
-vdi test data object 2 is correctly placed
+vdi test inode object 807c2b2600000000 is correctly placed
+vdi test data object 007c2b2500000000 is correctly placed
+vdi test data object 007c2b2500000001 is correctly placed
+vdi test data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -410,10 +410,10 @@ $ ../../dog/dog vdi list
 s test         1   12 MB   12 MB  0.0 MB DATE   7c2b25      1            s1  22
   test         0   12 MB  0.0 MB   12 MB DATE   7c2b26      1                22
 c clone1       0   12 MB  0.0 MB   12 MB DATE   c8f989      1                22
-vdi clone1 inode object is correctly placed
-vdi clone1 data object 0 is correctly placed
-vdi clone1 data object 1 is correctly placed
-vdi clone1 data object 2 is correctly placed
+vdi clone1 inode object 80c8f98900000000 is correctly placed
+vdi clone1 data object 007c2b2500000000 is correctly placed
+vdi clone1 data object 007c2b2500000001 is correctly placed
+vdi clone1 data object 007c2b2500000002 is correctly placed
 
 #### OBJECT LIST
 
@@ -445,10 +445,10 @@ s test         1   12 MB   12 MB  0.0 MB DATE   7c2b25      1            s1  22
   test         0   12 MB  0.0 MB   12 MB DATE   7c2b26      1                22
   clone2       0   12 MB   12 MB  0.0 MB DATE   c8f470      2                22
 c clone1       0   12 MB  0.0 MB   12 MB DATE   c8f989      1                22
-vdi clone2 inode object is correctly placed
-vdi clone2 data object 0 is correctly placed
-vdi clone2 data object 1 is correctly placed
-vdi clone2 data object 2 is correctly placed
+vdi clone2 inode object 80c8f47000000000 is correctly placed
+vdi clone2 data object 00c8f47000000000 is correctly placed
+vdi clone2 data object 00c8f47000000001 is correctly placed
+vdi clone2 data object 00c8f47000000002 is correctly placed
 
 #### OBJECT LIST
 

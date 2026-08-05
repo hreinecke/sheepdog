@@ -26,17 +26,17 @@ _list_obj_replicas()
     oid=$(_check_obj_location ${objname})
     if [[ "$oid" ]]; then
 	o=$(printf "%016x" ${oid})
-	echo -e "inode object ${o} is correctly placed"
+	echo -e "vdi ${objname} inode object ${o} is correctly placed"
     fi
     for index in $($DOG vdi object map ${objname} -j | jq .[].index); do
 	oid=$(_check_obj_location ${objname} $index)
 	if [[ "$oid" ]]; then
 	    o=$(printf "%016x" ${oid})
-	    echo -e "data object ${o} is correctly placed"
+	    echo -e "vdi ${objname} data object ${o} is correctly placed"
 	fi
     done
     echo -e "\n#### OBJECT LIST\n"
-    _list_obj 8
+    _list_obj 8 | grep -v '^[0-9a-f].*\.1'
 }
 
 _vdi_alter_copy()

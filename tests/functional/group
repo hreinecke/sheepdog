@@ -101,11 +101,11 @@
 092 auto quick vdi
 093 auto quick vdi
 #094 auto quick store md bad, needs access to MD storage
-095 auto quick store md
+#095 auto quick store md bad, needs access to MD storage
 096 auto cluster
 097 vdi cluster
 098 auto quick vdi cluster
-#099 auto quick vdi cluster
+#099 auto quick vdi cluster bad, needs access to data objects
 100 auto quick vdi
 101 auto quick store vdi
 102 auto quick store vdi
@@ -118,7 +118,6 @@
 109 auto quick
 110 auto quick
 111 auto quick dog
-#112 auto dog
 113 auto dog
 114 auto quick dog md
 115 auto dog
