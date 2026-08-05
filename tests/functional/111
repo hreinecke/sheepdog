@@ -21,6 +21,7 @@ function testSetVnodesSucceeded
 	_wait_for_sheep_recovery 0
 	$DOG cluster info -v | _filter_cluster_info
 	_cleanup
+	_setup
 }
 
 function testSetVnodesFailed
@@ -28,6 +29,7 @@ function testSetVnodesFailed
 	setUpFixedCluster
 	$DOG node vnodes set -- "$1" && err=1
 	_cleanup
+	_setup
 }
 
 function testSetAutoNodeVnodesFailed
@@ -37,18 +39,20 @@ function testSetAutoNodeVnodesFailed
 	$DOG cluster format -c 1
 	$DOG node vnodes set 42 && err=1
 	_cleanup
+	_setup
 }
 
 function testSetGatewayVnodesFailed
 {
-	SHEEP_OPTIONS='-V 100' _start_sheep 0
+	SHEEP_VNODES=100 _start_sheep 0
 	_wait_for_sheep 1
 	$DOG cluster format -V -c 1
-	SHEEP_OPTIONS='-g' _start_sheep 1
+	_start_sheep 1 '-g'
 	_wait_for_sheep 2
 	_wait_for_sheep_recovery 0
 	$DOG node vnodes set -p 7001 42 && err=1
 	_cleanup
+	_setup
 }
 
 testSetVnodesSucceeded 1
