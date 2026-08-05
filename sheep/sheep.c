@@ -892,8 +892,10 @@ int main(int argc, char **argv, char **envp)
 	if ((opt = getenv("SHEEP_ZONE")) && strlen(opt)) {
 		zone = str_to_u32(opt);
 		if (errno != 0) {
-			sd_err("Invalid zone id '%s'", opt);
-			zone = -1;
+			sd_err("Invalid zone id '%s': must be "
+			       "an integer between 0 and %u",
+			       opt, UINT32_MAX);
+			exit(1);
 		}
 		if (zone >= 0)
 			sd_info("Using SHEEP_ZONE='%lu'", zone);

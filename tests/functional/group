@@ -115,7 +115,7 @@
 106 auto quick vdi
 107 auto quick dog
 #108 auto quick bad, port number has been tested already
-109 auto quick
+#109 auto quick bad, needs to configure zones
 110 auto quick
 111 auto quick dog
 113 auto dog

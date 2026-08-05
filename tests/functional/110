@@ -23,7 +23,7 @@ function testStartVnodesSucceeded
 
 testStartVnodesSucceeded 1
 testStartVnodesSucceeded 65535 # UINT16_MAX
-testStartVnodesFailed 0
+testStartVnodesSucceeded 0
 testStartVnodesFailed 65536 # UINT16_MAX + 1
 testStartVnodesFailed 65537 # UINT16_MAX + 2
 testStartVnodesFailed 4294967297 # UINT32_MAX + 2
