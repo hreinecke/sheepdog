@@ -77,8 +77,11 @@ next:
 		next = rb_entry(rb_next(&next->rb), struct sd_vnode, rb);
 		if (!next) /* Wrap around */
 			next = rb_entry(rb_first(root), struct sd_vnode, rb);
-		if (unlikely(next == vnodes[0]))
-			panic("can't find a valid vnode");
+		if (unlikely(next == vnodes[0])) {
+			sd_debug("can't find a valid vnode");
+			vnodes[i] = NULL;
+			continue;
+		}
 		for (int j = 0; j < i; j++)
 			if (same_zone(vnodes[j], next))
 				goto next;

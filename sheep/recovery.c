@@ -1279,6 +1279,8 @@ static void screen_object_list(struct recovery_list_work *rlw,
 
 		oid_to_vnodes(oids[i], &rw->cur_vinfo->vroot, nr_objs, vnodes);
 		for (j = 0; j < nr_objs; j++) {
+			if (!vnodes[j])
+				continue;
 			if (!vnode_is_local(vnodes[j]))
 				continue;
 
@@ -1299,6 +1301,10 @@ static void screen_object_list(struct recovery_list_work *rlw,
 static int vnode_to_node_idx(struct sd_vnode *vnode, int nr_nodes,
 			     struct sd_node *nodes)
 {
+	if (!nodes) {
+		sd_warn("invalid nodes array");
+		return -1;
+	}
 	for (int i = 0; i < nr_nodes; i++) {
 		if (node_id_cmp(&vnode->node->nid, &nodes[i].nid) == 0)
 			return i;
@@ -1362,6 +1368,8 @@ static bool check_diskfull_possibility(uint32_t epoch, struct vnode_info *vinfo,
 					(struct sd_vnode *)vnodes[k],
 					nr_nodes, nodes);
 
+				if (node_idx < 0)
+					continue;
 				/*
 				 * TODO: current calculation doesn't consider
 				 * about space consumption by metadata objects

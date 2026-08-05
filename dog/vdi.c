@@ -1438,13 +1438,24 @@ static void print_expected_location(uint64_t oid, int copies,
 		       "the object should be located at:\n");
 	oid_to_vnodes(oid, &sd_vroot, copies, vnodes);
 	for (int i = 0; i < copies; i++) {
-		const char *addr = addr_to_str(vnodes[i]->node->nid.addr,
-					       vnodes[i]->node->nid.port);
-		if (obj)
-			json_object_array_add(obj,
-				json_object_new_string(addr));
-		else
-			printf((i < copies - 1) ? "%s " : "%s", addr);
+		const char *addr = NULL;
+
+		if (vnodes[i])
+			addr = addr_to_str(vnodes[i]->node->nid.addr,
+					   vnodes[i]->node->nid.port);
+			
+		if (obj) {
+			struct json_object *addr_obj;
+
+			if (addr)
+				addr_obj = json_object_new_string(addr);
+			else
+				addr_obj = json_object_new_object();
+			json_object_array_add(obj, addr_obj);
+		} else {
+			printf((i < copies - 1) ? "%s " : "%s",
+			       addr ? addr : "<missing>");
+		}
 	}
 	if (!obj)
 		printf("\n");
@@ -1556,9 +1567,11 @@ static void save_oid(uint64_t oid, int copies)
 
 	oid_to_vnodes(oid, &sd_vroot, copies, vnodes);
 	for (int i = 0; i < copies; i++) {
-		struct oid_entry key = {
-			.node = (struct sd_node *) vnodes[i]->node
-		};
+		struct oid_entry key = {};
+
+		if (!vnodes[i])
+			continue;
+		key.node = (struct sd_node *) vnodes[i]->node;
 		entry = rb_search(&oid_tree, &key, rb, oid_entry_cmp);
 		if (!entry)
 			panic("rb_search() failure.");
@@ -1728,9 +1741,12 @@ retry:
 			nodes_to_vnodes(&nroot, &vroot);
 		oid_to_vnodes(oid, &vroot, nr_copies, vnode_buf);
 		for (j = 0; j < nr_copies; j++) {
-			const struct node_id *n = &vnode_buf[j]->node->nid;
+			const struct node_id *n = NULL;
 
-			printf("%s\n", addr_to_str(n->addr, n->port));
+			if (vnode_buf[j])
+				n = &vnode_buf[j]->node->nid;
+			printf("%s\n",
+			       n ? addr_to_str(n->addr, n->port) : "<missing>");
 		}
 		rb_destroy(&vroot, struct sd_vnode, rb);
 	next:
@@ -2524,6 +2540,8 @@ static void queue_vdi_check_work(const struct sd_inode *inode, uint64_t oid,
 
 	oid_to_vnodes(oid, &sd_vroot, nr_copies, tgt_vnodes);
 	for (int i = 0; i < nr_copies; i++) {
+		if (!tgt_vnodes[i])
+			continue;
 		info->vcw[i].info = info;
 		info->vcw[i].ec_index = i;
 		info->vcw[i].vnode = tgt_vnodes[i];
