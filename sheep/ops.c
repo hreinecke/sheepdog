@@ -103,6 +103,10 @@ static int cluster_new_vdi(struct request *req)
 		iocb.copy_policy = sys->cinfo.copy_policy;
 	}
 
+	/* We cannot have more copies than zones */
+	if (sys->cinfo.nr_copies > req->vinfo->nr_zones)
+		iocb.nr_copies = req->vinfo->nr_zones;
+
 	if (iocb.copy_policy)
 		iocb.nr_copies = ec_policy_to_dp(iocb.copy_policy, NULL, NULL);
 
