@@ -21,12 +21,18 @@ _log_and_exec_force()
 _list_obj_replicas()
 {
     local objname=$1
-    if _check_obj_location ${objname}; then
-	echo -e "vdi ${objname} inode object is correctly placed"
+    local oid
+
+    oid=$(_check_obj_location ${objname})
+    if [[ "$oid" ]]; then
+	o=$(printf "%016x" ${oid})
+	echo -e "inode object ${o} is correctly placed"
     fi
     for index in $($DOG vdi object map ${objname} -j | jq .[].index); do
-	if _check_obj_location ${objname} $index; then
-	    echo -e "vdi ${objname} data object ${index} is correctly placed"
+	oid=$(_check_obj_location ${objname} $index)
+	if [[ "$oid" ]]; then
+	    o=$(printf "%016x" ${oid})
+	    echo -e "data object ${o} is correctly placed"
 	fi
     done
     echo -e "\n#### OBJECT LIST\n"

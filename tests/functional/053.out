@@ -1,138 +1,20 @@
 QA output created by 053
 using backend plain store
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      5 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7005:128]
-DATE      4 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      5 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7005:128]
-DATE      4 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      5 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7005:128]
-DATE      4 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
-Cluster status: running, auto-recovery enabled
-
-Cluster created at DATE
-
-Epoch Time           Version [Host:Port:V-Nodes,,,]
-DATE      5 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7005:128]
-DATE      4 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      3 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128, 127.0.0.1:7005:128]
-DATE      2 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128, 127.0.0.1:7004:128]
-DATE      1 [127.0.0.1:7000:128, 127.0.0.1:7001:128, 127.0.0.1:7002:128, 127.0.0.1:7003:128]
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 5, "nr_nodes": 2, "nr_gateways": 2 }, { "time": "DATE", "epoch": 4, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 5, "nr_nodes": 2, "nr_gateways": 2 }, { "time": "DATE", "epoch": 4, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 5, "nr_nodes": 2, "nr_gateways": 2 }, { "time": "DATE", "epoch": 4, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }
+{ "auto_recovery": true, "status": "running", "vnode_strategy": "auto", "vnode_mode": "node", "creation_time": "DATE", "logs": [ { "time": "DATE", "epoch": 5, "nr_nodes": 2, "nr_gateways": 2 }, { "time": "DATE", "epoch": 4, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 3, "nr_nodes": 4, "nr_gateways": 2 }, { "time": "DATE", "epoch": 2, "nr_nodes": 3, "nr_gateways": 2 }, { "time": "DATE", "epoch": 1, "nr_nodes": 2, "nr_gateways": 2 } ] }

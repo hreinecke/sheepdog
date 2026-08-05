@@ -4,8 +4,6 @@
 
 . ./common
 
-_notrun "Skipped this test. Because of the known bug https://github.com/sheepdog/sheepdog/issues/103"
-
 _start_sheep 0 -g
 _start_sheep 1 -g
 _wait_for_sheep 2
@@ -16,7 +14,7 @@ _wait_for_sheep 4
 
 _cluster_format -c 2
 for i in 0 1 2 3; do
-    $DOG cluster info -p 700$i | _filter_cluster_info
+    $DOG cluster info -p 700$i -j | _filter_iso_date
 done
 $DOG cluster shutdown
 _wait_for_sheep_stop
@@ -29,7 +27,7 @@ _start_sheep 2
 _start_sheep 3
 _wait_for_sheep 4
 for i in 0 1 2 3; do
-    $DOG cluster info -p 700$i | _filter_cluster_info
+    $DOG cluster info -p 700$i -j  | _filter_iso_date
 done
 
 _start_sheep 4
@@ -37,7 +35,7 @@ _wait_for_sheep 5
 _start_sheep 5
 _wait_for_sheep 6
 for i in 0 1 2 3 4 5; do
-    $DOG cluster info -p 700$i | _filter_cluster_info
+    $DOG cluster info -p 700$i -j | _filter_iso_date
 done
 
 _kill_sheep 3
@@ -45,5 +43,5 @@ _wait_for_sheep 5
 _kill_sheep 4
 _wait_for_sheep 4
 for i in 0 1 2 5; do
-    $DOG cluster info -p 700$i | _filter_cluster_info
+    $DOG cluster info -p 700$i -j | _filter_iso_date
 done
