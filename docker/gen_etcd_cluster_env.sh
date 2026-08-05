@@ -9,6 +9,7 @@ echo "CLUSTER_STATE=new"
 echo "CLUSTER_TOKEN=etcd-cluster"
 echo "CLUSTER_IP=${NETWORK}.0/24"
 echo "SHEEP_VNODES="
+echo "SHEEP_ZONE="
 echo "VALGRIND="
 
 for i in $(seq ${NUM_NODES}); do

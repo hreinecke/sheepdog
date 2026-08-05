@@ -371,8 +371,12 @@ _start_sheep()
     # ensure that sheep is not running
     local running=true
     local cnt
+    local node=$1
+    local sheep="sheep${node}"
+    local zone=$1
+
     for cnt in `seq 1 10`; do  # wait at most 10 seconds
-	local SHEEPS=$(_check_sheep $1)
+	local SHEEPS=$(_check_sheep $node)
         if [ $SHEEPS == 0 ]; then
             running=false
             break
@@ -381,7 +385,7 @@ _start_sheep()
     done
 
     if $running; then
-        _die "sheep $1 is still running"
+        _die "${sheep} is still running"
     fi
 
     if $MD && [ -z "$MD_STORE" ]; then
@@ -390,15 +394,22 @@ _start_sheep()
 
     if [[ "$DRIVER" == etcd* ]]; then
 	if [[ "$2" == '-g' ]]; then
-	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep$1 2> /tmp/sheep$1.log
-	    SHEEP_VNODES=0 docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$1 2> /tmp/sheep$1.log
+	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down ${sheep} 2> /dev/null
+	    SHEEP_VNODES=0 docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
+	elif [[ "$2" == '-z' ]]; then
+	    zone=$3
+	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down ${sheep} 2> /dev/null
+	    SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	elif [[ "${SHEEP_VNODES}" ]]; then
-	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep$1 2> /tmp/sheep$1.log
-	    SHEEP_VNODES=${SHEEP_VNODES} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$1 2> /tmp/sheep$1.log
+	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down ${sheep} 2> /dev/null
+	    SHEEP_VNODES=${SHEEP_VNODES} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	fi
-	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} start sheep$1 2> /tmp/sheep$1.log
+	VALGRIND=${VALGRIND} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} start ${sheep} 2> /dev/null
     else
-	$SHEEP $STORE/$1$MD_STORE -z $1 -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
+	if [[ "$2" == "-g" ]]; then
+	       SHEEP_OPTIONS="$2"
+	fi
+	$SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS
     fi
 
     if [ $? != 0 ]; then
@@ -671,6 +682,36 @@ _clear_data_obj()
 		   busybox 2> /dev/null
     else
 	dd if=/dev/zero of=$STORE/${sheep}/obj/${oid} bs=1M count=4 > /dev/null 2>&1
+    fi
+}
+
+_delete_data_obj()
+{
+    local sheep=$1
+    local oid=$2
+
+    if [[ "$DRIVER" == etcd* ]]; then
+	    echo "rm /tmp/sheepdog/obj/${oid}" | \
+		docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${sheep}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
+    else
+	rm $STORE/${sheep}/obj/${oid}
+    fi
+}
+
+_overwrite_data_obj()
+{
+    local sheep=$1
+    local oid=$2
+
+    if [[ "$DRIVER" == etcd* ]]; then
+	    echo "_random | dd of=/tmp/sheepdog/obj/${oid} bs=4096 count=1024" | \
+		docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${sheep}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
+    else
+	_random | dd of=$STORE/${sheep}/obj/${oid} bs=4096 count=1024 > /dev/null 2>&1
     fi
 }
 

@@ -24,7 +24,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP0_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=0
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep1:
@@ -45,7 +45,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP1_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=1
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep2:
@@ -66,7 +66,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP2_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=2
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep3:
@@ -87,7 +87,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP3_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=3
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep4:
@@ -108,7 +108,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP4_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=4
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep5:
@@ -129,7 +129,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP5_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=5
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep6:
@@ -150,7 +150,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP6_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=6
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep7:
@@ -171,7 +171,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP7_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=7
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep8:
@@ -192,7 +192,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP8_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=8
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep9:
@@ -213,7 +213,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP9_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=9
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep10:
@@ -234,7 +234,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP10_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=10
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep11:
@@ -255,7 +255,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP11_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=11
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep12:
@@ -276,7 +276,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP12_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=12
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep13:
@@ -297,7 +297,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP13_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=13
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep14:
@@ -318,7 +318,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP14_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=14
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep15:
@@ -339,7 +339,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP15_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=15
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep16:
@@ -360,7 +360,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP16_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=16
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep17:
@@ -381,7 +381,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP17_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=17
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep18:
@@ -402,7 +402,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP18_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=18
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep19:
@@ -423,7 +423,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP19_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=19
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep20:
@@ -444,7 +444,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP20_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=20
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep21:
@@ -465,7 +465,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP21_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=21
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep22:
@@ -486,7 +486,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP22_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=22
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   sheep23:
@@ -507,7 +507,7 @@ services:
       - SHEEP_BASE_DIR=/var/lib/sheep
       - SHEEP_ADDR=${SHEEP23_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=23
+      - SHEEP_ZONE=${SHEEP_ZONE}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
 
