@@ -588,7 +588,7 @@ static bool oid_stale(uint64_t oid, int ec_index, struct vnode_info *vinfo)
 	oid_to_vnodes(oid, &vinfo->vroot, nr_copies, obj_vnodes);
 	for (i = 0; i < nr_copies; i++) {
 		v = obj_vnodes[i];
-		if (vnode_is_local(v)) {
+		if (v && vnode_is_local(v)) {
 			if (ec_index < SD_MAX_COPIES) {
 				if (i == ec_index)
 					ret = false;

@@ -39,6 +39,8 @@ static bool is_access_local(struct request *req, uint64_t oid)
 	nr_copies = get_req_copy_number(req);
 	oid_to_vnodes(oid, &req->vinfo->vroot, nr_copies, obj_vnodes);
 	for (i = 0; i < nr_copies; i++) {
+		if (!obj_vnodes[i])
+			continue;
 		if (vnode_is_local(obj_vnodes[i]))
 			return true;
 	}
