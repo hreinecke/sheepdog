@@ -305,30 +305,12 @@ static int etcd_node_disk_update(struct etcd_node *node,
 		}						\
 	} while (false)
 
-static inline bool etcd_node_upload(struct sd_node *node)
+static inline int etcd_node_upload(void)
 {
 	int rc;
 #ifdef HAVE_DISKVNODES
 	int i;
 #endif
-
-	if (node) {
-		ETCD_UPDATE_NODE_INT(&this_node, node, zone);
-		ETCD_UPDATE_NODE_INT(&this_node, node, nr_vnodes);
-		ETCD_UPDATE_NODE_INT(&this_node, node, space);
-#ifdef HAVE_DISKVNODES
-		for (i = 0; i < DISK_MAX; i++) {
-			struct disk_info *di = &node->disks[i];
-
-			if (!di->disk_id)
-				continue;
-			rc = etcd_node_disk_update(&this_node, di, i);
-			if (rc < 0)
-				goto err;
-		}
-#endif
-		return 0;
-	}
 
 	rc = etcd_node_set_addr(&this_node, "addr");
 	if (rc) goto err;
@@ -2082,6 +2064,34 @@ static void etcd_handle_notify(struct etcd_ctx *ctx,
 	free(msg);
 }
 
+static void etcd_handle_update_node(struct etcd_ctx *ctx,
+				    struct json_object *obj)
+{
+	struct json_object *node_obj;
+	struct etcd_node update, *node;
+
+	node_obj = json_object_object_get(obj, "node");
+	if (!node_obj) {
+		sd_warn("failed to retrieve 'node' object");
+		return;
+	}
+	memset(&update, 0, sizeof(update));
+	update.ctx = ctx;
+	rb_init_node(&update.rb);
+	strcpy(update.node_id, json_object_get_string(node_obj));
+	sd_debug("UPDATE NODE %s", update.node_id);
+	sd_mutex_lock(&etcd_node_mutex);
+	etcd_build_node_list(this_ctx, &etcd_node_root);
+
+	node = rb_search(&etcd_node_root, &update, rb, etcd_node_cmp);
+	sd_mutex_unlock(&etcd_node_mutex);
+	if (!node) {
+		sd_warn("update node not registered");
+		return;
+	}
+	sd_update_node_handler(&node->node);
+}
+
 static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 {
 	struct etcd_ctx *ctx = arg;
@@ -2191,6 +2201,7 @@ static void etcd_event_watch_cb(void *arg, struct etcd_kv *kv)
 		etcd_handle_notify(ctx, obj);
 		break;
 	case EVENT_UPDATE_NODE:
+		etcd_handle_update_node(ctx, obj);
 		break;
 	default:
 		sd_err("invalid event '%s'", kv->key);
@@ -2352,7 +2363,7 @@ static int etcd_join(const struct sd_node *myself,
 	etcd_build_node_list(this_ctx, &etcd_node_root);
 	sd_mutex_unlock(&etcd_node_mutex);
 
-	ret = etcd_node_upload(NULL);
+	ret = etcd_node_upload();
 	if (ret < 0) {
 		if (ret == -EEXIST)
 			sd_err("Previous etcd key exist, shoot myself. Please "
@@ -2449,12 +2460,59 @@ out:
 	return ret < 0 ? ret : 0;
 }
 
+static inline int etcd_node_update(struct sd_node *node)
+{
+	int rc = 0;
+#ifdef HAVE_DISKVNODES
+	int i;
+#endif
+
+	ETCD_UPDATE_NODE_INT(&this_node, node, zone);
+	ETCD_UPDATE_NODE_INT(&this_node, node, nr_vnodes);
+	ETCD_UPDATE_NODE_INT(&this_node, node, space);
+#ifdef HAVE_DISKVNODES
+	for (i = 0; i < DISK_MAX; i++) {
+		struct disk_info *di = &node->disks[i];
+
+		if (!di->disk_id)
+			continue;
+		rc = etcd_node_disk_update(&this_node, di, i);
+		if (rc < 0)
+			goto err;
+	}
+#endif
+	return 0;
+}
+
 static int etcd_update_node(struct sd_node *node)
 {
-	int ret;
+	struct json_object *obj;
+	struct etcd_node *n, *found = NULL;
+	int rc;
 
-	ret = etcd_node_upload(node);
-	return ret < 0 ? SD_RES_INCOMPLETE : 0;
+	if (etcd_node_update(node) < 0)
+		return SD_RES_INCOMPLETE;
+
+	sd_mutex_lock(&etcd_node_mutex);
+	etcd_build_node_list(this_ctx, &etcd_node_root);
+	sd_mutex_unlock(&etcd_node_mutex);
+
+	rb_for_each_entry(n, &etcd_node_root, rb) {
+		if (!node_cmp(&n->node, node)) {
+			found = n;
+			break;
+		}
+	}
+	if (!found) {
+		sd_warn("node not registered");
+		return SD_RES_NOT_FOUND;
+	}
+	obj = json_object_new_object();
+	json_object_object_add(obj, "node",
+			       json_object_new_string(found->node_id));
+	rc = etcd_update_event(this_ctx, EVENT_UPDATE_NODE, obj);
+	json_object_put(obj);
+	return rc;
 }
 
 static int etcd_get_local_addr(uint8_t *bytes)
