@@ -472,16 +472,22 @@ retry:
 		if (json_output) {
 			struct json_object *epoch_obj =
 				json_object_new_object();
-			struct json_object *nodes_obj =
-				json_object_new_array();
 			json_object_object_add(epoch_obj, "time",
 				    json_object_new_string(time_str));
 			json_object_object_add(epoch_obj, "epoch",
 				json_object_new_int(log->epoch));
+			if (!verbose)
+				logs_to_json_summary(epoch_obj, log,
+						     logs->flags);
+			else {
+				struct json_object *nodes_obj =
+					json_object_new_array();
+				logs_to_json(nodes_obj, log,
+					     logs->flags);
+				json_object_object_add(epoch_obj, "nodes",
+						       nodes_obj);
+			}
 			json_object_array_add(log_obj, epoch_obj);
-			logs_to_json(nodes_obj, log,
-				     logs->flags);
-			json_object_object_add(epoch_obj, "nodes", nodes_obj);
 		} else {
 			printf(raw_output ? "%s %d" : "%s %6d",
 			       time_str, log->epoch);

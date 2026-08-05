@@ -93,6 +93,38 @@ void logs_to_json(struct json_object *obj, const struct epoch_log *logs,
 	}
 }
 
+void logs_to_json_summary(struct json_object *obj, const struct epoch_log *logs,
+			  uint16_t flags)
+{
+	int i;
+	int nr_nodes = 0, nr_gateways = 0, nr_disks = 0;
+
+	for (i = 0; i < logs->nr_nodes; i++) {
+		const struct sd_node *entry = logs->nodes + i;
+
+		if (entry->nr_vnodes)
+			nr_nodes++;
+		else
+			nr_gateways++;
+		if (flags & SD_CLUSTER_FLAG_DISKMODE) {
+			int disk = 0;
+
+			for (disk = 0; disk < DISK_MAX; disk++) {
+				if (entry->disks[disk].disk_id == 0)
+					break;
+			}
+			nr_disks++;
+		}
+	}
+	json_object_object_add(obj, "nr_nodes",
+			       json_object_new_int(nr_nodes));
+	json_object_object_add(obj, "nr_gateways",
+			       json_object_new_int(nr_gateways));
+	if (flags & SD_CLUSTER_FLAG_DISKMODE)
+		json_object_object_add(obj, "nr_disks",
+				       json_object_new_int(nr_disks));
+}
+
 #ifdef HAVE_DISKVNODES
 static void json_to_disks(struct json_object *obj, struct sd_node *node)
 {
