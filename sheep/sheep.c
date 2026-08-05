@@ -880,7 +880,7 @@ int main(int argc, char **argv, char **envp)
 			explicit_addr = true;
 		}
 	}
-	if ((opt = getenv("SHEEP_PORT"))) {
+	if ((opt = getenv("SHEEP_PORT")) && strlen(opt)) {
 		port = str_to_u16(opt);
 		if (errno != 0 || port < 1) {
 			sd_err("Invalide port number '%s'", opt);
@@ -889,7 +889,7 @@ int main(int argc, char **argv, char **envp)
 		if (port != SD_LISTEN_PORT)
 			sd_info("Using SHEEP_PORT='%u'", port);
 	}
-	if ((opt = getenv("SHEEP_ZONE"))) {
+	if ((opt = getenv("SHEEP_ZONE")) && strlen(opt)) {
 		zone = str_to_u32(opt);
 		if (errno != 0) {
 			sd_err("Invalid zone id '%s'", opt);
@@ -898,7 +898,7 @@ int main(int argc, char **argv, char **envp)
 		if (zone >= 0)
 			sd_info("Using SHEEP_ZONE='%lu'", zone);
 	}
-	if ((opt = getenv("SHEEP_VNODES"))) {
+	if ((opt = getenv("SHEEP_VNODES")) && strlen(opt)) {
 		nr_vnodes = str_to_u32(opt);
 		if (errno != 0) {
 			sd_err("Invalid number of vnodes '%s'", opt);
