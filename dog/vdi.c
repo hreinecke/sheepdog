@@ -1484,6 +1484,8 @@ static int vdi_object_location(int argc, char **argv)
 			if (strlen(inode->header.tag))
 				JSON_ADD_STRING(out_obj, "tag",
 						inode->header.tag);
+			JSON_ADD_INT(out_obj, "nr_copies",
+				     inode->header.nr_copies);
 		} else
 			printf("Looking for the inode object 0x%" PRIx32
 			       " with %d nodes\n\n", vid, sd_nodes_nr);
