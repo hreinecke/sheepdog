@@ -97,9 +97,9 @@
 #088 auto quick cluster bad, requiring to change sheep address
 089 auto quick sheepfs
 090 auto quick vdi md
-#091 auto quick cluster md
-#092 auto quick vdi
-#093 auto quick vdi
+091 auto quick cluster md
+092 auto quick vdi
+093 auto quick vdi
 #094 auto quick store md bad, needs access to MD storage
 095 auto quick store md
 096 auto cluster
