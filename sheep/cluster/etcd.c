@@ -167,7 +167,7 @@ static inline bool etcd_node_exists(struct etcd_ctx *ctx, const char *node_id)
 	int rc;
 
 	snprintf(path, sizeof(path),
-		 DEFAULT_BASE MEMBER_ZNODE "%s",
+		 DEFAULT_BASE MEMBER_ZNODE "%s/",
 		 node_id);
 	rc = etcd_kv_range(ctx, path, &kvs);
 	etcd_kv_free(kvs, rc);
@@ -180,9 +180,8 @@ static inline int etcd_node_delete(struct etcd_node *node)
 {
 	char key[1024];
 
-	strcpy(key, DEFAULT_BASE);
-	strcat(key, MEMBER_ZNODE);
-	strcat(key, node->node_id);
+	snprintf(key, sizeof(key), DEFAULT_BASE MEMBER_ZNODE "%s/",
+		 node->node_id);
 	return etcd_kv_delete(node->ctx, key);
 }
 
