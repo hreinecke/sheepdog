@@ -105,6 +105,11 @@ static int cluster_new_vdi(struct request *req)
 
 	if (iocb.copy_policy)
 		iocb.nr_copies = ec_policy_to_dp(iocb.copy_policy, NULL, NULL);
+	else if (sys->cinfo.nr_copies > req->vinfo->nr_zones) {
+		/* Cluster doesn't have enough zones */
+		iocb.nr_copies = req->vinfo->nr_zones;
+		sd_debug("reduce number of copies to %d", iocb.nr_copies);
+	}
 
 	if (!hdr->vdi.block_size_shift)
 		iocb.block_size_shift = sys->cinfo.block_size_shift;

@@ -1200,8 +1200,8 @@ static int create_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 	int ret;
 
 	sd_debug("%s: size %" PRIu64 ", new_vid %" PRIx32 ", copies %d, "
-		 "snapid %" PRIu32 " copy policy %"PRIu8 "store policy %"PRIu8
-		 "block_size_shift %"PRIu8, iocb->name, iocb->size, new_vid,
+		 "snapid %" PRIu32 " copy policy %"PRIu8 " store policy %"PRIu8
+		 " block_size_shift %"PRIu8, iocb->name, iocb->size, new_vid,
 		  iocb->nr_copies, new_snapid, new->header.copy_policy,
 		  new->header.store_policy, iocb->block_size_shift);
 

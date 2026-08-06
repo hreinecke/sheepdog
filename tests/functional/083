@@ -5,10 +5,10 @@
 . ./common
 
 for i in `seq 0 1`; do
-    _start_sheep $i "-z 0"
+    _start_sheep $i -z 0
 done
 
-_start_sheep 2 "-z 1"
+_start_sheep 2 -z 1
 
 _wait_for_sheep 3
 
@@ -24,14 +24,15 @@ echo "original data" | $DOG vdi write test
 
 $DOG cluster shutdown
 
-_delete_data_obj 1 007c2b2500000000
+_delete_data_obj 0 007c2b2500000000
 
 for i in `seq 0 1`; do
-    _start_sheep $i "-z 0"
+    _start_sheep $i -z 0
 done
 
-_start_sheep 2 "-z 1"
+_start_sheep 2 -z 1
 
+_wait_for_sheep_recovery 0
 _wait_for_sheep 3
 
 $DOG vdi check -e test | _filter_ip_port

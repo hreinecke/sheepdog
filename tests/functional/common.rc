@@ -171,7 +171,9 @@ _setup()
 {
     mkdir -p $STORE
     if [[ "$DRIVER" == etcd* ]]; then
-	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start 2> /dev/null
+	for i in $(seq 0 23); do
+	    VALGRIND=${VALGRIND} SHEEP_ZONE=$i docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$i 2> /dev/null
+	done
     fi
 }
 
@@ -370,9 +372,13 @@ _start_sheep()
 {
     # ensure that sheep is not running
     local running=true
+    local node=$1
+    local sheep="sheep${node}"
+    local zone=${node}
+    local vnodes=${SHEEP_VNODES}
     local cnt
     for cnt in `seq 1 10`; do  # wait at most 10 seconds
-	local SHEEPS=$(_check_sheep $1)
+	local SHEEPS=$(_check_sheep $node)
         if [ $SHEEPS == 0 ]; then
             running=false
             break
@@ -381,27 +387,33 @@ _start_sheep()
     done
 
     if $running; then
-        _die "sheep $1 is still running"
+        _die "${sheep} is still running"
     fi
 
     if $MD && [ -z "$MD_STORE" ]; then
-	MD_STORE=",$STORE/$1/d0,$STORE/$1/d1,$STORE/$1/d2"
+	MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2"
     fi
 
+    if [[ "$2" == '-z' ]]; then
+	zone=$3
+    fi
+    if [[ "$2" == '-g' ]]; then
+	vnodes=0
+    fi
     if [[ "$DRIVER" == etcd* ]]; then
 	# Recreate the container with 'rm', not 'down': 'down' also drops the
 	# project managed sheep-br network, which orphans the already created
 	# containers of the other sheeps.
-	if [[ "$2" == '-g' ]]; then
-	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} rm -sf sheep$1 > /dev/null 2> /tmp/sheep$1.log
-	    SHEEP_VNODES=0 docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$1 2> /tmp/sheep$1.log
+	if [[ "$2" == '-g' ]] || [[ "$2" == '-z' ]]; then
+	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} rm -sf ${sheep} > /dev/null 2> /dev/null
+	    SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	elif [[ "${SHEEP_VNODES}" ]]; then
-	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} rm -sf sheep$1 > /dev/null 2> /tmp/sheep$1.log
-	    SHEEP_VNODES=${SHEEP_VNODES} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$1 2> /tmp/sheep$1.log
+	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} rm -sf ${sheep} > /dev/null 2> /dev/null
+	    SHEEP_VNODES=${SHEEP_VNODES} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	fi
-	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} start sheep$1 2> /tmp/sheep$1.log
+	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} start ${sheep} 2> /dev/null
     else
-	$SHEEP $STORE/$1$MD_STORE -z $1 -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
+	$SHEEP $STORE/${node}$MD_STORE -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
     fi
 
     if [ $? != 0 ]; then

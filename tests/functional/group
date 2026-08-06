@@ -56,7 +56,7 @@
 043 auto quick store
 045 auto quick store md
 046 auto quick vdi md
-#047 auto quick vdi md bad, need to configure zones
+#047 auto quick vdi md bad, need to set journal
 048 auto quick dog
 050 auto quick cluster md
 051 auto quick cluster md
@@ -89,7 +89,7 @@
 080 auto quick vdi md
 081 auto quick vdi md
 082 auto quick vdi md
-#083 auto quick vdi bad, need to configure zones
+083 auto quick vdi
 #084 auto quick sheepfs
 #085 auto quick vdi md bad, is using MD storage
 086 auto quick vdi md
