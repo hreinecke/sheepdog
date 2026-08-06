@@ -247,6 +247,14 @@ int etcd_conn_init(struct etcd_conn_ctx *conn)
 	}
 	/* Disable persistent sessions */
 	ne_set_session_flag(ne_sess, NE_SESSFLAG_PERSIST, 0);
+	/*
+	 * Without a connect timeout we are at the mercy of the TCP SYN
+	 * backoff, which blackholes a request for more than a minute if
+	 * the peer drops the first SYNs.  Bound it; the callers either
+	 * retry or report the error.  Do _not_ set a read timeout, the
+	 * watch requests are long-running by design.
+	 */
+	ne_set_connect_timeout(ne_sess, ETCD_CONNECT_TIMEOUT);
 	conn->priv = ne_sess;
 	return 0;
 }
