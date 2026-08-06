@@ -170,11 +170,6 @@ _die()
 _setup()
 {
     mkdir -p $STORE
-    if [[ "$DRIVER" == etcd* ]]; then
-	for i in $(seq 0 23); do
-	    VALGRIND=${VALGRIND} SHEEP_ZONE=$i docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep$i 2> /dev/null
-	done
-    fi
 }
 
 _cleanup()
@@ -401,16 +396,7 @@ _start_sheep()
 	vnodes=0
     fi
     if [[ "$DRIVER" == etcd* ]]; then
-	# Recreate the container with 'rm', not 'down': 'down' also drops the
-	# project managed sheep-br network, which orphans the already created
-	# containers of the other sheeps.
-	if [[ "$2" == '-g' ]] || [[ "$2" == '-z' ]]; then
-	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} rm -sf ${sheep} > /dev/null 2> /dev/null
-	    SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
-	elif [[ "${SHEEP_VNODES}" ]]; then
-	    docker compose ${DOCKER_ENV} ${DOCKER_YAML} rm -sf ${sheep} > /dev/null 2> /dev/null
-	    SHEEP_VNODES=${SHEEP_VNODES} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
-	fi
+	SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} start ${sheep} 2> /dev/null
     else
 	$SHEEP $STORE/${node}$MD_STORE -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
