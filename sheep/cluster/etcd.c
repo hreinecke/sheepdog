@@ -920,14 +920,34 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 				node->idx, node->node_id);
 			node_idx = node->idx + 1;
 		}
-		if (node->idx < master_idx)
-			master_idx = node->idx;
 		rc = etcd_kv_to_node(kv, node);
 		if (rc < 0) {
 			sd_err("failed to load node attr '%s'", key);
 			etcd_kv_free(kvs, num_kvs);
 			return rc;
 		}
+	}
+	rb_for_each_entry(node, root, rb) {
+		static const uint8_t empty_addr[16];
+
+		/*
+		 * When the lease of a node expires all of its attributes
+		 * are dropped and only 'status' is left behind, as that
+		 * one is not attached to the lease.  Drop those entries;
+		 * they carry no address, so they would collide with each
+		 * other in the node tree and silently displace valid
+		 * nodes.
+		 */
+		if (!memcmp(node->node.nid.addr, empty_addr,
+			    sizeof(empty_addr))) {
+			sd_warn("etcd node '%s' has no address, dropping",
+				node->node_id);
+			rb_erase(&node->rb, root);
+			free(node);
+			continue;
+		}
+		if (node->idx < master_idx)
+			master_idx = node->idx;
 	}
 	rb_for_each_entry(node, root, rb) {
 		if (node->idx == master_idx) {
@@ -1835,7 +1855,11 @@ static void etcd_handle_join(struct etcd_ctx *ctx,
 				node->node_id, etcd_status_names[node->status]);
 			continue;
 		}
-		rb_insert(&sd_root, &node->node, rb, node_cmp);
+		if (rb_insert(&sd_root, &node->node, rb, node_cmp)) {
+			sd_warn("duplicate node '%s' (%s), skipping",
+				node->node_id, node_to_str(&node->node));
+			continue;
+		}
 		nr_nodes++;
 	}
 	sd_mutex_unlock(&etcd_node_mutex);
@@ -1903,7 +1927,11 @@ static void etcd_handle_leave(struct etcd_ctx *ctx,
 	INIT_RB_ROOT(&sd_root);
 	sd_mutex_lock(&etcd_node_mutex);
 	rb_for_each_entry(sd_node, &etcd_node_root, rb) {
-		rb_insert(&sd_root, &sd_node->node, rb, node_cmp);
+		if (rb_insert(&sd_root, &sd_node->node, rb, node_cmp)) {
+			sd_warn("duplicate node '%s' (%s), skipping",
+				sd_node->node_id, node_to_str(&sd_node->node));
+			continue;
+		}
 		nr_nodes++;
 	}
 	sd_mutex_unlock(&etcd_node_mutex);
@@ -1936,6 +1964,7 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 	etcd_build_node_list(ctx, &etcd_node_root);
 	joining = rb_search(&etcd_node_root, &key, rb, etcd_node_cmp);
 	if (!joining) {
+		sd_mutex_unlock(&etcd_node_mutex);
 		sd_warn("etcd node '%s' not registered",
 			key.node_id);
 		return;
@@ -1943,7 +1972,11 @@ static void etcd_handle_accept(struct etcd_ctx *ctx,
 
 	INIT_RB_ROOT(&sd_root);
 	rb_for_each_entry(node, &etcd_node_root, rb) {
-		rb_insert(&sd_root, &node->node, rb, node_cmp);
+		if (rb_insert(&sd_root, &node->node, rb, node_cmp)) {
+			sd_warn("duplicate node '%s' (%s), skipping",
+				node->node_id, node_to_str(&node->node));
+			continue;
+		}
 		nr_nodes ++;
 	}
 	sd_mutex_unlock(&etcd_node_mutex);
@@ -2429,10 +2462,29 @@ static void etcd_lease_refresh(void *arg)
 		return;
 
 	ret = etcd_lease_keepalive(this_ctx);
-	if (ret < 0) {
+	if (ret == -EKEYEXPIRED) {
+		/*
+		 * The lease has expired before we got around to refresh
+		 * it, so etcd dropped all keys attached to it and this
+		 * node is no longer registered.  Grant a new lease and
+		 * re-upload the node record; without it any sheep
+		 * rebuilding the node list from etcd would see a member
+		 * without an address.
+		 */
+		sd_warn("lease expired, re-registering node");
+		this_ctx->lease = 0;
+		ret = etcd_lease_grant(this_ctx);
+		if (!ret)
+			ret = etcd_node_upload();
+		if (ret < 0)
+			sd_err("failed to re-register node, error %d", ret);
+	} else if (ret < 0)
 		sd_err("failed to refresh lease, error %d", ret);
-		return;
-	}
+
+	/*
+	 * Always re-arm the timer; giving up here would leave the node
+	 * running without ever refreshing its lease again.
+	 */
 	add_timer(arg, this_ctx->ttl * 500);
 }
 
