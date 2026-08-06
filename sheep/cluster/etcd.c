@@ -1121,7 +1121,6 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 			json_object_object_add(obj, "data", data_obj);
 		}
 		break;
-	case SD_OP_NOTIFY_VDI_ADD:
 	case SD_OP_RELEASE_VDI:
 		vdi_obj = json_object_new_object();
 		etcd_vdi_to_json(&msg->req, vdi_obj);
@@ -1198,6 +1197,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 			json_object_object_add(obj, "data", data_obj);
 		}
 		break;
+	case SD_OP_NOTIFY_VDI_ADD:
 	case SD_OP_ALTER_VDI_COPY:
 		vdi_obj = json_object_new_object();
 		etcd_vdi_state_to_json(&msg->req, vdi_obj);
