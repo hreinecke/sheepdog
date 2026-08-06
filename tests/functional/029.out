@@ -16,8 +16,10 @@ To create erasure coded vdi, set -c x:y
   test9        0   20 MB   20 MB  0.0 MB DATE   fd4094   16:7                22
   test8        0   20 MB   20 MB  0.0 MB DATE   fd4247    4:5                22
 data object 00fd381500000001 is correctly placed
+data object 00fd366200000001 is correctly placed
 data object 00fd2de300000001 is correctly placed
 data object 00fd2c3000000001 is correctly placed
 data object 00fd314900000001 is correctly placed
+data object 00fd2f9600000001 is correctly placed
 data object 00fd424700000001 is correctly placed
 data object 00fd409400000001 is correctly placed
