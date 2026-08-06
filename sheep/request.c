@@ -61,6 +61,7 @@ static void io_op_done(struct work *work)
 		break;
 	case SD_RES_SUCCESS:
 	case SD_RES_NETWORK_ERROR:
+	case SD_RES_NO_OBJ:
 		break;
 	default:
 		sd_debug("unhandled error %s", sd_strerror(req->rp.result));
