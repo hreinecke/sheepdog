@@ -571,6 +571,13 @@ int etcd_kv_txn_update(struct etcd_ctx *ctx, const char *key,
 			       json_object_new_string(encoded_key));
 	json_object_object_add(put_obj, "value",
 			       json_object_new_string(encoded_new));
+	/*
+	 * A plain 'put' detaches the key from its lease, so an updated
+	 * key would survive the expiry of the lease it had been created
+	 * with.  Keep the existing lease attached.
+	 */
+	json_object_object_add(put_obj, "ignore_lease",
+			       json_object_new_boolean(true));
 	json_object_object_add(succ_op_obj, "request_put", put_obj);
 	json_object_array_add(succ_obj, succ_op_obj);
 	json_object_object_add(post_obj, "success", succ_obj);
@@ -1204,7 +1211,7 @@ retry:
 	if (ret < 0) {
 		sd_debug("%s: cluster id failed, error %d",
 		       __func__, ret);
-		if (ret == -ENETUNREACH && tmo) {
+		if ((ret == -ENETUNREACH || ret == -ETIMEDOUT) && tmo) {
 			sleep(1);
 			tmo--;
 			goto retry;
