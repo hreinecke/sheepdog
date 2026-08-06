@@ -8,23 +8,19 @@ err=0
 
 function testStartZoneSucceeded
 {
-	zone="$1"
-	mkdir -p "$STORE/0"
-	if $SHEEP "$STORE/0" -z "$zone" ; then
-		_wait_for_sheep 1
-		$DOG node list
-	else
-		err=1
-	fi
-	_cleanup
+    zone="$1"
+    _start_sheep 0 -z ${zone}
+    _wait_for_sheep 1
+    _node_list
+    _cleanup
 }
 
 function testStartZoneFailed
 {
-	zone="$1"
-	mkdir -p "$STORE/0"
-	$SHEEP "$STORE/0" -z "$zone" && err=1
-	_cleanup
+    zone="$1"
+    _start_sheep 0 -z ${zone}
+    _wait_for_sheep_stop 0
+    _cleanup
 }
 
 testStartZoneSucceeded 0
