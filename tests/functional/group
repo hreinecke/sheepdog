@@ -23,7 +23,7 @@
 005 auto quick cluster md
 006 auto quick cluster md
 007 auto quick cluster md
-#008 auto store md bad, needs VDI locking
+008 auto store md
 009 auto quick store md
 010 auto quick store
 011 auto quick store md
