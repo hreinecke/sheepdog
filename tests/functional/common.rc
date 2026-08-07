@@ -53,19 +53,20 @@ _safe_remove()
 _safe_remove_objs()
 {
     local node=$1
+    local disk=${2:-obj}
 
     if [[ "$DRIVER" == etcd* ]]; then
-	local ETCD_STORE=/var/lib/sheepdog
-	echo "mv ${ETCD_STORE}/${node}/obj ${ETCD_STORE}/${node}/obj.tmp" | \
+	local sheep_env=${STORE}/sheep${node}.env
+	eval $(tail -1 ${sheep_env} | cut -f 1 -d ,)
+	eval $(grep '^SHEEP_STORE=' ${DOCKER_ENV})
+	local base_dir=${SHEEP_BASE_DIR:-$SHEEP_STORE}
+
+	echo "mv ${base_dir}/${disk} ${base_dir}/${disk}.tmp && rm -rf ${base_dir}/${disk}.tmp" | \
 	    docker run -i --rm \
-		   --volume sheepdog-etcd_sheep${node}-data:/tmp/sheepdog \
-		   busybox 2> /dev/null
-	echo "rm -rf ${ETCD_STORE}/${node}/obj.tmp" | \
-	    docker run -i --rm \
-		   --volume sheepdog-etcd_sheep${node}-data:/tmp/sheepdog \
-		   busybox 2> /dev/null
+		   --volume sheepdog-etcd_sheep${node}-data:${SHEEP_STORE} \
+		   busybox
     else
-	_safe_remove ${STORE}/${node}/obj
+	_safe_remove ${STORE}/${node}/${disk}
     fi
 }
 
