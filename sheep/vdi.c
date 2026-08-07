@@ -1164,11 +1164,8 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	new->header.block_size_shift =
 		find_next_bit(&block_size, BITS_PER_LONG, 0);
 	new->header.snap_id = new_snapid;
-	if (SD_INODE_USE_UUID(&new->header)) {
-		uuid_generate(uuid);
-		memcpy(&new->header.vm_clock_nsec, (char *)uuid, 8);
-		memcpy(&new->header.vm_state_size, (char *)(uuid + 8), 8);
-	}
+	uuid_generate(uuid);
+	memcpy(new->header.uuid, (uint8_t *)uuid, sizeof(uuid));
 	new->header.parent_vdi_id = iocb->base_vid;
 	if (data_vdi_id)
 		sd_inode_copy_vdis(sheep_bnode_writer, sheep_bnode_reader,
@@ -2149,7 +2146,7 @@ int sd_create_hyper_volume(const char *name, uint32_t *vdi_id)
 	hdr.vdi.vdi_size = SD_MAX_VDI_SIZE;
 	hdr.vdi.copies = sys->cinfo.nr_copies;
 	hdr.vdi.copy_policy = sys->cinfo.copy_policy;
-	hdr.vdi.store_policy = SD_HYPER_STORE_POLICY | SD_UUID_POLICY_MASK;
+	hdr.vdi.store_policy = SD_HYPER_STORE_POLICY;
 	/* XXX Cannot use both features, Hypervolume and Change object size */
 	if (sys->cinfo.block_size_shift != SD_DEFAULT_BLOCK_SIZE_SHIFT) {
 		hdr.vdi.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;

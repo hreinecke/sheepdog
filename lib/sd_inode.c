@@ -843,8 +843,7 @@ void sd_inode_copy_vdis(write_node_fn writer, read_node_fn reader,
 	struct sd_index_header *header = INDEX_HEADER(data_vdi_id);
 	struct sd_index_header *leaf_node;
 	struct sd_indirect_idx *last_idx, *old_iter_idx, *new_iter_idx;
-	bool is_hyper_policy = ((store_policy & SD_STORE_POLICY_MASK) ==
-				SD_HYPER_STORE_POLICY);
+	bool is_hyper_policy = (store_policy == SD_HYPER_STORE_POLICY);
 	uint64_t oid;
 	void *tmp;
 

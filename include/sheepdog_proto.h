@@ -334,6 +334,7 @@ struct sd_inode_0_8 {
  *
  * users of the released area:
  * - uint32_t btree_counter
+ * - uint8_t[16] uuid
  */
 #define OLD_MAX_CHILDREN 1024U
 
@@ -350,8 +351,6 @@ struct recovery_throttling {
 
 #define SD_DEFAULT_STORE_POLICY 0
 #define SD_HYPER_STORE_POLICY 1
-#define SD_UUID_POLICY_MASK 0x80
-#define SD_STORE_POLICY_MASK 0x7f
 
 struct sd_inode_header {
 	char name[SD_MAX_VDI_LEN];
@@ -369,7 +368,9 @@ struct sd_inode_header {
 	uint32_t vdi_id;
 	uint32_t parent_vdi_id;
 	uint32_t btree_counter;
-	uint32_t __unused[OLD_MAX_CHILDREN - 1];
+	uint32_t __unused0;
+	uint8_t  uuid[16];
+	uint32_t __unused1[OLD_MAX_CHILDREN - 18];
 };
 
 struct sd_inode {
@@ -389,13 +390,11 @@ struct sd_indirect_idx {
 	uint64_t oid;
 };
 
-#define SD_INODE_STORE_POLICY(i) ((i)->store_policy & SD_STORE_POLICY_MASK)
-#define SD_INODE_USE_UUID(i) ((i)->store_policy & SD_UUID_POLICY_MASK)
+#define SD_INODE_STORE_POLICY(i) ((i)->store_policy)
 
 static inline bool sd_store_policy_is_hyper(const struct sd_inode_header *inode)
 {
-	uint8_t policy = inode->store_policy & SD_STORE_POLICY_MASK;
-	return policy == SD_HYPER_STORE_POLICY;
+	return inode->store_policy == SD_HYPER_STORE_POLICY;
 }
 
 #define INODE_BTREE_MAGIC	0x6274

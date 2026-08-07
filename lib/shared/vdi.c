@@ -424,7 +424,6 @@ int sd_vdi_create(struct sd_cluster *c, char *name, uint64_t size)
 	uint8_t store_policy = SD_DEFAULT_STORE_POLICY;
 	if (size > SD_OLD_MAX_VDI_SIZE)
 		store_policy = SD_HYPER_STORE_POLICY;/** for hyper volume **/
-	store_policy |= SD_UUID_POLICY_MASK;
 
 	ret = do_vdi_create(c, name, size,
 			0, false, rsp->cluster.nr_copies,

@@ -56,7 +56,6 @@ static struct sd_option vdi_options[] = {
 	 "in reclamation loop during VDI deletion"},
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
-	{'u', "uuid", false, "generate an inode UUID"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -206,16 +205,11 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 
 		JSON_ADD_STRING(vdi_obj, "name", name);
 		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
-		if (!SD_INODE_USE_UUID(&i->header)) {
-			memcpy((char *)uuid, &i->header.vdi_id, 4);
-			memcpy((char *)uuid + 4, &i->header.parent_vdi_id, 4);
-			memcpy((char *)uuid + 8, &i->header.create_time, 8);
-		} else {
-			memcpy((char *)uuid, &i->header.vm_clock_nsec, 8);
-			memcpy((char *)(uuid + 8), &i->header.vm_state_size, 8);
+		memcpy((char *)uuid, &i->header.uuid, 16);
+		if (!uuid_is_null(uuid)) {
+			uuid_unparse(uuid, uuid_str);
+			JSON_ADD_STRING(vdi_obj, "uuid", uuid_str);
 		}
-		uuid_unparse(uuid, uuid_str);
-		JSON_ADD_STRING(vdi_obj, "uuid", uuid_str);
 		JSON_ADD_UINT64(vdi_obj, "vdi_size",
 				i->header.vdi_size);
 		if (vdi_is_snapshot(&i->header))
@@ -711,7 +705,6 @@ static int vdi_create(int argc, char **argv)
 	uint32_t object_size;
 	uint64_t old_max_total_size = 0;
 	struct sd_inode *inode = NULL;
-	uint8_t store_policy = vdi_cmd_data.store_policy & SD_STORE_POLICY_MASK;
 	int ret;
 
 	if (!argv[optind]) {
@@ -724,7 +717,7 @@ static int vdi_create(int argc, char **argv)
 
 	if (vdi_cmd_data.block_size_shift) {
 		object_size = (UINT32_C(1) << vdi_cmd_data.block_size_shift);
-	} else if (store_policy == SD_HYPER_STORE_POLICY) {
+	} else if (vdi_cmd_data.store_policy == SD_HYPER_STORE_POLICY) {
 		/* Force to use default block_size_shift for hyper volume */
 		vdi_cmd_data.block_size_shift = SD_DEFAULT_BLOCK_SIZE_SHIFT;
 		object_size = (UINT32_C(1) << vdi_cmd_data.block_size_shift);
@@ -757,7 +750,7 @@ static int vdi_create(int argc, char **argv)
 	old_max_total_size = object_size * OLD_MAX_DATA_OBJS;
 
 	if (size > old_max_total_size &&
-	    SD_DEFAULT_STORE_POLICY == store_policy) {
+	    SD_DEFAULT_STORE_POLICY == vdi_cmd_data.store_policy) {
 		sd_err("VDI size is larger than %s bytes, please use '-y' to "
 		       "create a hyper volume with size up to %s bytes"
 		       " or use '-z' to create larger object size volume",
@@ -3050,19 +3043,14 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		printf("snap_ctime: %"PRIx64"\n", hdr->snap_ctime);
 		printf("vdi_size: %"PRIu64"\n", hdr->vdi_size);
 	}
-	if (!SD_INODE_USE_UUID(hdr)) {
-		memcpy((char *)uuid, &hdr->vdi_id, 4);
-		memcpy((char *)uuid + 4, &hdr->parent_vdi_id, 4);
-		memcpy((char *)uuid + 8, &hdr->create_time, 8);
-	} else {
-		memcpy((char *)uuid, &hdr->vm_clock_nsec, 8);
-		memcpy((char *)(uuid + 8), &hdr->vm_state_size, 8);
+	memcpy((char *)uuid, &hdr->uuid, 16);
+	if (!uuid_is_null(uuid)) {
+		uuid_unparse(uuid, uuid_str);
+		if (json_output)
+			JSON_ADD_STRING(out_obj, "uuid", uuid_str);
+		else
+			printf("uuid: %s\n", uuid_str);
 	}
-	uuid_unparse(uuid, uuid_str);
-	if (json_output)
-		JSON_ADD_STRING(out_obj, "uuid", uuid_str);
-	else
-		printf("uuid: %s\n", uuid_str);
 
 	if (json_output) {
 		JSON_ADD_INT(out_obj, "copy_policy",
@@ -3399,7 +3387,7 @@ static struct subcommand vdi_cmd[] = {
 	{"check", "<vdiname>", "seaphT", "check and repair image's consistency",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_check, vdi_options},
-	{"create", "<vdiname> <size>", "PycajphrvzTu", "create an image",
+	{"create", "<vdiname> <size>", "PycajphrvzT", "create an image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_create, vdi_options},
 	{"snapshot", "<vdiname>", "sajphrvTR", "create a snapshot",
@@ -3557,8 +3545,7 @@ static int vdi_parser(int ch, const char *opt)
 			       " Please set shift bit larger than 20");
 			exit(EXIT_FAILURE);
 		}
-		if ((vdi_cmd_data.store_policy & SD_STORE_POLICY_MASK) ==
-		    SD_HYPER_STORE_POLICY) {
+		if (vdi_cmd_data.store_policy == SD_HYPER_STORE_POLICY) {
 			sd_info("Don't specify both -y and -z options, please");
 			exit(EXIT_FAILURE);
 		}
@@ -3605,9 +3592,6 @@ static int vdi_parser(int ch, const char *opt)
 				"positive integer");
 			exit(EXIT_FAILURE);
 		}
-		break;
-	case 'u':
-		vdi_cmd_data.store_policy |= SD_UUID_POLICY_MASK;
 		break;
 	}
 
