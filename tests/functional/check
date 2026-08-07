@@ -178,7 +178,7 @@ testlist options
 	    ;;
 
 	-md)
-	    MD=true
+	    MD=3
 	    xpand=false
 	    ;;
 	-ec)

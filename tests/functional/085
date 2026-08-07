@@ -4,7 +4,7 @@
 
 . ./common
 
-MD=true
+MD=3
 
 for i in `seq 0 5`; do
     _start_sheep $i
@@ -30,7 +30,7 @@ for i in `seq 0 4`; do
 done
 
 # start sheep with different number of disks than that before shutdown
-MD_STORE=",$STORE/5/d0,$STORE/5/d1,$STORE/5/d2,$STORE/5/d3"
+MD=4
 _start_sheep 5
 
 _wait_for_sheep 6

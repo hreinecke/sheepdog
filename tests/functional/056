@@ -14,7 +14,7 @@ _make_device 4 $((300 * 1024 ** 2))
 _make_device 5 $((300 * 1024 ** 2))
 _make_device 6 $((300 * 1024 ** 2))
 
-MD=true
+MD=3
 
 for i in `seq 0 5`; do
 	_start_sheep $i

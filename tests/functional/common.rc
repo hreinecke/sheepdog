@@ -413,8 +413,16 @@ _start_sheep()
 	eval $(grep SHEEP_STORE ${DOCKER_ENV})
 	STORE=${SHEEP_STORE}
     fi
-    if $MD && [ -z "$MD_STORE" ]; then
-	MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2"
+    if [[ "$MD" ]]; then
+	if [[ "$MD" -eq 4 ]]; then
+	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2,$STORE/${node}/d3"
+	elif [[ "$MD" -eq 3 ]]; then
+	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2"
+	elif [[ "$MD" -eq 2 ]]; then
+	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1"
+	else
+	    MD_STORE=",$STORE/${node}"
+	fi
     fi
 
     if [[ "$MD_STORE" ]]; then

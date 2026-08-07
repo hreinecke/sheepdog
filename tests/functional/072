@@ -4,8 +4,6 @@
 
 . ./common
 
-MD=false
-
 for i in 0 1; do
     _start_sheep $i
 done

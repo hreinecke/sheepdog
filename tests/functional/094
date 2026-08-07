@@ -24,7 +24,7 @@ for i in `seq 0 2`; do
 done
 
 for i in `seq 0 2`; do
-	MD_STORE=",$STORE/$i/d0,$STORE/$i/d1"
+	MD=2
 	_start_sheep $i
 done
 

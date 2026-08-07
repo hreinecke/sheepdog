@@ -6,7 +6,7 @@
 
 _need_to_be_root
 
-MD=true
+MD=3
 
 if [ "$STORE" != "/tmp/sheepdog/057" ]; then
 	_notrun "This test cannot be run when WD is manually set"

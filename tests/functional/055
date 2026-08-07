@@ -4,7 +4,7 @@
 
 . ./common
 
-MD=true
+MD=3
 
 for i in `seq 0 6`; do
 	_start_sheep $i

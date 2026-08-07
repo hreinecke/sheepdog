@@ -4,7 +4,7 @@
 
 . ./common
 
-MD=true
+MD=3
 
 _need_to_be_root
 
@@ -33,7 +33,7 @@ function setUp
 	_make_device 0 $((256*1024**2))
 	_make_device 1 $((256*1024**2))
 	_make_device 2 $((256*1024**2))
-	MD_STORE=",$STORE/1"
+	MD=1
 	_start_sheep 0
 	_wait_for_sheep 1
 	_cluster_format -c 1
