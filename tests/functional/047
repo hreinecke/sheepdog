@@ -4,7 +4,7 @@
 
 . ./common
 
-_start_sheep 0 "-j size=64M"
+_start_sheep 0 -j size=64M
 
 _wait_for_sheep 1
 
@@ -15,18 +15,15 @@ $DOG vdi create test 4G
 # write something to vdi 'test'
 echo "hello" | $DOG vdi write test 0 512
 echo "sheepdog" | $DOG vdi write test 4M 512
-# corrupt the vdi...
-_kill_sheep 0
-if $MD; then
-	rm $STORE/0/d*/807c2b2500000000
-	rm $STORE/0/d*/007c2b25*
-else
-	rm $STORE/0/obj/807c2b2500000000
-	rm $STORE/0/obj/007c2b25*
-fi
+
+# corrupt the vdi...  the journal is only left behind on an unclean exit,
+# a graceful shutdown removes it (see clean_journal_file())
+_kill_sheep_force 0
+_delete_data_obj 0 807c2b2500000000
+_delete_data_obj 0 007c2b25*
 
 # do the journal replay
-_start_sheep 0 "-j size=64M"
+_start_sheep 0 -j size=64M
 _wait_for_sheep 1
 
 sleep 3
