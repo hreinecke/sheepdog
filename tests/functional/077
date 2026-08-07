@@ -21,7 +21,7 @@ $DOG cluster shutdown
 
 # single object lost
 
-_delete_data_obj 0 007c2b2500000000
+_delete_obj 0 007c2b2500000000
 
 for i in `seq 0 2`; do
     _start_sheep $i
@@ -29,9 +29,9 @@ done
 
 _wait_for_sheep 3
 
-$DOG vdi check -e test
+$DOG vdi check -e test | _filter_ip_port
 
-$DOG vdi check test
+$DOG vdi check test | _filter_ip_port
 
 $DOG vdi read test 0 14
 
@@ -39,7 +39,7 @@ $DOG cluster shutdown
 
 # single broken object
 
-_random | dd of=$STORE/1/obj/007c2b2500000000 bs=4096 count=1024 &> /dev/null
+_overwrite_obj 1 007c2b2500000000
 
 for i in `seq 0 2`; do
     _start_sheep $i
@@ -47,9 +47,9 @@ done
 
 _wait_for_sheep 3
 
-$DOG vdi check -e test
+$DOG vdi check -e test | _filter_ip_port
 
-$DOG vdi check test
+$DOG vdi check test | _filter_ip_port
 
 $DOG vdi read test 0 14
 
@@ -57,8 +57,8 @@ $DOG cluster shutdown
 
 # two object lost
 
-_delete_data_obj 0 007c2b2500000000
-_delete_data_obj 1 007c2b2500000000
+_delete_obj 0 007c2b2500000000
+_delete_obj 1 007c2b2500000000
 
 for i in `seq 0 2`; do
     _start_sheep $i
@@ -66,9 +66,9 @@ done
 
 _wait_for_sheep 3
 
-$DOG vdi check -e test
+$DOG vdi check -e test | _filter_ip_port
 
-$DOG vdi check test
+$DOG vdi check test | _filter_ip_port
 
 $DOG vdi read test 0 14
 
@@ -76,8 +76,8 @@ $DOG cluster shutdown
 
 # single object lost, single broken object. no majority
 
-_delete_data_obj 0 007c2b2500000000
-_random | dd of=$STORE/1/obj/007c2b2500000000 bs=4096 count=1024 &> /dev/null
+_delete_obj 0 007c2b2500000000
+_overwrite_obj 1 007c2b2500000000
 
 for i in `seq 0 2`; do
     _start_sheep $i
@@ -85,9 +85,9 @@ done
 
 _wait_for_sheep 3
 
-$DOG vdi check -e test
+$DOG vdi check -e test | _filter_ip_port
 
-$DOG vdi check test
+$DOG vdi check test | _filter_ip_port
 
 $DOG cluster shutdown
 
@@ -119,15 +119,15 @@ _wait_for_sheep 3
 echo "yes" | $DOG cluster format -c 3
 $DOG vdi create test 4M
 echo "hello, copy0" | $DOG vdi write test 0 12
-cp $STORE/0/obj/007c2b2500000000 $STORE/copy0
+_copy_obj_from_node 0 007c2b2500000000 ${STORE}/copy0
 echo "hello, copy1" | $DOG vdi write test 0 12
-cp $STORE/1/obj/007c2b2500000000 $STORE/copy1
+_copy_obj_from_node 1 007c2b2500000000 ${STORE}/copy1
 echo "hello, copy2" | $DOG vdi write test 0 12
 
 # three copies, two broken objects, no majority
 
-cp $STORE/copy0 $STORE/0/obj/007c2b2500000000
-cp $STORE/copy1 $STORE/1/obj/007c2b2500000000
+_copy_obj_to_node $STORE/copy0 0 007c2b2500000000
+_copy_obj_to_node $STORE/copy1 1 007c2b2500000000
 check_vdi_consistance 3
 
 for i in 3 4; do
@@ -138,20 +138,20 @@ _wait_for_sheep 5
 echo "yes" | $DOG cluster format -c 5
 $DOG vdi create test 4M
 echo "hello, copy0" | $DOG vdi write test 0 12
-cp $STORE/0/obj/007c2b2500000000 $STORE/copy0
+_copy_obj_from_node 0 007c2b2500000000 $STORE/copy0
 echo "hello, copy1" | $DOG vdi write test 0 12
-cp $STORE/1/obj/007c2b2500000000 $STORE/copy1
+_copy_obj_from_node 1 007c2b2500000000 $STORE/copy1
 
 # five copies, two broken objects(AABBB)
 
-cp $STORE/copy0 $STORE/0/obj/007c2b2500000000
-cp $STORE/copy0 $STORE/1/obj/007c2b2500000000
+_copy_obj_to_node $STORE/copy0  0 007c2b2500000000
+_copy_obj_to_node $STORE/copy0  1 007c2b2500000000
 check_vdi_consistance 5
 
 # five copies, two broken objects(BABAB)
 
-cp $STORE/copy0 $STORE/1/obj/007c2b2500000000
-cp $STORE/copy0 $STORE/3/obj/007c2b2500000000
+_copy_obj_to_node $STORE/copy0  1 007c2b2500000000
+_copy_obj_to_node $STORE/copy0  3 007c2b2500000000
 check_vdi_consistance 5
 
 $DOG cluster shutdown

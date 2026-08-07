@@ -4,23 +4,23 @@ using backend plain store
   test         0   12 MB  0.0 MB  0.0 MB DATE   7c2b25      3                22
 [127.0.0.1:7000] oid 007c2b2500000000 is missing.
 test lost 1 object(s).
-fixed missing 7c2b2500000000
+fixed missing 007c2b2500000000
 finish check&repair test
 original data
 test is fine, no object is missing.
-fixed replica 7c2b2500000000
+fixed replica 007c2b2500000000
 finish check&repair test
 original data
 [127.0.0.1:7000] oid 007c2b2500000000 is missing.
 [127.0.0.1:7001] oid 007c2b2500000000 is missing.
 test lost 2 object(s).
-fixed missing 7c2b2500000000
-fixed missing 7c2b2500000000
+fixed missing 007c2b2500000000
+fixed missing 007c2b2500000000
 finish check&repair test
 original data
 [127.0.0.1:7000] oid 007c2b2500000000 is missing.
 test lost 1 object(s).
-no majority of 7c2b2500000000
+no majority of 007c2b2500000000
 finish check&repair test
 
     __
@@ -32,7 +32,7 @@ hello, copy0
 hello, copy1
 hello, copy2
 test is fine, no object is missing.
-no majority of 7c2b2500000000
+no majority of 007c2b2500000000
 finish check&repair test
 hello, copy0
 hello, copy1
@@ -48,8 +48,8 @@ hello, copy1
 hello, copy1
 hello, copy1
 test is fine, no object is missing.
-fixed replica 7c2b2500000000
-fixed replica 7c2b2500000000
+fixed replica 007c2b2500000000
+fixed replica 007c2b2500000000
 finish check&repair test
 hello, copy1
 hello, copy1
@@ -62,8 +62,8 @@ hello, copy1
 hello, copy0
 hello, copy1
 test is fine, no object is missing.
-fixed replica 7c2b2500000000
-fixed replica 7c2b2500000000
+fixed replica 007c2b2500000000
+fixed replica 007c2b2500000000
 finish check&repair test
 hello, copy1
 hello, copy1

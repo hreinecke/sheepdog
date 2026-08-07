@@ -83,7 +83,7 @@
 074 auto quick cluster md
 #075 auto quick vdi md qemu
 076 auto vdi md
-#077 auto quick vdi bad, requires access to data objects
+077 auto quick vdi
 078 auto quick vdi md
 079 auto quick vdi md
 080 auto quick vdi md
