@@ -54,6 +54,9 @@ _safe_remove_objs()
 {
     local node=$1
     local disk=${2:-obj}
+    # the env file only carries SHEEP_BASE_DIR for MD nodes, so make sure a
+    # previous call for an MD node doesn't leak its base dir into this one
+    local SHEEP_BASE_DIR=
 
     if [[ "$DRIVER" == etcd* ]]; then
 	local sheep_env=${STORE}/sheep${node}.env
@@ -70,15 +73,27 @@ _safe_remove_objs()
     fi
 }
 
+# Wipe the entire store of a (stopped) node, not just its objects: 'config'
+# holds the cluster ctime and 'epoch' the epoch history, so a node keeps its
+# cluster identity as long as those survive.
 _remove_store()
 {
     local node=$1
+    local SHEEP_BASE_DIR=
 
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} rm sheep${node} 2> /dev/null
-	volume="sheepdog-etcd_sheep${node}-data"
-	docker volume rm ${volume} > /dev/null
-	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} up --no-start sheep${node} 2> /dev/null
+	local sheep_env=${STORE}/sheep${node}.env
+	eval $(tail -1 ${sheep_env} | cut -f 1 -d ,)
+	eval $(grep '^SHEEP_STORE=' ${DOCKER_ENV})
+	local base_dir=${SHEEP_BASE_DIR:-$SHEEP_STORE}
+
+	# Empty the base directory instead of dropping the volume; recreating
+	# the container would renumber its MAC and tear down the network once
+	# the last sheep is gone.
+	echo "find ${base_dir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +" | \
+	    docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${node}-data:${SHEEP_STORE} \
+		   busybox
     else
 	rm -rf ${STORE}/${node}
     fi

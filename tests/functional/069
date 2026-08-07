@@ -39,13 +39,6 @@ _wait_for_sheep_stop
 _start_sheep 0
 _wait_for_sheep 1
 
-if [[ "$DRIVER" == etcd* ]]; then
-    # docker will have removed the network as no containers are running,
-    # so restart of sheep2 will fail as it still references to old
-    # network configuration
-    docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep2 2> /dev/null
-    docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep2 2> /dev/null
-fi
 _start_sheep 2
 _wait_for_sheep_stop 2
 sleep 2
