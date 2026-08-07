@@ -100,8 +100,8 @@
 091 auto quick cluster md
 092 auto quick vdi
 093 auto quick vdi
-#094 auto quick store md bad, needs access to MD storage
-#095 auto quick store md bad, needs access to MD storage
+094 auto quick store
+095 auto quick store md
 096 auto cluster
 097 vdi cluster
 098 auto quick vdi cluster

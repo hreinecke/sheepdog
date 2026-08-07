@@ -5,14 +5,10 @@
 . ./common
 
 # make different size of devices
-for i in `seq 0 2`; do
-	mkdir $STORE/$i    
-	mkdir $STORE/$i/d0 
-	mkdir $STORE/$i/d1 
-done
 
+MD=2
 for i in `seq 0 2`; do
-	$SHEEP $STORE/$i/,$STORE/$i/d0/,$STORE/$i/d1/ -z $i -p $((7000+$i)) -c $DRIVER $SHEEP_OPTIONS
+    _start_sheep $i
 done
 
 _wait_for_sheep 3
@@ -26,7 +22,7 @@ _random | $DOG vdi write test
 $DOG vdi read test | md5sum > $STORE/csum.1
 
 # remove obj directory to occut EIO
-rm -rf $STORE/0/d0
+_safe_remove_objs 0 d0
 
 $DOG vdi read test | md5sum > $STORE/csum.2
 
