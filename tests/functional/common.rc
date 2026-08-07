@@ -591,10 +591,12 @@ _kill_all_dogs_force()
     done
 }
 
+# 'docker compose stop' sends SIGTERM, which sheep catches and shuts down
+# cleanly on; use 'kill' to simulate a crash the way pkill -9 does.
 _kill_all_sheeps_force()
 {
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} stop 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} kill 2> /dev/null
     else
 	pkill -9 -f "$SHEEP_PROG $WD"
     fi
@@ -604,7 +606,7 @@ _kill_all_sheeps_force()
 _kill_sheep_force()
 {
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} stop sheep$1 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} kill sheep$1 2> /dev/null
     else
 	pkill -9 -f "$SHEEP_PROG $STORE/$1 "
     fi
