@@ -911,6 +911,18 @@ int main(int argc, char **argv, char **envp)
 		} else
 			sd_info("Using SHEEP_VNODES='0' (gateway mode)");
 	}
+	if ((opt = getenv("SHEEP_JOURNAL")) && strlen(opt)) {
+		if (option_parse((char *)opt, ",", journal_parsers) < 0) {
+			sd_err("Invalid SHEEP_JOURNAL='%s'", opt);
+			exit(1);
+		}
+		if (!jsize) {
+			sd_err("you must specify size for journal");
+			exit(1);
+		}
+		uatomic_set_true(&sys->use_journal);
+		sd_info("Using SHEEP_JOURNAL='%s'", opt);
+	}
 	if ((opt = getenv("SHEEP_OPTS"))) {
 		int o;
 		char *p = strtok((char *)opt, ",");

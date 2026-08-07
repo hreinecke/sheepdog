@@ -11,6 +11,7 @@ echo "CLUSTER_IP=${NETWORK}.0/24"
 echo "SHEEP_VNODES="
 echo "VALGRIND="
 echo "SHEEP_ZONE="
+echo "SHEEP_JOURNAL="
 echo "SHEEP_STORE=/var/lib/sheep"
 echo "SHEEP_BASE_DIR=/var/lib/sheep"
 

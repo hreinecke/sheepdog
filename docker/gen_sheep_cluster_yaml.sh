@@ -44,6 +44,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "      - SHEEP_ADDR=\${SHEEP${node}_IP}"
     echo "      - SHEEP_VNODES=\${SHEEP_VNODES}"
     echo "      - SHEEP_ZONE=\${SHEEP_ZONE}"
+    echo "      - SHEEP_JOURNAL=\${SHEEP_JOURNAL}"
     echo "      - VALGRIND=\${VALGRIND}"
     echo "    command: \${VALGRIND} /usr/sbin/sheep -f"
 done

@@ -502,6 +502,13 @@ _start_sheep()
 	eval $(grep SHEEP_STORE ${DOCKER_ENV})
 	STORE=${SHEEP_STORE}
     fi
+    if [[ "$2" == '-z' ]]; then
+	zone=$3
+    elif [[ "$2" == '-g' ]]; then
+	vnodes=0
+    elif [[ "$2" == '-j' ]]; then
+	echo "SHEEP_JOURNAL=$3" >> ${sheep_env}
+    fi
     if [[ "$MD" ]]; then
 	if [[ "$MD" -eq 4 ]]; then
 	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2,$STORE/${node}/d3"
@@ -518,11 +525,6 @@ _start_sheep()
 	echo "SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}" >> ${sheep_env}
     fi
 
-    if [[ "$2" == '-z' ]]; then
-	zone=$3
-    elif [[ "$2" == '-g' ]]; then
-	vnodes=0
-    fi
     if [[ "$DRIVER" == etcd* ]]; then
 	SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	VALGRIND=${VALGRIND} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} start ${sheep} 2> /dev/null
