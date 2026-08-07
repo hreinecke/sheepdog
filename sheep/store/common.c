@@ -393,7 +393,7 @@ static int is_meta_store(const char *path)
 
 static int init_obj_path(const char *base_path, char *argp)
 {
-	char *p;
+	char *p = NULL;
 	int len;
 
 	if (check_path_len(base_path) < 0)
@@ -405,8 +405,10 @@ static int init_obj_path(const char *base_path, char *argp)
 	snprintf(obj_path, len, "%s" OBJ_PATH, base_path);
 
 	/* Eat up the first component */
-	strtok(argp, ",");
-	p = strtok(NULL, ",");
+	if (argp) {
+		strtok(argp, ",");
+		p = strtok(NULL, ",");
+	}
 	if (!p) {
 		/*
 		 * If We have only one path, meta-store and object-store share
