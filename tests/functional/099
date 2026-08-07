@@ -12,20 +12,18 @@ _cluster_format -c 3
 
 $DOG vdi create test 16M -P
 
-$DOG vdi list | _filter_short_date
+_vdi_list
 
-ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
-	_filter_store | _filter_md_store | sort
+_list_obj
 
 _kill_sheep 3
 _wait_for_sheep_stop 3
 
 $DOG vdi delete test
 
-$DOG vdi list | _filter_short_date
+_vdi_list
 
 _start_sheep 3
 _wait_for_sheep 4
 
-ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
-	_filter_store | _filter_md_store | sort
+_list_obj

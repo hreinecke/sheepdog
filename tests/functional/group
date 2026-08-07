@@ -105,7 +105,7 @@
 096 auto cluster
 097 vdi cluster
 098 auto quick vdi cluster
-#099 auto quick vdi cluster bad, needs access to data objects
+099 auto quick vdi cluster
 100 auto quick vdi
 101 auto quick store vdi
 102 auto quick store vdi
