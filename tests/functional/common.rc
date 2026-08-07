@@ -55,11 +55,15 @@ _safe_remove_objs()
     local node=$1
 
     if [[ "$DRIVER" == etcd* ]]; then
-	container="sheepdog-etcd-sheep${node}-1"
-	dir=$(docker inspect ${container} | jq .[].Mounts.[].Destination)
-	STORE=$(eval echo $dir)
-	docker exec ${container} mv ${STORE}/obj ${STORE}/obj.tmp
-	docker exec ${container} rm -rf ${STORE}/obj.tmp
+	local ETCD_STORE=/var/lib/sheepdog
+	echo "mv ${ETCD_STORE}/${node}/obj ${ETCD_STORE}/${node}/obj.tmp" | \
+	    docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${node}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
+	echo "rm -rf ${ETCD_STORE}/${node}/obj.tmp" | \
+	    docker run -i --rm \
+		   --volume sheepdog-etcd_sheep${node}-data:/tmp/sheepdog \
+		   busybox 2> /dev/null
     else
 	_safe_remove ${STORE}/${node}/obj
     fi
@@ -70,10 +74,10 @@ _remove_store()
     local node=$1
 
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} down sheep${node} 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} rm sheep${node} 2> /dev/null
 	volume="sheepdog-etcd_sheep${node}-data"
 	docker volume rm ${volume} > /dev/null
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start sheep${node} 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} up --no-start sheep${node} 2> /dev/null
     else
 	rm -rf ${STORE}/${node}
     fi
@@ -197,7 +201,7 @@ _cleanup()
     fi
 
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} down 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} down 2> /dev/null
 	for vol in $(docker volume ls --filter Name=sheepdog-etcd_sheep | tail -n +2 | cut -b 11-); do
 	    docker volume rm $vol > /dev/null
 	done
@@ -371,6 +375,8 @@ _start_sheep()
     local sheep="sheep${node}"
     local zone=${node}
     local vnodes=${SHEEP_VNODES}
+    local store=${STORE}
+    local sheep_env=${DOCKER_ENV}
     local cnt
     for cnt in `seq 1 10`; do  # wait at most 10 seconds
 	local SHEEPS=$(_check_sheep $node)
@@ -385,27 +391,37 @@ _start_sheep()
         _die "${sheep} is still running"
     fi
 
+    if [[ "$DRIVER" == etcd* ]]; then
+	sheep_env=${STORE}/${sheep}.env
+	cat ${DOCKER_ENV} > ${sheep_env}
+	eval $(grep SHEEP_STORE ${DOCKER_ENV})
+	STORE=${SHEEP_STORE}
+    fi
     if $MD && [ -z "$MD_STORE" ]; then
 	MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2"
     fi
 
+    if [[ "$MD_STORE" ]]; then
+	echo "SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}" >> ${sheep_env}
+    fi
+
     if [[ "$2" == '-z' ]]; then
 	zone=$3
-    fi
-    if [[ "$2" == '-g' ]]; then
+    elif [[ "$2" == '-g' ]]; then
 	vnodes=0
     fi
     if [[ "$DRIVER" == etcd* ]]; then
-	SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose ${DOCKER_ENV} ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
-	VALGRIND=${VALGRIND} docker compose ${DOCKER_ENV} ${DOCKER_YAML} start ${sheep} 2> /dev/null
+	SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
+	VALGRIND=${VALGRIND} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} start ${sheep} 2> /dev/null
     else
-	$SHEEP $STORE/${node}$MD_STORE -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
+	$SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
     fi
 
     if [ $? != 0 ]; then
         _die "cannot start sheep $1"
     fi
     unset MD_STORE
+    STORE=${store}
 }
 
 _kill_all_dogs()
@@ -425,7 +441,7 @@ _kill_all_dogs()
 _kill_all_sheeps()
 {
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} stop 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} stop 2> /dev/null
     else
 	pkill -f "$SHEEP_PROG $WD"
     fi
@@ -435,7 +451,7 @@ _kill_all_sheeps()
 _kill_sheep()
 {
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} stop sheep$1 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} stop sheep$1 2> /dev/null
     else
 	pkill -f "$SHEEP_PROG $STORE/$1 "
     fi
@@ -463,7 +479,7 @@ _kill_all_dogs_force()
 _kill_all_sheeps_force()
 {
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} stop 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} stop 2> /dev/null
     else
 	pkill -9 -f "$SHEEP_PROG $WD"
     fi
@@ -473,7 +489,7 @@ _kill_all_sheeps_force()
 _kill_sheep_force()
 {
     if [[ "$DRIVER" == etcd* ]]; then
-	docker compose ${DOCKER_ENV} ${DOCKER_YAML} stop sheep$1 2> /dev/null
+	docker compose --env-file ${DOCKER_ENV} -f ${DOCKER_YAML} stop sheep$1 2> /dev/null
     else
 	pkill -9 -f "$SHEEP_PROG $STORE/$1 "
     fi

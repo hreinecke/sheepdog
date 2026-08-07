@@ -15,13 +15,13 @@ services:
         ipv4_address: ${SHEEP0_IP}
       sheep-br:
     volumes:
-      - sheep0-data:/var/lib/sheep
+      - sheep0-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7000:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE0_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP0_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -36,13 +36,13 @@ services:
         ipv4_address: ${SHEEP1_IP}
       sheep-br:
     volumes:
-      - sheep1-data:/var/lib/sheep
+      - sheep1-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7001:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP1_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -57,13 +57,13 @@ services:
         ipv4_address: ${SHEEP2_IP}
       sheep-br:
     volumes:
-      - sheep2-data:/var/lib/sheep
+      - sheep2-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7002:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP2_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -78,13 +78,13 @@ services:
         ipv4_address: ${SHEEP3_IP}
       sheep-br:
     volumes:
-      - sheep3-data:/var/lib/sheep
+      - sheep3-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7003:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP3_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -99,13 +99,13 @@ services:
         ipv4_address: ${SHEEP4_IP}
       sheep-br:
     volumes:
-      - sheep4-data:/var/lib/sheep
+      - sheep4-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7004:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP4_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -120,13 +120,13 @@ services:
         ipv4_address: ${SHEEP5_IP}
       sheep-br:
     volumes:
-      - sheep5-data:/var/lib/sheep
+      - sheep5-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7005:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE5_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP5_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -141,13 +141,13 @@ services:
         ipv4_address: ${SHEEP6_IP}
       sheep-br:
     volumes:
-      - sheep6-data:/var/lib/sheep
+      - sheep6-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7006:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE6_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP6_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -162,13 +162,13 @@ services:
         ipv4_address: ${SHEEP7_IP}
       sheep-br:
     volumes:
-      - sheep7-data:/var/lib/sheep
+      - sheep7-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7007:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE7_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP7_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -183,13 +183,13 @@ services:
         ipv4_address: ${SHEEP8_IP}
       sheep-br:
     volumes:
-      - sheep8-data:/var/lib/sheep
+      - sheep8-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7008:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE8_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP8_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -204,13 +204,13 @@ services:
         ipv4_address: ${SHEEP9_IP}
       sheep-br:
     volumes:
-      - sheep9-data:/var/lib/sheep
+      - sheep9-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7009:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE9_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP9_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -225,13 +225,13 @@ services:
         ipv4_address: ${SHEEP10_IP}
       sheep-br:
     volumes:
-      - sheep10-data:/var/lib/sheep
+      - sheep10-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7010:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE10_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP10_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -246,13 +246,13 @@ services:
         ipv4_address: ${SHEEP11_IP}
       sheep-br:
     volumes:
-      - sheep11-data:/var/lib/sheep
+      - sheep11-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7011:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE11_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP11_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -267,13 +267,13 @@ services:
         ipv4_address: ${SHEEP12_IP}
       sheep-br:
     volumes:
-      - sheep12-data:/var/lib/sheep
+      - sheep12-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7012:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE12_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP12_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -288,13 +288,13 @@ services:
         ipv4_address: ${SHEEP13_IP}
       sheep-br:
     volumes:
-      - sheep13-data:/var/lib/sheep
+      - sheep13-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7013:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE13_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP13_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -309,13 +309,13 @@ services:
         ipv4_address: ${SHEEP14_IP}
       sheep-br:
     volumes:
-      - sheep14-data:/var/lib/sheep
+      - sheep14-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7014:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE14_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP14_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -330,13 +330,13 @@ services:
         ipv4_address: ${SHEEP15_IP}
       sheep-br:
     volumes:
-      - sheep15-data:/var/lib/sheep
+      - sheep15-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7015:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE15_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP15_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -351,13 +351,13 @@ services:
         ipv4_address: ${SHEEP16_IP}
       sheep-br:
     volumes:
-      - sheep16-data:/var/lib/sheep
+      - sheep16-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7016:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE16_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP16_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -372,13 +372,13 @@ services:
         ipv4_address: ${SHEEP17_IP}
       sheep-br:
     volumes:
-      - sheep17-data:/var/lib/sheep
+      - sheep17-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7017:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE17_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP17_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -393,13 +393,13 @@ services:
         ipv4_address: ${SHEEP18_IP}
       sheep-br:
     volumes:
-      - sheep18-data:/var/lib/sheep
+      - sheep18-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7018:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE18_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP18_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -414,13 +414,13 @@ services:
         ipv4_address: ${SHEEP19_IP}
       sheep-br:
     volumes:
-      - sheep19-data:/var/lib/sheep
+      - sheep19-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7019:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE19_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP19_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -435,13 +435,13 @@ services:
         ipv4_address: ${SHEEP20_IP}
       sheep-br:
     volumes:
-      - sheep20-data:/var/lib/sheep
+      - sheep20-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7020:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE20_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP20_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -456,13 +456,13 @@ services:
         ipv4_address: ${SHEEP21_IP}
       sheep-br:
     volumes:
-      - sheep21-data:/var/lib/sheep
+      - sheep21-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7021:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE21_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP21_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -477,13 +477,13 @@ services:
         ipv4_address: ${SHEEP22_IP}
       sheep-br:
     volumes:
-      - sheep22-data:/var/lib/sheep
+      - sheep22-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7022:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE22_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP22_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
@@ -498,13 +498,13 @@ services:
         ipv4_address: ${SHEEP23_IP}
       sheep-br:
     volumes:
-      - sheep23-data:/var/lib/sheep
+      - sheep23-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7023:7000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE23_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
-      - SHEEP_BASE_DIR=/var/lib/sheep
+      - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP23_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
       - SHEEP_ZONE=${SHEEP_ZONE}
