@@ -90,6 +90,7 @@ struct get_vdi_info {
 	const char *tag;
 	uint32_t vid;
 	uint32_t snapid;
+	uint32_t acl;
 	uint8_t nr_copies;
 	uint8_t copy_policy;
 	uint8_t block_size_shift;
@@ -181,8 +182,12 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	struct get_vdi_info *info = data;
 	uint32_t object_size = (UINT32_C(1) << i->header.block_size_shift);
 
-	if (info && strcmp(name, info->name) != 0)
-		return;
+	if (info) {
+		if (info->name && strcmp(name, info->name) != 0)
+			return;
+		if (info->acl != i->header.acl_id)
+			return;
+	}
 
 	ti = i->header.create_time >> 32;
 	if (raw_output) {
@@ -557,6 +562,10 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 static int vdi_list(int argc, char **argv)
 {
 	const char *vdiname = argv[optind];
+	struct get_vdi_info info;
+
+	memset(&info, 0, sizeof(info));
+	info.acl = vdi_cmd_data.acl_id;
 
 	if (json_output)
 		out_obj = json_object_new_array();
@@ -566,8 +575,6 @@ static int vdi_list(int argc, char **argv)
 		       "   Block Size Shift\n");
 
 	if (vdiname) {
-		struct get_vdi_info info;
-		memset(&info, 0, sizeof(info));
 		info.name = vdiname;
 		if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info, true) < 0)
 			return EXIT_SYSFAIL;
@@ -595,7 +602,7 @@ static int vdi_list(int argc, char **argv)
 		return EXIT_SUCCESS;
 	}
 
-	if (parse_vdi(print_vdi_list, SD_INODE_SIZE, NULL, true) < 0)
+	if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info, true) < 0)
 		return EXIT_SYSFAIL;
 
 	if (json_output) {
@@ -3358,6 +3365,40 @@ out:
 	return ret;
 }
 
+static int lock_lock(int argc, char **argv)
+{
+	int ret = 0;
+	char vdidesc[VDI_DESC_MAX] = { 0 };
+	const char *vdiname = argv[optind];
+	const uint32_t snapid = vdi_cmd_data.snapshot_id;
+	const char *tag = vdi_cmd_data.snapshot_tag;
+	uint32_t acl_id = vdi_cmd_data.acl_id;
+	uint32_t vid = 0;
+	struct sd_req hdr;
+
+	if (!vdiname) {
+		sd_err("VDI name must be specified");
+		return EXIT_USAGE;
+	}
+
+	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
+	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find VDI %s: %s",
+		       vdidesc, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+	sd_init_req(&hdr, SD_OP_LOCK_VDI);
+	hdr.vdi.base_vdi_id = vid;
+	hdr.vdi.acl = acl_id;
+	ret = dog_exec_req(&sd_nid, &hdr, NULL);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to lock VDI %s: %s",
+		       vdidesc, sd_strerror(ret));
+	}
+	return ret ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
 static int lock_unlock(int argc, char **argv)
 {
 	struct vdi_state *vs = NULL;
@@ -3445,6 +3486,7 @@ out:
 
 static struct subcommand vdi_lock_cmd[] = {
 	{"list", NULL, NULL, "list locked VDIs", NULL, CMD_NEED_ARG, lock_list},
+	{"lock", "<vdiname>", NULL, "lock VDI", NULL, CMD_NEED_ARG, lock_lock},
 	{"unlock", "<vdiname>", NULL, "unlock locked VDI forcibly", NULL,
 	 CMD_NEED_ARG, lock_unlock},
 	{NULL},
