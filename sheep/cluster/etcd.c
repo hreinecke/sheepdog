@@ -1112,6 +1112,7 @@ static void etcd_vdi_state_to_json(struct sd_req *req, struct json_object *obj)
 				       json_object_new_boolean(true));
 	UPDATE_JSON_INT(obj, &req->vdi_state, copy_policy);
 	UPDATE_JSON_INT(obj, &req->vdi_state, block_size_shift);
+	UPDATE_JSON_INT(obj, &req->vdi_state, old_acl);
 }
 
 static int etcd_msg_to_json(struct vdi_op_message *msg,
@@ -1222,6 +1223,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	case SD_OP_NOTIFY_VDI_ADD:
 	case SD_OP_ALTER_VDI_COPY:
+	case SD_OP_ALTER_VDI_ACL:
 		vdi_obj = json_object_new_object();
 		etcd_vdi_state_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "vdi_state", vdi_obj);
@@ -1445,6 +1447,7 @@ static void etcd_json_to_vdi_state(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->vdi_state, copies, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, copy_policy, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, block_size_shift, key);
+		DEREF_JSON_INT(val_obj, &req->vdi_state, old_acl, key);
 		else
 			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);

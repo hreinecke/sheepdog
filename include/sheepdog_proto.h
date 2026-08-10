@@ -106,6 +106,7 @@
 #define VDI_ATTR_BIT (UINT64_C(1) << 61)
 #define VDI_BTREE_BIT (UINT64_C(1) << 60)
 #define LEDGER_BIT (UINT64_C(1) << 59)
+#define ACL_BIT (UINT64_C(1) << 58)
 #define OLD_MAX_DATA_OBJS (1ULL << 20)
 #define MAX_DATA_OBJS (1ULL << 32)
 #define SD_MAX_VDI_LEN 256U
@@ -190,6 +191,8 @@ struct sd_req {
 			uint8_t		set_deleted; /* 0 means false */
 						     /* others mean true */
 			uint8_t		reserved;
+			uint16_t	__pad;
+			uint32_t	old_acl;
 		} vdi_state;
 		struct {
 			uint64_t	oid;
@@ -561,11 +564,16 @@ static inline bool is_ledger_object(uint64_t oid)
 	return !!(oid & LEDGER_BIT);
 }
 
+static inline bool is_acl_object(uint64_t oid)
+{
+	return !!(oid & ACL_BIT);
+}
+
 static inline bool is_data_obj(uint64_t oid)
 {
 	return !is_vdi_obj(oid) && !is_vmstate_obj(oid) &&
 		!is_vdi_attr_obj(oid) && !is_vdi_btree_obj(oid) &&
-		!is_ledger_object(oid);
+		!is_ledger_object(oid) && !is_acl_object(oid);
 }
 
 static inline size_t get_objsize(uint64_t oid, uint32_t object_size)
@@ -581,6 +589,9 @@ static inline size_t get_objsize(uint64_t oid, uint32_t object_size)
 
 	if (is_ledger_object(oid))
 		return SD_LEDGER_OBJ_SIZE;
+
+	if (is_acl_object(oid))
+		return SD_INODE_SIZE;
 
 	return object_size;
 }
@@ -618,6 +629,11 @@ static inline uint64_t vid_to_btree_oid(uint32_t vid, uint32_t btreeid)
 static inline uint64_t vid_to_vmstate_oid(uint32_t vid, uint32_t idx)
 {
 	return VMSTATE_BIT | ((uint64_t)vid << VDI_SPACE_SHIFT) | idx;
+}
+
+static inline uint64_t vid_to_acl_oid(uint32_t vid)
+{
+	return ACL_BIT | ((uint64_t)vid << VDI_SPACE_SHIFT);
 }
 
 static inline bool vdi_is_snapshot(const struct sd_inode_header *inode)

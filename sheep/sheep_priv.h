@@ -393,6 +393,8 @@ int sd_create_hyper_volume(const char *name, uint32_t *vdi_id);
 
 int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl);
 int vdi_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl);
+int vdi_can_alter_acl(uint32_t vid, uint32_t acl);
+int vdi_alter_acl(uint32_t vid, uint32_t old_acl, uint32_t new_acl);
 void apply_vdi_lock_state(struct vdi_state *vs);
 void create_vdi_state_checkpoint(int epoch);
 int get_vdi_state_checkpoint(int epoch, uint32_t vid, void *data);

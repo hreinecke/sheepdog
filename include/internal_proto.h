@@ -116,6 +116,7 @@
 #define SD_OP_SET_VNODES 0xCC
 #define SD_OP_GET_VNODES 0xCD
 #define SD_OP_CLUSTER_STATUS 0xCE
+#define SD_OP_ALTER_VDI_ACL 0xCF
 
 /* internal flags for hdr.flags, must be above 0x80 */
 #define SD_FLAG_CMD_RECOVERY 0x0080

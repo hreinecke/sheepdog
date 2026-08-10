@@ -3342,6 +3342,178 @@ static int vdi_alter_copy(int argc, char **argv)
 	return EXIT_FAILURE;
 }
 
+struct alter_acl_info {
+	const char *name;
+	uint32_t acl;
+	uint32_t *vids;
+	size_t nr_vids;
+	size_t max_vids;
+};
+
+/*
+ * Collect every VDI sharing the name and the ACL of the one we are about to
+ * alter.  A VDI is looked up by name, so the working VDI and its snapshots
+ * have to be moved to the new ACL together to stay reachable.
+ */
+static void collect_vdi_family(uint32_t vid, const char *name, const char *tag,
+			       uint32_t snapid, uint32_t flags,
+			       const struct sd_inode *i, void *data)
+{
+	struct alter_acl_info *info = data;
+
+	if (strcmp(name, info->name) != 0)
+		return;
+	if (i->header.acl_id != info->acl)
+		return;
+
+	if (info->nr_vids == info->max_vids) {
+		info->max_vids = info->max_vids ? info->max_vids * 2 : 8;
+		info->vids = xrealloc(info->vids,
+				      info->max_vids * sizeof(*info->vids));
+	}
+	info->vids[info->nr_vids++] = vid;
+}
+
+/* Set the ACL of a single inode object; returns an EXIT_ code. */
+static int alter_one_acl(const char *vdiname, uint32_t vid, uint32_t old_acl,
+			 uint32_t new_acl)
+{
+	struct sd_req hdr;
+
+	sd_init_req(&hdr, SD_OP_ALTER_VDI_ACL);
+	hdr.vdi_state.old_vid = vid;
+	hdr.vdi_state.old_acl = old_acl;
+	hdr.vdi_state.acl = new_acl;
+
+	if (send_light_req(&sd_nid, &hdr) != 0) {
+		sd_err("Setting %s's (%"PRIx32") ACL failure.", vdiname, vid);
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+/*
+ * A locked VDI must not change its ACL, and neither must one which some other
+ * node knows under a different ACL.  Check the whole family up front, so that
+ * we do not have to move half of it back on failure.
+ */
+static int check_vdi_family(const struct alter_acl_info *info)
+{
+	struct vdi_state *vs;
+	int count = 0, ret = EXIT_SUCCESS;
+
+	vs = get_vdi_state(&count);
+	if (!vs) {
+		sd_err("Failed to get VDI state");
+		return EXIT_SYSFAIL;
+	}
+
+	for (size_t idx = 0; idx < info->nr_vids; idx++) {
+		const uint32_t vid = info->vids[idx];
+		const struct vdi_state *found = NULL;
+
+		for (int j = 0; j < count; j++) {
+			if (vs[j].vid == vid) {
+				found = &vs[j];
+				break;
+			}
+		}
+
+		if (!found) {
+			sd_err("Failed to find VDI state of %s (%"PRIx32").",
+			       info->name, vid);
+			ret = EXIT_SYSFAIL;
+			break;
+		}
+		if (found->acl != info->acl) {
+			sd_err("%s (%"PRIx32") belongs to ACL %"PRIu32
+			       ", not %"PRIu32".", info->name, vid, found->acl,
+			       info->acl);
+			ret = EXIT_FAILURE;
+			break;
+		}
+		if (found->lock_state != LOCK_STATE_UNLOCKED) {
+			sd_err("%s (%"PRIx32") is locked, cannot change its "
+			       "ACL.", info->name, vid);
+			ret = EXIT_FAILURE;
+			break;
+		}
+	}
+
+	free(vs);
+	return ret;
+}
+
+static int vdi_alter_acl(int argc, char **argv)
+{
+	const char *vdiname = argv[optind++];
+	const uint32_t old_acl = vdi_cmd_data.acl_id;
+	struct alter_acl_info info = { .name = vdiname, .acl = old_acl };
+	uint32_t new_acl;
+	char *p;
+	int ret = EXIT_SUCCESS;
+
+	if (!argv[optind]) {
+		sd_err("Please specify the new ACL ID for the VDI");
+		return EXIT_USAGE;
+	}
+	new_acl = strtoul(argv[optind], &p, 10);
+	if (argv[optind] == p || *p != '\0') {
+		sd_err("The ACL ID is invalid: %s", argv[optind]);
+		return EXIT_USAGE;
+	}
+	if (new_acl >= LOCK_TYPE_SHARED) {
+		sd_err("The ACL ID is out of range, must be between 0 and %"
+		       PRIu32, LOCK_TYPE_SHARED - 1);
+		return EXIT_USAGE;
+	}
+	if (new_acl == old_acl) {
+		sd_err("%s already belongs to ACL %"PRIu32".", vdiname,
+		       new_acl);
+		return EXIT_FAILURE;
+	}
+
+	if (parse_vdi(collect_vdi_family, SD_INODE_HEADER_SIZE, &info,
+		      true) < 0) {
+		sd_err("Failed to read the list of VDIs.");
+		ret = EXIT_SYSFAIL;
+		goto out;
+	}
+
+	if (!info.nr_vids) {
+		sd_err("Failed to find %s in ACL %"PRIu32".", vdiname, old_acl);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	ret = check_vdi_family(&info);
+	if (ret != EXIT_SUCCESS)
+		goto out;
+
+	for (size_t idx = 0; idx < info.nr_vids; idx++) {
+		ret = alter_one_acl(vdiname, info.vids[idx], old_acl, new_acl);
+		if (ret == EXIT_SUCCESS)
+			continue;
+
+		/* undo the inodes we already moved to keep the family whole */
+		while (idx-- > 0) {
+			if (alter_one_acl(vdiname, info.vids[idx], new_acl,
+					  old_acl) != EXIT_SUCCESS)
+				sd_err("%s (%"PRIx32") is left behind in ACL %"
+				       PRIu32".", vdiname, info.vids[idx],
+				       new_acl);
+		}
+		goto out;
+	}
+
+	sd_info("%s's ACL is set to %"PRIu32", the old one was %"PRIu32,
+		vdiname, new_acl, old_acl);
+out:
+	free(info.vids);
+	return ret;
+}
+
 static int lock_list(int argc, char **argv)
 {
 	int ret = 0;
@@ -3579,6 +3751,8 @@ static struct subcommand vdi_cmd[] = {
 	 vdi_restore, vdi_options},
 	{"alter-copy", "<vdiname>", "caphTfA", "set the vdi's redundancy level",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
+	{"alter-acl", "<vdiname> <new acl>", "aphTA", "set the vdi's ACL ID",
+	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_alter_acl, vdi_options},
 	{"lock", NULL, "saphTA", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},
 	{NULL,},

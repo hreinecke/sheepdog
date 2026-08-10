@@ -866,6 +866,73 @@ out:
 	return ret;
 }
 
+/*
+ * Check if the ACL of a VDI can be changed.  Called on the node which is
+ * handling SD_OP_ALTER_VDI_ACL before the inode object is rewritten.
+ */
+int vdi_can_alter_acl(uint32_t vid, uint32_t acl)
+{
+	struct vdi_state_entry *entry;
+	int ret = SD_RES_NO_VDI;
+
+	sd_read_lock(&vdi_state_lock);
+
+	entry = vdi_state_search(&vdi_state_root, vid);
+	if (!entry) {
+		sd_err("no vdi state entry of %"PRIx32" found", vid);
+		goto out;
+	}
+
+	if (entry->acl != acl) {
+		sd_info("VDI %"PRIx32" belongs to ACL %"PRIx32", not %"PRIx32,
+			vid, entry->acl, acl);
+		ret = SD_RES_VDI_DENIED;
+		goto out;
+	}
+
+	if (entry->lock_state != LOCK_STATE_UNLOCKED) {
+		sd_info("VDI %"PRIx32" is locked, cannot alter its ACL", vid);
+		ret = SD_RES_VDI_LOCKED;
+		goto out;
+	}
+
+	ret = SD_RES_SUCCESS;
+out:
+	sd_rw_unlock(&vdi_state_lock);
+	return ret;
+}
+
+/*
+ * Apply the ACL of an already rewritten inode object to the VDI state.  The
+ * inode object is authoritative here, so the new ACL is applied even if this
+ * node disagrees about the old one.
+ */
+int vdi_alter_acl(uint32_t vid, uint32_t old_acl, uint32_t new_acl)
+{
+	struct vdi_state_entry *entry;
+	int ret = SD_RES_NO_VDI;
+
+	sd_write_lock(&vdi_state_lock);
+
+	entry = vdi_state_search(&vdi_state_root, vid);
+	if (!entry) {
+		sd_err("no vdi state entry of %"PRIx32" found", vid);
+		goto out;
+	}
+
+	if (entry->acl != old_acl)
+		sd_warn("VDI %"PRIx32" has ACL %"PRIx32", expected %"PRIx32,
+			vid, entry->acl, old_acl);
+
+	sd_info("ACL of VDI %"PRIx32" is set to %"PRIx32", the old one was %"
+		PRIx32, vid, new_acl, entry->acl);
+	entry->acl = new_acl;
+	ret = SD_RES_SUCCESS;
+out:
+	sd_rw_unlock(&vdi_state_lock);
+	return ret;
+}
+
 void apply_vdi_lock_state(struct vdi_state *vs)
 {
 	struct vdi_state_entry *entry;

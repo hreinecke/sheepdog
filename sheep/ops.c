@@ -1393,6 +1393,61 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 	return SD_RES_SUCCESS;
 }
 
+/*
+ * Change the ACL of a VDI.  The inode object is rewritten by the node which
+ * received the request, every node updates its VDI state afterwards.
+ */
+static int cluster_alter_vdi_acl_work(struct request *req)
+{
+	const struct sd_req *hdr = &req->rq;
+	uint32_t vid = hdr->vdi_state.old_vid;
+	uint32_t old_acl = hdr->vdi_state.old_acl;
+	uint32_t new_acl = hdr->vdi_state.acl;
+	struct sd_inode_header inode;
+	int ret;
+
+	if (!vid || old_acl == new_acl || new_acl >= LOCK_TYPE_SHARED)
+		return SD_RES_INVALID_PARMS;
+
+	ret = vdi_can_alter_acl(vid, old_acl);
+	if (ret != SD_RES_SUCCESS)
+		return ret;
+
+	ret = sd_read_object(vid_to_vdi_oid(vid), (char *)&inode,
+			     sizeof(inode), 0);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to read inode of VDI %"PRIx32": %s", vid,
+		       sd_strerror(ret));
+		return ret;
+	}
+
+	/* the inode object is authoritative for the ACL of a VDI */
+	if (inode.acl_id != old_acl) {
+		sd_info("VDI %"PRIx32" belongs to ACL %"PRIx32", not %"PRIx32,
+			vid, inode.acl_id, old_acl);
+		return SD_RES_VDI_DENIED;
+	}
+
+	ret = sd_write_object(vid_to_vdi_oid(vid), (char *)&new_acl,
+			      sizeof(new_acl),
+			      offsetof(struct sd_inode_header, acl_id), false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update inode of VDI %"PRIx32": %s", vid,
+		       sd_strerror(ret));
+		return SD_RES_VDI_WRITE;
+	}
+
+	return SD_RES_SUCCESS;
+}
+
+static int cluster_alter_vdi_acl_main(const struct sd_req *req,
+				      struct sd_rsp *rsp, void *data,
+				      const struct sd_node *sender)
+{
+	return vdi_alter_acl(req->vdi_state.old_vid, req->vdi_state.old_acl,
+			     req->vdi_state.acl);
+}
+
 static int local_vdi_state_checkpoint_ctl(const struct sd_req *req,
 					struct sd_rsp *rsp, void *data,
 					const struct sd_node *sender)
@@ -1652,6 +1707,14 @@ static struct sd_op_template sd_ops[] = {
 		.type = SD_OP_TYPE_CLUSTER,
 		.is_admin_op = true,
 		.process_main = cluster_alter_vdi_copy,
+	},
+
+	[SD_OP_ALTER_VDI_ACL] = {
+		.name = "ALTER_VDI_ACL",
+		.type = SD_OP_TYPE_CLUSTER,
+		.is_admin_op = true,
+		.process_work = cluster_alter_vdi_acl_work,
+		.process_main = cluster_alter_vdi_acl_main,
 	},
 
 	[SD_OP_INODE_COHERENCE] = {
