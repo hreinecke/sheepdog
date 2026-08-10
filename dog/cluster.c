@@ -435,6 +435,12 @@ retry:
 			printf("Cluster vnode mode: %s\n", vnode_mode);
 		else
 			printf("%s\n", vnode_mode);
+
+		if (logs->flags & SD_CLUSTER_FLAG_USE_LOCK) {
+			if (json_output)
+				json_object_object_add(out_obj, "locking",
+					       json_object_new_boolean(true));
+		}
 	} else if (!json_output)
 		printf("\n");
 
