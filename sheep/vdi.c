@@ -746,6 +746,13 @@ int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 	}
 
 	if (acl == LOCK_TYPE_NORMAL) {
+		if (entry->acl != LOCK_TYPE_NORMAL) {
+			sd_info("VDI %"PRIx32" can only be locked with ACL %"PRIx32,
+				vid, entry->acl);
+			ret = SD_RES_VDI_DENIED;
+			goto out;
+		}
+
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 			entry->lock_state = LOCK_STATE_LOCKED;
@@ -758,7 +765,7 @@ int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 			ret = SD_RES_VDI_LOCKED;
 			break;
 		case LOCK_STATE_SHARED:
-			sd_info("VDI %"PRIx32" is already locked as by %"PRIx32,
+			sd_info("VDI %"PRIx32" is already locked by %"PRIx32,
 				vid, entry->acl);
 			ret = SD_RES_VDI_DENIED;
 			break;
@@ -767,6 +774,7 @@ int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 				 vid, entry->lock_state);
 			break;
 		}
+	} else {		/* LOCK_TYPE_SHARED */
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 		case LOCK_STATE_SHARED:
@@ -774,8 +782,10 @@ int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 				sd_info("VDI %"PRIx32" is already locked by %"PRIx32,
 					vid, entry->acl);
 				ret = SD_RES_VDI_DENIED;
-			} else
-				ret = add_new_participant(entry, owner);
+			} else if (add_new_participant(entry, owner))
+				ret = SD_RES_SUCCESS;
+			else
+				ret = SD_RES_VDI_LOCKED;
 			break;
 		case LOCK_STATE_LOCKED:
 			sd_info("VDI %"PRIx32" is already locked as normal"
@@ -1194,6 +1204,7 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	new->header.copy_policy = iocb->copy_policy;
 	new->header.store_policy = iocb->store_policy;
 	new->header.nr_copies = iocb->nr_copies;
+	new->header.acl_id = iocb->acl;
 	new->header.block_size_shift =
 		find_next_bit(&block_size, BITS_PER_LONG, 0);
 	new->header.snap_id = new_snapid;
@@ -1506,7 +1517,7 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 			       struct vdi_info *info)
 {
 	struct sd_inode_header inode;
-	bool vdi_found = false;
+	bool vdi_found = false, acl_denied = false;
 	int ret = SD_RES_NO_VDI;
 	uint32_t i;
 	const char *name = iocb->name;
@@ -1524,6 +1535,18 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 		if (!strncmp(inode.name, name, sizeof(inode.name))) {
 			sd_debug("%s = %s, %u = %u", iocb->tag,
 				 inode.tag, iocb->snapid, inode.snap_id);
+			/*
+			 * A VDI is only visible to the ACL it was created
+			 * with; remember that we skipped one so that we can
+			 * tell the caller why nothing matched.
+			 */
+			if (inode.acl_id != iocb->acl) {
+				sd_debug("VDI %" PRIx32 " belongs to ACL %"
+					 PRIx32 ", not %" PRIx32, inode.vdi_id,
+					 inode.acl_id, iocb->acl);
+				acl_denied = true;
+				continue;
+			}
 			if (vdi_has_tag(iocb)) {
 				/* Read, delete, clone on snapshots */
 				if (!vdi_is_snapshot(&inode)) {
@@ -1550,7 +1573,10 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 			goto out;
 		}
 	}
-	ret = vdi_found ? SD_RES_NO_TAG : SD_RES_NO_VDI;
+	if (vdi_found)
+		ret = SD_RES_NO_TAG;
+	else
+		ret = acl_denied ? SD_RES_VDI_DENIED : SD_RES_NO_VDI;
 out:
 	return ret;
 }
@@ -1559,6 +1585,7 @@ out:
 static int fill_vdi_info(unsigned long left, unsigned long right,
 			 const struct vdi_iocb *iocb, struct vdi_info *info)
 {
+	bool acl_denied;
 	int ret;
 
 	assert(left != right);
@@ -1578,7 +1605,11 @@ static int fill_vdi_info(unsigned long left, unsigned long right,
 	switch (ret) {
 	case SD_RES_NO_VDI:
 	case SD_RES_NO_TAG:
+	case SD_RES_VDI_DENIED:
+		acl_denied = (ret == SD_RES_VDI_DENIED);
 		ret = fill_vdi_info_range(left, SD_NR_VDIS, iocb, info);
+		if (acl_denied && ret == SD_RES_NO_VDI)
+			ret = SD_RES_VDI_DENIED;
 		break;
 	default:
 		break;
@@ -1682,7 +1713,8 @@ int vdi_lookup(const struct vdi_iocb *iocb, struct vdi_info *info)
 }
 
 static int notify_vdi_add(uint32_t vdi_id, uint32_t nr_copies, uint32_t old_vid,
-			  uint8_t copy_policy, uint8_t block_size_shift)
+			  uint8_t copy_policy, uint8_t block_size_shift,
+			  uint32_t acl)
 {
 	int ret;
 	struct sd_req hdr;
@@ -1690,6 +1722,7 @@ static int notify_vdi_add(uint32_t vdi_id, uint32_t nr_copies, uint32_t old_vid,
 	sd_init_req(&hdr, SD_OP_NOTIFY_VDI_ADD);
 	hdr.vdi_state.old_vid = old_vid;
 	hdr.vdi_state.new_vid = vdi_id;
+	hdr.vdi_state.acl = acl;
 	hdr.vdi_state.copies = nr_copies;
 	hdr.vdi_state.set_bitmap = false;
 	hdr.vdi_state.copy_policy = copy_policy;
@@ -1737,7 +1770,8 @@ int vdi_create(const struct vdi_iocb *iocb, uint32_t *new_vid)
 	*new_vid = info.free_bit;
 	ret = notify_vdi_add(*new_vid, iocb->nr_copies,
 			     iocb->base_vid == 0 ? info.vid : iocb->base_vid,
-			     iocb->copy_policy, iocb->block_size_shift);
+			     iocb->copy_policy, iocb->block_size_shift,
+			     iocb->acl);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
 
@@ -1774,7 +1808,8 @@ int vdi_snapshot(const struct vdi_iocb *iocb, uint32_t *new_vid)
 	sd_assert(info.snapid > 0);
 	*new_vid = info.free_bit;
 	ret = notify_vdi_add(*new_vid, iocb->nr_copies, info.vid,
-			     iocb->copy_policy, iocb->block_size_shift);
+			     iocb->copy_policy, iocb->block_size_shift,
+			     iocb->acl);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
 

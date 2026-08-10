@@ -95,6 +95,7 @@ static int cluster_new_vdi(struct request *req)
 		.nr_copies = hdr->vdi.copies,
 		.block_size_shift = hdr->vdi.block_size_shift,
 		.time = (uint64_t) tv.tv_sec << 32 | tv.tv_usec * 1000,
+		.acl = hdr->vdi.acl,
 	};
 
 	/* Client doesn't specify redundancy scheme (copy = 0) */
@@ -167,6 +168,7 @@ static int cluster_del_vdi(struct request *req)
 		.name = req->data,
 		.data_len = data_len,
 		.snapid = hdr->vdi.snapid,
+		.acl = hdr->vdi.acl,
 	};
 
 	if (vdi_init_tag(&iocb.tag, req->data, data_len) < 0)
@@ -396,6 +398,7 @@ static int cluster_get_vdi_attr(struct request *req)
 	iocb.name = vattr->name;
 	iocb.tag = vattr->tag;
 	iocb.snapid = hdr->vdi.snapid;
+	iocb.acl = hdr->vdi.acl;
 	ret = vdi_lookup(&iocb, &info);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
@@ -1357,7 +1360,7 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 
 	ret = vdi_lock(vid, &sender->nid, req->vdi.acl);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("locking %"PRIx32 "failed: %s", vid, strerror(ret));
+		sd_err("locking %"PRIx32" failed: %s", vid, sd_strerror(ret));
 		return ret;
 	}
 

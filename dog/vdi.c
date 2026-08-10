@@ -1109,7 +1109,7 @@ static int vdi_clone(int argc, char **argv)
 
 	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	ret = do_vdi_create(dst_vdi, inode->header.vdi_size,
-			    base_vid, inode->header.acl_id, &new_vid, false,
+			    base_vid, vdi_cmd_data.acl_id, &new_vid, false,
 			    inode->header.nr_copies,
 			    inode->header.copy_policy,
 			    inode->header.store_policy,
@@ -1325,13 +1325,16 @@ static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
 			sleep(reclamation_interval);
 	}
 
-	if (vdi_cmd_data.nr_max_reclaim)
-		return EXIT_SUCCESS;
+	if (vdi_cmd_data.nr_max_reclaim) {
+		ret = EXIT_SUCCESS;
+		goto out;
+	}
 
 	sd_init_req(&hdr, SD_OP_DEL_VDI);
 	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.data_length = sizeof(data);
 	hdr.vdi.snapid = snap_id;
+	hdr.vdi.acl = acl;
 	memset(data, 0, sizeof(data));
 	pstrcpy(data, SD_MAX_VDI_LEN, vdiname);
 	if (snap_tag)
@@ -1354,7 +1357,7 @@ static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
 
 out:
 	free(inode);
-	return EXIT_SUCCESS;
+	return ret;
 }
 
 static int vdi_delete(int argc, char **argv)
@@ -1934,6 +1937,7 @@ static int find_vdi_attr_oid(const char *vdiname, const char *tag, uint32_t snap
 	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.data_length = SD_ATTR_OBJ_SIZE;
 	hdr.vdi.snapid = vdi_cmd_data.snapshot_id;
+	hdr.vdi.acl = vdi_cmd_data.acl_id;
 
 	if (create)
 		hdr.flags |= SD_FLAG_CMD_CREAT;
@@ -3375,6 +3379,8 @@ static int lock_lock(int argc, char **argv)
 	uint32_t acl_id = vdi_cmd_data.acl_id;
 	uint32_t vid = 0;
 	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
 
 	if (!vdiname) {
 		sd_err("VDI name must be specified");
@@ -3388,15 +3394,31 @@ static int lock_lock(int argc, char **argv)
 		       vdidesc, sd_strerror(ret));
 		return EXIT_FAILURE;
 	}
+
+	/* SD_OP_LOCK_VDI looks up the VDI by name, not by vid */
+	memset(buf, 0, sizeof(buf));
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+	if (tag)
+		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
+
 	sd_init_req(&hdr, SD_OP_LOCK_VDI);
-	hdr.vdi.base_vdi_id = vid;
+	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.vdi.snapid = snapid;
 	hdr.vdi.acl = acl_id;
-	ret = dog_exec_req(&sd_nid, &hdr, NULL);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to lock VDI %s: %s",
-		       vdidesc, sd_strerror(ret));
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to lock VDI %s", vdidesc);
+		return EXIT_SYSFAIL;
 	}
-	return ret ? EXIT_FAILURE : EXIT_SUCCESS;
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to lock VDI %s: %s",
+		       vdidesc, sd_strerror(rsp->result));
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
 }
 
 static int lock_unlock(int argc, char **argv)
