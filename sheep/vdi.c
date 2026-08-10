@@ -2308,6 +2308,9 @@ struct vdi_state_checkpoint {
 	int epoch, nr_vs;
 	struct vdi_state *vs;
 
+	/* one reference per node which is going to collect this checkpoint */
+	int refcnt;
+
 	struct list_node list;
 };
 
@@ -2323,7 +2326,15 @@ main_fn void create_vdi_state_checkpoint(int epoch)
 
 	list_for_each_entry(checkpoint, &vdi_state_checkpoint_list, list) {
 		if (checkpoint->epoch == epoch) {
-			sd_debug("duplicate checkpoint of epoch %d", epoch);
+			/*
+			 * More than one node can join at the same epoch, and
+			 * each of them frees this checkpoint once it collected
+			 * its VDI state.  Keep it until the last one is done,
+			 * otherwise the others find it gone and give up.
+			 */
+			checkpoint->refcnt++;
+			sd_debug("checkpoint of epoch %d is shared by %d nodes",
+				 epoch, checkpoint->refcnt);
 			return;
 		}
 
@@ -2331,6 +2342,7 @@ main_fn void create_vdi_state_checkpoint(int epoch)
 
 	checkpoint = xzalloc(sizeof(*checkpoint));
 	checkpoint->epoch = epoch;
+	checkpoint->refcnt = 1;
 	checkpoint->vs = fill_vdi_state_list_with_alloc(&checkpoint->nr_vs);
 	INIT_LIST_NODE(&checkpoint->list);
 	list_add_tail(&checkpoint->list, &vdi_state_checkpoint_list);
@@ -2375,6 +2387,13 @@ main_fn void free_vdi_state_checkpoint(int epoch)
 
 	list_for_each_entry(checkpoint, &vdi_state_checkpoint_list, list) {
 		if (checkpoint->epoch == epoch) {
+			if (--checkpoint->refcnt > 0) {
+				sd_debug("checkpoint of epoch %d is still needed"
+					 " by %d nodes", epoch,
+					 checkpoint->refcnt);
+				return;
+			}
+
 			list_del(&checkpoint->list);
 			free(checkpoint->vs);
 			free(checkpoint);
@@ -2383,8 +2402,12 @@ main_fn void free_vdi_state_checkpoint(int epoch)
 		}
 	}
 
-	panic("invalid free request for vdi state checkpoint, epoch: %d",
-	      epoch);
+	/*
+	 * A node only takes a checkpoint when it sees somebody else join, so a
+	 * node which joined together with the requester never had one.  Losing
+	 * a checkpoint we do not have is nothing to die for.
+	 */
+	sd_info("no vdi state checkpoint of epoch %d to free", epoch);
 }
 
 static int clean_matched_obj(uint64_t oid, const char *path,

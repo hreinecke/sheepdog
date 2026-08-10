@@ -851,6 +851,7 @@ struct cinfo_collection_work {
 	uint32_t next_vid;
 
 	bool skip;
+	bool running;
 };
 
 static struct cinfo_collection_work *collect_work;
@@ -883,49 +884,61 @@ static bool check_inode_obj_exist(uint32_t vid, int epoch)
 	return SD_RES_SUCCESS == sd_store->read(vid_to_vdi_oid(vid), &iocb);
 }
 
+/* how long to wait for the other nodes to prepare their checkpoints */
+#define CINFO_COLLECTION_RETRY 30
+
 static void cinfo_collection_work(struct work *work)
 {
 	struct cinfo_collection_work *w =
 		container_of(work, struct cinfo_collection_work, work);
 	struct sd_node *n;
-	int ret, nr_nodes_no_chkpt = 0;
+	int ret, nr_nodes_no_chkpt;
 
 	sd_debug("start collection of cinfo, epoch: %d, vid: %"PRIx32,
 		 w->epoch, w->next_vid);
 
 	sd_assert(w == collect_work);
 
-	rb_for_each_entry(n, &w->members->nroot, rb) {
-		if (node_is_local(n))
-			continue;
+	for (int i = 0; i < CINFO_COLLECTION_RETRY; i++) {
+		nr_nodes_no_chkpt = 0;
 
-		ret = do_cinfo_collection_work(w->epoch, w->next_vid, n,
-					       &w->result);
-		if (ret == SD_RES_SUCCESS)
-			return;
-		else if (ret == SD_RES_NO_CHECKPOINT_ENTRY)
-			nr_nodes_no_chkpt++;
-	}
+		rb_for_each_entry(n, &w->members->nroot, rb) {
+			if (node_is_local(n))
+				continue;
 
-	if (nr_nodes_no_chkpt + 1 == w->members->nr_nodes) {
-		sd_info("other nodes doesn't have a entry of checkpoint for"
-			" VID: %"PRIx32" at epoch %d", w->next_vid, w->epoch);
-
-		if (check_inode_obj_exist(w->next_vid, w->epoch)) {
-			w->skip = true;
-			return;
+			ret = do_cinfo_collection_work(w->epoch, w->next_vid, n,
+						       &w->result);
+			if (ret == SD_RES_SUCCESS)
+				return;
+			else if (ret == SD_RES_NO_CHECKPOINT_ENTRY)
+				nr_nodes_no_chkpt++;
 		}
 
-		panic("this node should have object of inode: %016"PRIx64
-		      "but doesn't have", vid_to_vdi_oid(w->next_vid));
+		if (nr_nodes_no_chkpt + 1 == w->members->nr_nodes) {
+			sd_info("other nodes doesn't have a entry of checkpoint"
+				" for VID: %"PRIx32" at epoch %d", w->next_vid,
+				w->epoch);
+
+			if (check_inode_obj_exist(w->next_vid, w->epoch)) {
+				w->skip = true;
+				return;
+			}
+
+			panic("this node should have object of inode: %016"
+			      PRIx64 "but doesn't have",
+			      vid_to_vdi_oid(w->next_vid));
+		}
+
+		/*
+		 * The other nodes take their checkpoint when they see us join,
+		 * which can happen after we asked them for it.  Give them a
+		 * moment instead of taking the whole node down.
+		 */
+		sd_info("no node has a checkpoint of vdi state at epoch %d yet,"
+			" retrying", w->epoch);
+		sleep(1);
 	}
 
-	/*
-	 * TODO: need to sleep and retry
-	 *
-	 * There is a possibility that other nodes is still preparing
-	 * their checkpoints.
-	 */
 	panic("getting a checkpoint of vdi state at epoch %d failed", w->epoch);
 }
 
@@ -1005,6 +1018,18 @@ static main_fn void collect_cinfo(void)
 	if (!collect_work)
 		return;
 
+	/*
+	 * Every join makes us fetch the VDI list again, so we can end up here
+	 * while our own collection is still running.  Restarting it would
+	 * requeue a work which is already queued and free the checkpoints of
+	 * the other nodes twice.
+	 */
+	if (collect_work->running) {
+		sd_debug("cluster info collection for epoch %d is already"
+			 " running", collect_work->epoch);
+		return;
+	}
+
 	sd_debug("start cluster info collection for epoch %d",
 		 collect_work->epoch);
 
@@ -1012,6 +1037,7 @@ static main_fn void collect_cinfo(void)
 	if (collect_work->next_vid == SD_NR_VDIS) {
 		sd_debug("no VDIs are created yet");
 
+		free_cinfo(collect_work);
 		put_vnode_info(collect_work->members);
 		free(collect_work);
 		collect_work = NULL;
@@ -1022,6 +1048,7 @@ static main_fn void collect_cinfo(void)
 
 	sd_debug("initial vid: %"PRIx32, collect_work->next_vid);
 
+	collect_work->running = true;
 	collect_work->work.fn = cinfo_collection_work;
 	collect_work->work.done = cinfo_collection_done;
 	queue_work(sys->block_wqueue, &collect_work->work);
