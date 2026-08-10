@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# Test VDI ACL handling
+
+. ./common
+
+ACL=3003819
+OTHER_ACL=4711
+err=0
+
+for i in 0 1 2; do
+    _start_sheep $i
+done
+_wait_for_sheep 3
+_cluster_format -c 3 -l
+
+echo "= create one VDI with an ACL and one without"
+$DOG vdi create acl_vdi 16M -A $ACL || err=1
+$DOG vdi create plain_vdi 16M || err=1
+
+echo "= a VDI is only listed for its own ACL"
+_vdi_list
+_vdi_list -A $ACL
+_vdi_list -A $OTHER_ACL
+
+echo "= reusing the name of an ACL protected VDI must fail"
+$DOG vdi create acl_vdi 16M && err=1
+$DOG vdi create acl_vdi 16M -A $OTHER_ACL && err=1
+$DOG vdi create acl_vdi 16M -A $ACL && err=1
+
+echo "= read and write need the right ACL"
+echo "acl payload" | $DOG vdi write acl_vdi 0 12 && err=1
+echo "acl payload" | $DOG vdi write acl_vdi -A $OTHER_ACL 0 12 && err=1
+echo "acl payload" | $DOG vdi write acl_vdi -A $ACL 0 12 || err=1
+$DOG vdi read acl_vdi 0 12 && err=1
+$DOG vdi read acl_vdi -A $ACL 0 12 || err=1
+
+echo "= attributes need the right ACL"
+$DOG vdi setattr acl_vdi key value && err=1
+$DOG vdi setattr acl_vdi key value -A $ACL || err=1
+$DOG vdi getattr acl_vdi key && err=1
+$DOG vdi getattr acl_vdi key -A $ACL || err=1
+echo
+
+echo "= snapshot and clone need the right ACL"
+$DOG vdi snapshot acl_vdi -s snap && err=1
+$DOG vdi snapshot acl_vdi -s snap -A $ACL || err=1
+$DOG vdi clone -s snap acl_vdi acl_clone && err=1
+$DOG vdi clone -s snap acl_vdi acl_clone -A $ACL || err=1
+
+echo "= a VDI cannot be cloned into another ACL"
+$DOG vdi snapshot plain_vdi -s psnap || err=1
+$DOG vdi clone -s psnap plain_vdi adopted_clone -A $ACL && err=1
+$DOG vdi clone -s psnap plain_vdi plain_clone || err=1
+
+echo "= a clone belongs to the ACL it was created with"
+_vdi_list
+_vdi_list -A $ACL
+
+echo "= an ACL protected VDI cannot be locked exclusively"
+$DOG vdi lock lock acl_vdi && err=1
+$DOG vdi lock lock acl_vdi -A $OTHER_ACL && err=1
+$DOG vdi lock lock acl_vdi -A $ACL || err=1
+$DOG vdi lock unlock acl_vdi -A $ACL || err=1
+
+echo "= a VDI without an ACL is still locked exclusively"
+$DOG vdi lock lock plain_vdi || err=1
+$DOG vdi lock lock plain_vdi && err=1
+$DOG vdi lock unlock plain_vdi || err=1
+
+echo "= changing the ACL needs the right current ACL"
+$DOG vdi alter-acl acl_vdi $OTHER_ACL && err=1
+$DOG vdi alter-acl acl_vdi $OTHER_ACL -A $OTHER_ACL && err=1
+$DOG vdi alter-acl acl_vdi $ACL -A $ACL && err=1
+
+echo "= a locked VDI keeps its ACL"
+$DOG vdi lock lock acl_vdi -A $ACL || err=1
+$DOG vdi alter-acl acl_vdi $OTHER_ACL -A $ACL && err=1
+$DOG vdi lock unlock acl_vdi -A $ACL || err=1
+
+echo "= a VDI and its snapshots change their ACL together"
+$DOG vdi alter-acl acl_vdi $OTHER_ACL -A $ACL || err=1
+_vdi_list -A $ACL
+_vdi_list -A $OTHER_ACL
+$DOG vdi read acl_vdi -A $OTHER_ACL 0 12 || err=1
+
+echo "= an ACL can be added to and removed from a VDI"
+$DOG vdi alter-acl plain_vdi $ACL || err=1
+_vdi_list
+$DOG vdi alter-acl plain_vdi 0 -A $ACL || err=1
+$DOG vdi alter-acl acl_vdi $ACL -A $OTHER_ACL || err=1
+_vdi_list
+
+echo "= delete needs the right ACL"
+$DOG vdi delete acl_clone && err=1
+$DOG vdi delete acl_clone -A $OTHER_ACL && err=1
+$DOG vdi delete acl_clone -A $ACL || err=1
+$DOG vdi delete plain_clone -A $ACL && err=1
+$DOG vdi delete plain_clone || err=1
+
+echo "= the surviving VDIs"
+_vdi_list
+_vdi_list -A $ACL
+
+exit $err
