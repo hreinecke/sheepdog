@@ -41,6 +41,7 @@ struct active_vdi_entry {
 	uint64_t vdi_size;
 	uint32_t vdi_id;
 	uint32_t snap_id;
+	uint32_t acl_id;
 	uint8_t  nr_copies;
 	uint8_t copy_policy;
 	uint8_t store_policy;
@@ -81,6 +82,7 @@ static void update_active_vdi_entry(struct active_vdi_entry *vdi,
 	vdi->vdi_size = new->vdi_size;
 	vdi->vdi_id = new->vdi_id;
 	vdi->snap_id = new->snap_id;
+	vdi->acl_id = new->acl_id;
 	vdi->nr_copies = new->nr_copies;
 	vdi->copy_policy = new->copy_policy;
 	vdi->store_policy = new->store_policy;
@@ -139,9 +141,8 @@ static int create_active_vdis(void)
 	struct active_vdi_entry *vdi;
 	uint32_t new_vid;
 	rb_for_each_entry(vdi, &active_vdi_tree, rb) {
-		if (do_vdi_create(vdi->name,
-				  vdi->vdi_size,
-				  vdi->vdi_id, &new_vid,
+		if (do_vdi_create(vdi->name, vdi->vdi_size,
+				  vdi->vdi_id, vdi->acl_id, &new_vid,
 				  false, vdi->nr_copies,
 				  vdi->copy_policy,
 				  vdi->store_policy,

@@ -237,6 +237,7 @@ struct vdi_iocb {
 	uint8_t nr_copies;
 	uint8_t block_size_shift;
 	uint64_t time;
+	uint32_t acl;
 };
 
 /* This structure is used to get information from sheepdog. */

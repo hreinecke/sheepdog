@@ -47,6 +47,7 @@ struct sd_cluster {
 struct sd_vdi {
 	struct sd_inode *inode;
 	uint32_t vid;
+	uint32_t acl;
 	struct sd_rw_lock lock;
 	char *name;
 };
@@ -86,11 +87,12 @@ int sd_run_sdreq(struct sd_cluster *c, struct sd_req *hdr, void *data);
  *
  * @c: pointer to the cluster descriptor.
  * @name: the name of the vdi to be opened.
+ * @acl: the ACL ID for accessing the vdi
  *
  * Return a vdi descriptor on success. Otherwise, return NULL in case of
  * error and set errno as error code defined in sheepdog_proto.h.
  */
-struct sd_vdi *sd_vdi_open(struct sd_cluster *c, char *name);
+struct sd_vdi *sd_vdi_open(struct sd_cluster *c, char *name, uint32_t acl);
 
 /*
  * Read from a vdi descriptor at a given offset.

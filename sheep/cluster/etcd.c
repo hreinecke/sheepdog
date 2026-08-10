@@ -1068,7 +1068,7 @@ static void etcd_vdi_to_json(struct sd_req *req, struct json_object *obj)
 	UPDATE_JSON_INT(obj, &req->vdi, store_policy);
 	UPDATE_JSON_INT(obj, &req->vdi, block_size_shift);
 	UPDATE_JSON_INT(obj, &req->vdi, snapid);
-	UPDATE_JSON_INT(obj, &req->vdi, type);
+	UPDATE_JSON_INT(obj, &req->vdi, acl);
 }
 
 static void etcd_cluster_to_json(struct sd_req *req, struct json_object *obj)
@@ -1306,7 +1306,7 @@ static void etcd_json_to_req_vdi(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &req->vdi, store_policy, key);
 		DEREF_JSON_INT(val_obj, &req->vdi, block_size_shift, key);
 		DEREF_JSON_INT(val_obj, &req->vdi, snapid, key);
-		DEREF_JSON_INT(val_obj, &req->vdi, type, key);
+		DEREF_JSON_INT(val_obj, &req->vdi, acl, key);
 		else
 			sd_warn("unhandled vdi attribute '%s'", key);
 		json_object_iter_next(&itb);

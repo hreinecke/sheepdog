@@ -645,7 +645,7 @@ static int vdi_graph(int argc, char **argv)
 }
 
 static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
-			 uint32_t *vid)
+			 uint32_t acl, uint32_t *vid)
 {
 	int ret;
 	struct sd_req hdr;
@@ -661,6 +661,7 @@ static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
 	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
 	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.vdi.snapid = snapid;
+	hdr.vdi.acl = acl;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0)
@@ -673,15 +674,16 @@ static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
 }
 
 int read_vdi_obj(const char *vdiname, int snapid, const char *tag,
-			uint32_t *pvid, void *inode, size_t size)
+		 uint32_t acl, uint32_t *pvid, void *inode, size_t size)
 {
 	int ret;
 	uint32_t vid;
 
-	ret = find_vdi_name(vdiname, snapid, tag, &vid);
+	ret = find_vdi_name(vdiname, snapid, tag, acl, &vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open VDI %s (snapshot id: %d snapshot tag: %s)"
-				": %s", vdiname, snapid, tag, sd_strerror(ret));
+		sd_err("Failed to open VDI %s (snapshot id: %d "
+		       "snapshot tag: %s acl: %" PRIx32"): %s",
+		       vdiname, snapid, tag, acl, sd_strerror(ret));
 		return EXIT_FAILURE;
 	}
 
@@ -705,7 +707,8 @@ int read_vdi_obj(const char *vdiname, int snapid, const char *tag,
 }
 
 int do_vdi_create(const char *vdiname, int64_t vdi_size,
-		  uint32_t base_vid, uint32_t *vdi_id, bool snapshot,
+		  uint32_t base_vid, uint32_t acl_id,
+		  uint32_t *vdi_id, bool snapshot,
 		  uint8_t nr_copies, uint8_t copy_policy,
 		  uint8_t store_policy, uint8_t block_size_shift)
 {
@@ -728,6 +731,7 @@ int do_vdi_create(const char *vdiname, int64_t vdi_size,
 	hdr.vdi.copy_policy = copy_policy;
 	hdr.vdi.store_policy = store_policy;
 	hdr.vdi.block_size_shift = block_size_shift;
+	hdr.vdi.acl = acl_id;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0)
@@ -815,7 +819,7 @@ static int vdi_create(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 
-	ret = do_vdi_create(vdiname, size, 0, &vid, false,
+	ret = do_vdi_create(vdiname, size, 0, vdi_cmd_data.acl_id, &vid, false,
 			    vdi_cmd_data.nr_copies, vdi_cmd_data.copy_policy,
 			    vdi_cmd_data.store_policy,
 			    vdi_cmd_data.block_size_shift);
@@ -947,6 +951,7 @@ static int vdi_snapshot(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	uint32_t vid, new_vid;
+	uint32_t acl_id = vdi_cmd_data.acl_id;
 	int ret;
 	struct sd_inode_header *inode;
 	bool fail_if_snapshot = false;
@@ -958,7 +963,8 @@ static int vdi_snapshot(int argc, char **argv)
 	}
 
 	ret = find_vdi_name(vdiname, vdi_cmd_data.snapshot_id,
-			vdi_cmd_data.snapshot_tag, &vid);
+			    vdi_cmd_data.snapshot_tag, acl_id,
+			    &vid);
 	switch (ret) {
 	case SD_RES_NO_TAG:
 		break;
@@ -990,7 +996,7 @@ static int vdi_snapshot(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 	} else {
-		ret = read_vdi_obj(vdiname, 0, "", &vid, inode,
+		ret = read_vdi_obj(vdiname, 0, "", acl_id, &vid, inode,
 				   SD_INODE_HEADER_SIZE);
 		if (ret != SD_RES_SUCCESS) {
 			free(inode);
@@ -1031,7 +1037,7 @@ static int vdi_snapshot(int argc, char **argv)
 		goto out;
 
 	ret = do_vdi_create(vdiname, inode->vdi_size,
-			    vid, &new_vid, true,
+			    vid, acl_id, &new_vid, true,
 			    inode->nr_copies, inode->copy_policy,
 			    inode->store_policy, inode->block_size_shift);
 
@@ -1086,8 +1092,8 @@ static int vdi_clone(int argc, char **argv)
 	inode = xmalloc(sizeof(*inode));
 
 	ret = read_vdi_obj(src_vdi, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, &base_vid, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   &base_vid, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
 
@@ -1096,7 +1102,7 @@ static int vdi_clone(int argc, char **argv)
 
 	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	ret = do_vdi_create(dst_vdi, inode->header.vdi_size,
-			    base_vid, &new_vid, false,
+			    base_vid, inode->header.acl_id, &new_vid, false,
 			    inode->header.nr_copies,
 			    inode->header.copy_policy,
 			    inode->header.store_policy,
@@ -1106,8 +1112,8 @@ static int vdi_clone(int argc, char **argv)
 		goto out;
 
 	new_inode = xmalloc(sizeof(*inode));
-	ret = read_vdi_obj(dst_vdi, 0, "", NULL, new_inode,
-			SD_INODE_HEADER_SIZE);
+	ret = read_vdi_obj(dst_vdi, 0, "", vdi_cmd_data.acl_id,
+			   NULL, new_inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
 
@@ -1182,6 +1188,7 @@ static int vdi_resize(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint64_t new_size, old_max_total_size;
 	uint32_t vid, object_size;
+	uint32_t acl_id = vdi_cmd_data.acl_id;
 	int ret;
 	struct sd_inode_header inode;
 
@@ -1193,7 +1200,8 @@ static int vdi_resize(int argc, char **argv)
 	if (ret < 0)
 		return EXIT_USAGE;
 
-	ret = read_vdi_obj(vdiname, 0, "", &vid, &inode, SD_INODE_HEADER_SIZE);
+	ret = read_vdi_obj(vdiname, 0, "", acl_id,
+			   &vid, &inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		return ret;
 
@@ -1232,7 +1240,8 @@ static int vdi_resize(int argc, char **argv)
 }
 
 static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
-			 int nr_batched_reclamation, int reclamation_interval)
+			 uint32_t acl, int nr_batched_reclamation,
+			 int reclamation_interval)
 {
 	int ret, nr_objs, nr_reclaimed;
 	struct sd_req hdr;
@@ -1245,7 +1254,7 @@ static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
 	if (!nr_batched_reclamation)
 		nr_batched_reclamation = NR_BATCHED_RECLAMATION_DEFAULT;
 
-	ret = find_vdi_name(vdiname, snap_id, snap_tag, &vid);
+	ret = find_vdi_name(vdiname, snap_id, snap_tag, acl, &vid);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to open VDI %s (snapshot id: %d snapshot tag: %s)"
 				": %s", vdiname, snap_id, snap_tag, sd_strerror(ret));
@@ -1346,7 +1355,7 @@ static int vdi_delete(int argc, char **argv)
 	const char *vdiname = argv[optind];
 
 	return do_vdi_delete(vdiname, vdi_cmd_data.snapshot_id,
-			     vdi_cmd_data.snapshot_tag,
+			     vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
 			     vdi_cmd_data.nr_batched_reclamation,
 			     vdi_cmd_data.reclamation_interval);
 }
@@ -1355,17 +1364,18 @@ static int vdi_rollback(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	uint32_t base_vid, new_vid;
+	uint32_t snap_id = vdi_cmd_data.snapshot_id;
+	uint32_t acl_id = vdi_cmd_data.acl_id;
 	int ret;
 	struct sd_inode_header inode;
 
-	if (!vdi_cmd_data.snapshot_id && !vdi_cmd_data.snapshot_tag[0]) {
+	if (!snap_id && !vdi_cmd_data.snapshot_tag[0]) {
 		sd_err("Please specify the '-s' option");
 		return EXIT_USAGE;
 	}
 
-	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, &base_vid, &inode,
-			   sizeof(inode));
+	ret = read_vdi_obj(vdiname, snap_id, vdi_cmd_data.snapshot_tag,
+			   acl_id, &base_vid, &inode, sizeof(inode));
 	if (ret != EXIT_SUCCESS)
 		return ret;
 
@@ -1373,7 +1383,7 @@ static int vdi_rollback(int argc, char **argv)
 		confirm("This operation discards any changes made since the"
 			" previous\nsnapshot was taken.  Continue? [yes/no]: ");
 
-	ret = do_vdi_delete(vdiname, 0, NULL,
+	ret = do_vdi_delete(vdiname, 0, NULL, acl_id,
 			    vdi_cmd_data.nr_batched_reclamation,
 			    vdi_cmd_data.reclamation_interval);
 	if (ret != SD_RES_SUCCESS) {
@@ -1381,7 +1391,7 @@ static int vdi_rollback(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	ret = do_vdi_create(vdiname, inode.vdi_size, base_vid, &new_vid,
+	ret = do_vdi_create(vdiname, inode.vdi_size, base_vid, acl_id, &new_vid,
 			     false, inode.nr_copies, inode.copy_policy,
 			     inode.store_policy, inode.block_size_shift);
 
@@ -1413,8 +1423,8 @@ static int vdi_object_map(int argc, char **argv)
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: %s not found", vdiname);
 		goto out;
@@ -1515,8 +1525,8 @@ static int vdi_object_location(int argc, char **argv)
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
 		goto out;
@@ -1821,8 +1831,8 @@ static int vdi_track(int argc, char **argv)
 	struct json_object *epoch_objs = NULL;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
 		return ret;
@@ -2075,8 +2085,8 @@ static int vdi_read(int argc, char **argv)
 	inode = malloc(sizeof(*inode));
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
@@ -2152,7 +2162,8 @@ static int vdi_write(int argc, char **argv)
 
 	inode = xmalloc(sizeof(*inode));
 
-	ret = read_vdi_obj(vdiname, 0, "", &vid, inode, SD_INODE_SIZE);
+	ret = read_vdi_obj(vdiname, 0, "", vdi_cmd_data.acl_id,
+			   &vid, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
@@ -2681,8 +2692,8 @@ static int vdi_check(int argc, char **argv)
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
 		goto out;
@@ -2799,14 +2810,14 @@ static int vdi_backup(int argc, char **argv)
 	}
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.from_snapshot_id,
-			   vdi_cmd_data.from_snapshot_tag, NULL,
-			   from_inode, SD_INODE_SIZE);
+			   vdi_cmd_data.from_snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, from_inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, to_inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, to_inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
@@ -2902,7 +2913,8 @@ static int restore_obj(struct obj_backup *backup, uint32_t vid,
 				parent_inode->header.copy_policy, false, true);
 }
 
-static uint32_t do_restore(const char *vdiname, int snapid, const char *tag)
+static uint32_t do_restore(const char *vdiname, int snapid, const char *tag,
+			   uint32_t acl_id)
 {
 	int ret;
 	uint32_t vid;
@@ -2922,12 +2934,13 @@ static uint32_t do_restore(const char *vdiname, int snapid, const char *tag)
 		goto out;
 	}
 
-	ret = read_vdi_obj(vdiname, snapid, tag, NULL, inode, SD_INODE_SIZE);
+	ret = read_vdi_obj(vdiname, snapid, tag, acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
 
 	ret = do_vdi_create(vdiname, inode->header.vdi_size,
-			    inode->header.vdi_id, &vid,
+			    inode->header.vdi_id, acl_id, &vid,
 			    false, inode->header.nr_copies,
 			    inode->header.copy_policy,
 			    inode->header.store_policy,
@@ -2964,7 +2977,7 @@ static uint32_t do_restore(const char *vdiname, int snapid, const char *tag)
 		ret = restore_obj(backup, vid, inode);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("failed to restore backup");
-			do_vdi_delete(vdiname, 0, NULL,
+			do_vdi_delete(vdiname, 0, NULL, vdi_cmd_data.acl_id,
 				      vdi_cmd_data.nr_batched_reclamation,
 				      vdi_cmd_data.reclamation_interval);
 			ret = EXIT_FAILURE;
@@ -2996,8 +3009,8 @@ static int vdi_restore(int argc, char **argv)
 	}
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode_for_check,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode_for_check, SD_INODE_SIZE);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Snapshot ID %d or tag %s doesn't exist",
 		       vdi_cmd_data.snapshot_id, vdi_cmd_data.snapshot_tag);
@@ -3009,8 +3022,8 @@ static int vdi_restore(int argc, char **argv)
 	 * delete the current vdi temporarily first to avoid making
 	 * the current state become snapshot
 	 */
-	ret = read_vdi_obj(vdiname, 0, "", NULL, &current,
-			   SD_INODE_HEADER_SIZE);
+	ret = read_vdi_obj(vdiname, 0, "", vdi_cmd_data.acl_id,
+			   NULL, &current, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
 
@@ -3027,7 +3040,7 @@ static int vdi_restore(int argc, char **argv)
 		goto out;
 	}
 
-	ret = do_vdi_delete(vdiname, 0, NULL,
+	ret = do_vdi_delete(vdiname, 0, NULL, vdi_cmd_data.acl_id,
 			    vdi_cmd_data.nr_batched_reclamation,
 			    vdi_cmd_data.reclamation_interval);
 	if (ret != EXIT_SUCCESS) {
@@ -3038,13 +3051,14 @@ static int vdi_restore(int argc, char **argv)
 
 	/* restore backup data */
 	ret = do_restore(vdiname, vdi_cmd_data.snapshot_id,
-			 vdi_cmd_data.snapshot_tag);
+			 vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id);
 out:
 	if (need_current_recovery) {
 		int recovery_ret;
 		/* recreate the current vdi object */
 		recovery_ret = do_vdi_create(vdiname, current.vdi_size,
-					     current.parent_vdi_id, NULL,
+					     current.parent_vdi_id,
+					     vdi_cmd_data.acl_id, NULL,
 					     true, current.nr_copies,
 					     current.copy_policy,
 					     current.store_policy,
@@ -3069,8 +3083,8 @@ static int vdi_object_dump_inode(int argc, char **argv)
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, NULL, inode,
-			   SD_INODE_SIZE);
+			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("no inode object");
 		return EXIT_FAILURE;
@@ -3260,7 +3274,8 @@ static int vdi_alter_copy(int argc, char **argv)
 		confirm(info);
 	}
 
-	ret = read_vdi_obj(vdiname, 0, "", &vid, &inode, SD_INODE_HEADER_SIZE);
+	ret = read_vdi_obj(vdiname, 0, "", vdi_cmd_data.acl_id,
+			   &vid, &inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("Reading %s's vdi object failure.", vdiname);
 		return EXIT_FAILURE;
@@ -3358,8 +3373,9 @@ static int lock_unlock(int argc, char **argv)
 
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
+	uint32_t acl_id = vdi_cmd_data.acl_id;
 	uint32_t vid = 0;
-	ret = find_vdi_name(vdiname, snapid, tag, &vid);
+	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
 	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to find VDI %s: %s",
@@ -3391,17 +3407,22 @@ static int lock_unlock(int argc, char **argv)
 		goto out;
 	}
 
-	uint32_t type = 0;
 	switch (found->lock_state) {
 	case LOCK_STATE_UNLOCKED:
 		sd_err("VDI %s is not locked", vdidesc);
 		ret = EXIT_FAILURE;
 		goto out;
 	case LOCK_STATE_LOCKED:
-		type = LOCK_TYPE_NORMAL;
+		if (acl_id) {
+			sd_err("VDI %s is locked exclusively", vdidesc);
+			ret = EXIT_SYSFAIL;
+			goto out;
+		}
+		acl_id = LOCK_TYPE_NORMAL;
 		break;
 	case LOCK_STATE_SHARED:
-		type = LOCK_TYPE_SHARED;
+		if (!acl_id)
+			acl_id = LOCK_TYPE_SHARED;
 		break;
 	default:
 		sd_err("VDI %s unknown lock state (%" PRIu32 ")",
@@ -3413,7 +3434,7 @@ static int lock_unlock(int argc, char **argv)
 	struct sd_req hdr;
 	sd_init_req(&hdr, SD_OP_RELEASE_VDI);
 	hdr.vdi.base_vdi_id = vid;
-	hdr.vdi.type = type;
+	hdr.vdi.acl = acl_id;
 	ret = dog_exec_req(&sd_nid, &hdr, NULL);
 	ret = ret ? EXIT_FAILURE : EXIT_SUCCESS;
 
@@ -3423,7 +3444,7 @@ out:
 }
 
 static struct subcommand vdi_lock_cmd[] = {
-	{"list", NULL, NULL, "list locked VDIs", NULL, 0, lock_list},
+	{"list", NULL, NULL, "list locked VDIs", NULL, CMD_NEED_ARG, lock_list},
 	{"unlock", "<vdiname>", NULL, "unlock locked VDI forcibly", NULL,
 	 CMD_NEED_ARG, lock_unlock},
 	{NULL},
@@ -3435,22 +3456,22 @@ static int vdi_lock(int argc, char **argv)
 }
 
 static struct subcommand vdi_cmd[] = {
-	{"check", "<vdiname>", "seaphT", "check and repair image's consistency",
+	{"check", "<vdiname>", "seaphTA", "check and repair image's consistency",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_check, vdi_options},
 	{"create", "<vdiname> <size>", "PycajphrvzTA", "create an image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_create, vdi_options},
-	{"snapshot", "<vdiname>", "sajphrvTR", "create a snapshot",
+	{"snapshot", "<vdiname>", "sajphrvTRA", "create a snapshot",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_snapshot, vdi_options},
-	{"clone", "<src vdi> <dst vdi>", "sPnajphrvT", "clone an image",
+	{"clone", "<src vdi> <dst vdi>", "sPnajphrvTA", "clone an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_clone, vdi_options},
 	{"delete", "<vdiname>", "saphTBImA", "delete an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_delete, vdi_options},
-	{"rollback", "<vdiname>", "saphfrvTBI", "rollback to a snapshot",
+	{"rollback", "<vdiname>", "saphfrvTBIA", "rollback to a snapshot",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_rollback, vdi_options},
 	{"list", "[vdiname]", "ajprhoTA", "list images",
@@ -3467,10 +3488,10 @@ static struct subcommand vdi_cmd[] = {
 	 "show the object epoch trace in the image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ARG,
 	 vdi_track, vdi_options},
-	{"setattr", "<vdiname> <key> [value]", "dxaphT", "set a VDI attribute",
+	{"setattr", "<vdiname> <key> [value]", "dxaphTA", "set a VDI attribute",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_setattr, vdi_options},
-	{"getattr", "<vdiname> <key>", "aphT", "get a VDI attribute",
+	{"getattr", "<vdiname> <key>", "aphTA", "get a VDI attribute",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_getattr, vdi_options},
 	{"resize", "<vdiname> <new size>", "aphTA", "resize an image",
@@ -3484,15 +3505,15 @@ static struct subcommand vdi_cmd[] = {
 	 "write data to an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_write, vdi_options},
-	{"backup", "<vdiname>", "sFaphT",
+	{"backup", "<vdiname>", "sFaphTA",
 	 "create an incremental backup between two snapshots and outputs to STDOUT",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_NODELIST|CMD_NEED_ARG,
 	 vdi_backup, vdi_options},
-	{"restore", "<vdiname>", "saphTBI",
+	{"restore", "<vdiname>", "saphTBIA",
 	 "restore snapshot images from a backup provided in STDIN",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_NODELIST|CMD_NEED_ARG,
 	 vdi_restore, vdi_options},
-	{"alter-copy", "<vdiname>", "caphTf", "set the vdi's redundancy level",
+	{"alter-copy", "<vdiname>", "caphTfA", "set the vdi's redundancy level",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
 	{"lock", NULL, "saphTA", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},

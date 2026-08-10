@@ -163,7 +163,7 @@ struct sd_req {
 			uint8_t		store_policy;
 			uint8_t		block_size_shift;
 			uint32_t	snapid;
-			uint32_t        type;
+			uint32_t        acl;
 		} vdi;
 
 		/* sheepdog-internal */

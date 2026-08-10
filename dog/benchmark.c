@@ -125,7 +125,7 @@ static int benchmark_io(int argc, char **argv)
 
 	inode = xzalloc(sizeof(*inode));
 
-	ret = read_vdi_obj(vdiname, 0, "", &vid, inode, sizeof(*inode));
+	ret = read_vdi_obj(vdiname, 0, "", 0, &vid, inode, sizeof(*inode));
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to lookup VDI %s: %s", vdiname, sd_strerror(ret));
 		return EXIT_SYSFAIL;

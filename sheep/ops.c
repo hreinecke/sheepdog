@@ -221,6 +221,7 @@ static int cluster_get_vdi_info(struct request *req)
 		.name = req->data,
 		.data_len = data_len,
 		.snapid = hdr->vdi.snapid,
+		.acl = hdr->vdi.acl,
 	};
 
 	if (vdi_init_tag(&iocb.tag, req->data, data_len) < 0)
@@ -1337,6 +1338,7 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 				 void *data, const struct sd_node *sender)
 {
 	uint32_t vid = rsp->vdi.vdi_id;
+	int ret;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
@@ -1345,17 +1347,18 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
 		sd_debug("logging vdi unlock information for later replay");
-		log_vdi_op_lock(vid, &sender->nid, req->vdi.type);
+		log_vdi_op_lock(vid, &sender->nid, req->vdi.acl);
 		return SD_RES_SUCCESS;
 	}
 
 	sd_info("node: %s is locking VDI (type: %s): %"PRIx32,
 		node_to_str(sender),
-		req->vdi.type == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
+		req->vdi.acl == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
 
-	if (!vdi_lock(vid, &sender->nid, req->vdi.type)) {
-		sd_err("locking %"PRIx32 "failed", vid);
-		return SD_RES_VDI_LOCKED;
+	ret = vdi_lock(vid, &sender->nid, req->vdi.acl);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("locking %"PRIx32 "failed: %s", vid, strerror(ret));
+		return ret;
 	}
 
 	return SD_RES_SUCCESS;
@@ -1374,14 +1377,15 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
 		sd_debug("logging vdi lock information for later replay");
-		log_vdi_op_unlock(vid, &sender->nid, req->vdi.type);
+		log_vdi_op_unlock(vid, &sender->nid, req->vdi.acl);
 		return SD_RES_SUCCESS;
 	}
 
-	sd_info("node: %s is unlocking VDI (type: %s): %"PRIx32, node_to_str(sender),
-		req->vdi.type == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
+	sd_info("node: %s is unlocking VDI (type: %s): %"PRIx32,
+		node_to_str(sender),
+		req->vdi.acl == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
 
-	vdi_unlock(vid, &sender->nid, req->vdi.type);
+	vdi_unlock(vid, &sender->nid, req->vdi.acl);
 
 	return SD_RES_SUCCESS;
 }

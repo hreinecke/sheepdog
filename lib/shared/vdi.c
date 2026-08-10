@@ -24,6 +24,7 @@ static int lock_vdi(struct sd_cluster *c, struct sd_vdi *vdi)
 	hdr.opcode = SD_OP_LOCK_VDI;
 	hdr.data_length = SD_MAX_VDI_LEN;
 	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.vdi.acl = vdi->acl;
 	ret = sd_run_sdreq(c, &hdr, vdi->name);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
@@ -39,7 +40,7 @@ static int unlock_vdi(struct sd_cluster *c, struct sd_vdi *vdi)
 	int ret;
 
 	hdr.opcode = SD_OP_RELEASE_VDI;
-	hdr.vdi.type = LOCK_TYPE_NORMAL;
+	hdr.vdi.acl = vdi->acl;
 	hdr.vdi.base_vdi_id = vdi->vid;
 	ret = sd_run_sdreq(c, &hdr, NULL);
 	if (ret != SD_RES_SUCCESS)
@@ -48,11 +49,12 @@ static int unlock_vdi(struct sd_cluster *c, struct sd_vdi *vdi)
 	return SD_RES_SUCCESS;
 }
 
-static struct sd_vdi *alloc_vdi(struct sd_cluster *c, char *name)
+static struct sd_vdi *alloc_vdi(struct sd_cluster *c, char *name, uint32_t acl)
 {
 	struct sd_vdi *new = xzalloc(sizeof(*new));
 
 	new->name = name;
+	new->acl = acl;
 	new->inode = xmalloc(sizeof(struct sd_inode));
 	sd_init_rw_lock(&new->lock);
 
@@ -66,10 +68,10 @@ static void free_vdi(struct sd_vdi *vdi)
 	free(vdi);
 }
 
-struct sd_vdi *sd_vdi_open(struct sd_cluster *c, char *name)
+struct sd_vdi *sd_vdi_open(struct sd_cluster *c, char *name, uint32_t acl)
 {
 	struct sd_req hdr = {};
-	struct sd_vdi *new = alloc_vdi(c, name);
+	struct sd_vdi *new = alloc_vdi(c, name, acl);
 	int ret;
 
 	ret = lock_vdi(c, new);
