@@ -424,7 +424,8 @@ struct vdi_state {
 	uint8_t deleted;
 	uint8_t copy_policy;
 	uint8_t block_size_shift;
-	uint8_t __pad[3];
+	uint8_t __pad;
+	uint32_t acl;
 	uint32_t parent_vid;
 
 	uint32_t lock_state;

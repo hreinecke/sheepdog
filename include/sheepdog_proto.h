@@ -86,6 +86,7 @@
 #define SD_RES_READONLY      0x1A /* Object is read-only */
 /* inode object in client is invalidated, refreshing is required */
 #define SD_RES_INODE_INVALIDATED 0x1D
+#define SD_RES_VDI_DENIED    0x1E /* Permission denied accessing VDI */
 
 /* errors above 0x80 are sheepdog-internal */
 
@@ -133,7 +134,7 @@
 #define SD_RSP_SIZE 48
 
 #define LOCK_TYPE_NORMAL 0
-#define LOCK_TYPE_SHARED 1	/* for iSCSI multipath */
+#define LOCK_TYPE_SHARED (UINT32_MAX - 1)
 
 struct sd_req {
 	uint8_t		proto_ver;
@@ -185,9 +186,10 @@ struct sd_req {
 						    /* others mean true */
 			uint8_t		copy_policy;
 			uint8_t		block_size_shift;
+			uint32_t	acl;
 			uint8_t		set_deleted; /* 0 means false */
 						     /* others mean true */
-			uint8_t		reserved[3];
+			uint8_t		reserved;
 		} vdi_state;
 		struct {
 			uint64_t	oid;
@@ -368,7 +370,7 @@ struct sd_inode_header {
 	uint32_t vdi_id;
 	uint32_t parent_vdi_id;
 	uint32_t btree_counter;
-	uint32_t __unused0;
+	uint32_t acl_id;
 	uint8_t  uuid[16];
 	uint32_t __unused1[OLD_MAX_CHILDREN - 18];
 };

@@ -1103,6 +1103,7 @@ static void etcd_vdi_state_to_json(struct sd_req *req, struct json_object *obj)
 	UPDATE_JSON_INT(obj, &req->vdi_state, old_vid);
 	UPDATE_JSON_INT(obj, &req->vdi_state, new_vid);
 	UPDATE_JSON_INT(obj, &req->vdi_state, copies);
+	UPDATE_JSON_INT(obj, &req->vdi_state, acl);
 	if (req->vdi_state.set_bitmap)
 		json_object_object_add(obj, "set_bitmap",
 				       json_object_new_boolean(true));
@@ -1440,6 +1441,7 @@ static void etcd_json_to_vdi_state(struct json_object *obj,
 		}
 		DEREF_JSON_INT(val_obj, &req->vdi_state, old_vid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, new_vid, key);
+		DEREF_JSON_INT(val_obj, &req->vdi_state, acl, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, copies, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, copy_policy, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_state, block_size_shift, key);

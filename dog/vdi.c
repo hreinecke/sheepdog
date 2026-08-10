@@ -56,6 +56,7 @@ static struct sd_option vdi_options[] = {
 	 "in reclamation loop during VDI deletion"},
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
+	{'A', "acl", true, "specify the ACL id for accessing the VDI"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -81,6 +82,7 @@ static struct vdi_cmd_data {
 	int nr_batched_reclamation;
 	int reclamation_interval;
 	int nr_max_reclaim;
+	uint32_t acl_id;
 } vdi_cmd_data = { ~0, };
 
 struct get_vdi_info {
@@ -205,6 +207,8 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 
 		JSON_ADD_STRING(vdi_obj, "name", name);
 		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
+		if (i->header.acl_id > 0)
+			JSON_ADD_INT(vdi_obj, "acl_id", i->header.acl_id);
 		memcpy((char *)uuid, &i->header.uuid, 16);
 		if (!uuid_is_null(uuid)) {
 			uuid_unparse(uuid, uuid_str);
@@ -313,6 +317,8 @@ static void print_vdi_tree(uint32_t vid, const char *name, const char *tag,
 
 		JSON_ADD_STRING(cur_obj, "name", name);
 		JSON_ADD_INT(cur_obj, "vdi_id", vid);
+		if (i->header.acl_id)
+			JSON_ADD_INT(cur_obj, "acl_id", i->header.acl_id);
 		if (snapid > 0)
 			JSON_ADD_INT(cur_obj, "snap_id", snapid);
 		if (strlen(i->header.tag))
@@ -465,42 +471,87 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 	const struct vdi_state *found = bsearch(&key, u->sorted, u->nmemb,
 						sizeof(struct vdi_state),
 						compare_vdi_state_by_vid);
+	struct json_object *lock_obj = NULL;
 
 	if (!found || found->lock_state == LOCK_STATE_UNLOCKED)
 		return;
 
 	const bool is_clone = (h->snap_id == 1 && h->parent_vdi_id != 0);
 
-	printf("%c %-8s  %5" PRIu32 "  %6" PRIx32 "  %-13s ",
-	       vdi_is_snapshot(h) ? 's' : (is_clone ? 'c' : ' '),
-	       name, snapid, vid, tag);
+	if (json_output) {
+		out_obj = json_object_new_object();
+		JSON_ADD_STRING(out_obj, "name", name);
+		JSON_ADD_INT(out_obj, "vdi_id", vid);
+		if (found->acl != 0)
+			JSON_ADD_INT(out_obj, "acl_id", found->acl);
+		if (vdi_is_snapshot(h))
+			JSON_ADD_INT(out_obj, "snap_id", snapid);
+		if (strlen(tag))
+			JSON_ADD_STRING(out_obj, "tag", tag);
+	} else
+		printf("%c %-8s  %5" PRIu32 "  %6" PRIx32 " %6" PRIx32 "  %-13s ",
+		       vdi_is_snapshot(h) ? 's' : (is_clone ? 'c' : ' '),
+		       name, snapid, vid, found->acl, tag);
 
 	if (found->lock_state == LOCK_STATE_LOCKED) {
-		printf(" %s\n", node_id_to_str(&found->lock_owner, false));
+		if (json_output) {
+			lock_obj = json_object_new_object();
+			JSON_ADD_STRING(lock_obj, "holder",
+					node_id_to_str(&found->lock_owner,
+						       false));
+			json_object_object_add(out_obj, "lock_state", lock_obj);
+		} else
+			printf(" %s\n", node_id_to_str(&found->lock_owner,
+						       false));
 		return;
 	}
 
 	/* LOCK_STATE_SHARED */
+	if (json_output)
+		lock_obj = json_object_new_array();
 	for (uint32_t j = 0; j < found->nr_participants; j++) {
-		printf(" %s", node_id_to_str(&found->participants[j], false));
-
+		const struct node_id *nid = &found->participants[j];
 		const uint32_t state = found->participants_state[j];
+		const char *state_str = NULL;
+
 		switch(state) {
 		case SHARED_LOCK_STATE_MODIFIED:
-			printf("(modified)");
+			state_str = "modified";
 			break;
 		case SHARED_LOCK_STATE_SHARED:
-			printf("(shared)");
+			state_str = "shared";
 			break;
 		case SHARED_LOCK_STATE_INVALIDATED:
-			printf("(invalidated)");
+			state_str = "invalidated";
 			break;
 		default:
-			printf("(UNKNOWN %" PRIu32 ", BUG!)", state);
+			if (!json_output)
+				printf("(UNKNOWN %" PRIu32 ", BUG!)", state);
 			break;
 		}
+		if (!state_str)
+			continue;
+		if (json_output) {
+			struct json_object *holder_obj =
+				json_object_new_object();
+			JSON_ADD_STRING(holder_obj, "holder",
+					node_id_to_str(nid, false));
+			JSON_ADD_STRING(holder_obj, "state", state_str);
+			json_object_array_add(lock_obj, holder_obj);
+		} else {
+			printf(" %s(%s)", node_id_to_str(nid, false),
+			       state_str);
+		}
 	}
-	printf("\n");
+	if (json_output) {
+		const char *o;
+		json_object_object_add(out_obj, "lock_state", lock_obj);
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	} else
+		printf("\n");
 }
 
 static int vdi_list(int argc, char **argv)
@@ -3387,7 +3438,7 @@ static struct subcommand vdi_cmd[] = {
 	{"check", "<vdiname>", "seaphT", "check and repair image's consistency",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_check, vdi_options},
-	{"create", "<vdiname> <size>", "PycajphrvzT", "create an image",
+	{"create", "<vdiname> <size>", "PycajphrvzTA", "create an image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_create, vdi_options},
 	{"snapshot", "<vdiname>", "sajphrvTR", "create a snapshot",
@@ -3396,23 +3447,23 @@ static struct subcommand vdi_cmd[] = {
 	{"clone", "<src vdi> <dst vdi>", "sPnajphrvT", "clone an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_clone, vdi_options},
-	{"delete", "<vdiname>", "saphTBIm", "delete an image",
+	{"delete", "<vdiname>", "saphTBImA", "delete an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_delete, vdi_options},
 	{"rollback", "<vdiname>", "saphfrvTBI", "rollback to a snapshot",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_rollback, vdi_options},
-	{"list", "[vdiname]", "ajprhoT", "list images",
+	{"list", "[vdiname]", "ajprhoTA", "list images",
 	 NULL, 0, vdi_list, vdi_options},
-	{"tree", NULL, "ajphT", "show images in tree view format",
+	{"tree", NULL, "ajphTA", "show images in tree view format",
 	 NULL, 0, vdi_tree, vdi_options},
-	{"graph", NULL, "aphT", "show images in Graphviz dot format",
+	{"graph", NULL, "aphTA", "show images in Graphviz dot format",
 	 NULL, 0, vdi_graph, vdi_options},
-	{"object", "<vdiname>", "isajphT",
+	{"object", "<vdiname>", "isajphTA",
 	 "show object information in the image",
 	 vdi_object_cmd, CMD_NEED_ARG,
 	 vdi_object, vdi_options},
-	{"track", "<vdiname>", "isajphoT",
+	{"track", "<vdiname>", "isajphoTA",
 	 "show the object epoch trace in the image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ARG,
 	 vdi_track, vdi_options},
@@ -3422,14 +3473,14 @@ static struct subcommand vdi_cmd[] = {
 	{"getattr", "<vdiname> <key>", "aphT", "get a VDI attribute",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_getattr, vdi_options},
-	{"resize", "<vdiname> <new size>", "aphT", "resize an image",
+	{"resize", "<vdiname> <new size>", "aphTA", "resize an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_resize, vdi_options},
-	{"read", "<vdiname> [<offset> [<len>]]", "saphT",
+	{"read", "<vdiname> [<offset> [<len>]]", "saphTA",
 	 "read data from an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_read, vdi_options},
-	{"write", "<vdiname> [<offset> [<len>]]", "apwhT",
+	{"write", "<vdiname> [<offset> [<len>]]", "apwhTA",
 	 "write data to an image",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_write, vdi_options},
@@ -3443,7 +3494,7 @@ static struct subcommand vdi_cmd[] = {
 	 vdi_restore, vdi_options},
 	{"alter-copy", "<vdiname>", "caphTf", "set the vdi's redundancy level",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
-	{"lock", NULL, "saphT", "See 'dog vdi lock' for more information",
+	{"lock", NULL, "saphTA", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},
 	{NULL,},
 };
@@ -3590,6 +3641,18 @@ static int vdi_parser(int ch, const char *opt)
 		if (vdi_cmd_data.nr_max_reclaim <= 0) {
 			sd_err("The maximum number of reclamation must be"
 				"positive integer");
+			exit(EXIT_FAILURE);
+		}
+		break;
+	case 'A':
+		vdi_cmd_data.acl_id = strtol(opt, &p, 10);
+		if (opt == p) {
+			sd_err("The ACL ID is invalid: %s", opt);
+			exit(EXIT_FAILURE);
+		}
+		if (vdi_cmd_data.acl_id == 0 ||
+		    vdi_cmd_data.acl_id >= UINT32_MAX) {
+			sd_err("The ACL ID is out of range, must be between 1 and %ul", UINT32_MAX - 1);
 			exit(EXIT_FAILURE);
 		}
 		break;

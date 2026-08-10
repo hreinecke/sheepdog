@@ -13,6 +13,7 @@
 
 struct vdi_state_entry {
 	uint32_t vid;
+	uint32_t acl;
 	unsigned int nr_copies;
 	uint8_t block_size_shift;
 	bool snapshot;
@@ -395,14 +396,15 @@ int get_req_copy_number(struct request *req)
 	return nr_copies;
 }
 
-static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
-			    uint8_t cp, uint8_t block_size_shift,
+static int do_add_vdi_state(uint32_t vid, uint32_t acl, int nr_copies,
+			    bool snapshot, uint8_t cp, uint8_t block_size_shift,
 			    uint32_t parent_vid, bool unordered)
 {
 	struct vdi_state_entry *entry, *old;
 
 	entry = xzalloc(sizeof(*entry));
 	entry->vid = vid;
+	entry->acl = acl;
 	entry->nr_copies = nr_copies;
 	entry->snapshot = snapshot;
 	entry->copy_policy = cp;
@@ -423,8 +425,8 @@ static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
 		sd_mutex_unlock(&m);
 	}
 
-	sd_debug("%" PRIx32 ", %d, %d, %"PRIu8", %"PRIx32,
-		 vid, nr_copies, cp, block_size_shift, parent_vid);
+	sd_debug("%" PRIx32 ", acl %" PRIx32 ", copies %d, copy policy%d, bss %"PRIu8", parent %"PRIx32,
+		 vid, acl, nr_copies, cp, block_size_shift, parent_vid);
 
 	sd_write_lock(&vdi_state_lock);
 	old = vdi_state_insert(&vdi_state_root, entry);
@@ -436,6 +438,11 @@ static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
 		entry->copy_policy = cp;
 		entry->block_size_shift = block_size_shift;
 
+		if (entry->acl != acl) {
+			sd_warn("caution, updating ACL of VID: %" PRIx32" (old ACL %" PRIx32 ", new ACL %" PRIx32 ")",
+				entry->vid, entry->acl, acl);
+			entry->acl = acl;
+		}
 		if (parent_vid) {
 			if (!snapshot)
 				sd_warn("caution, updating parent VID of VID: %"
@@ -464,18 +471,19 @@ static int do_add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
 	return SD_RES_SUCCESS;
 }
 
-int add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
+int add_vdi_state(uint32_t vid, uint32_t acl, int nr_copies, bool snapshot,
 		  uint8_t cp, uint8_t block_size_shift, uint32_t parent_vid)
 {
-	return do_add_vdi_state(vid, nr_copies, snapshot, cp, block_size_shift,
-				parent_vid, false);
+	return do_add_vdi_state(vid, acl, nr_copies, snapshot, cp,
+				block_size_shift, parent_vid, false);
 }
 
-int add_vdi_state_unordered(uint32_t vid, int nr_copies, bool snapshot,
-		  uint8_t cp, uint8_t block_size_shift, uint32_t parent_vid)
+int add_vdi_state_unordered(uint32_t vid, uint32_t acl, int nr_copies,
+		bool snapshot, uint8_t cp, uint8_t block_size_shift,
+		uint32_t parent_vid)
 {
-	return do_add_vdi_state(vid, nr_copies, snapshot, cp, block_size_shift,
-				parent_vid, true);
+	return do_add_vdi_state(vid, acl, nr_copies, snapshot, cp,
+				block_size_shift, parent_vid, true);
 }
 
 int fill_vdi_state_list(const struct sd_req *hdr,
@@ -494,6 +502,7 @@ int fill_vdi_state_list(const struct sd_req *hdr,
 		}
 
 		vs[last].vid = entry->vid;
+		vs[last].acl = entry->acl;
 		vs[last].nr_copies = entry->nr_copies;
 		vs[last].snapshot = entry->snapshot;
 		vs[last].deleted = entry->deleted;
@@ -540,6 +549,7 @@ static struct vdi_state *fill_vdi_state_list_with_alloc(int *result_nr)
 	vs = xcalloc(nr, sizeof(*vs));
 	rb_for_each_entry(entry, &vdi_state_root, node) {
 		vs[i].vid = entry->vid;
+		vs[i].acl = entry->acl;
 		vs[i].nr_copies = entry->nr_copies;
 		vs[i].snapshot = entry->snapshot;
 		vs[i].deleted = entry->deleted;
@@ -722,10 +732,10 @@ static void del_participant(struct vdi_state_entry *entry,
 		entry->lock_state = LOCK_STATE_UNLOCKED;
 }
 
-bool vdi_lock(uint32_t vid, const struct node_id *owner, int type)
+int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 {
 	struct vdi_state_entry *entry;
-	bool ret = false;
+	int ret = SD_RES_NO_VDI;
 
 	sd_write_lock(&vdi_state_lock);
 
@@ -735,40 +745,42 @@ bool vdi_lock(uint32_t vid, const struct node_id *owner, int type)
 		goto out;
 	}
 
-	if (type != LOCK_TYPE_NORMAL && type != LOCK_TYPE_SHARED) {
-		sd_crit("unknown type of locking: %d", type);
-		goto out;
-	}
-
-	if (type == LOCK_TYPE_NORMAL) {
+	if (acl == LOCK_TYPE_NORMAL) {
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 			entry->lock_state = LOCK_STATE_LOCKED;
 			memcpy(&entry->owner, owner, sizeof(*owner));
 			sd_info("VDI %"PRIx32" is locked", vid);
-			ret = true;
+			ret = SD_RES_SUCCESS;
 			goto out;
 		case LOCK_STATE_LOCKED:
 			sd_info("VDI %"PRIx32" is already locked", vid);
+			ret = SD_RES_VDI_LOCKED;
 			break;
 		case LOCK_STATE_SHARED:
-			sd_info("VDI %"PRIx32" is already locked as shared"
-				" mode", vid);
+			sd_info("VDI %"PRIx32" is already locked as by %"PRIx32,
+				vid, entry->acl);
+			ret = SD_RES_VDI_DENIED;
 			break;
 		default:
 			sd_alert("lock state of VDI (%"PRIx32") is unknown: %d",
 				 vid, entry->lock_state);
 			break;
 		}
-	} else {		/* LOCK_TYPE_SHARED */
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 		case LOCK_STATE_SHARED:
-			ret = add_new_participant(entry, owner);
+			if (entry->acl != acl) {
+				sd_info("VDI %"PRIx32" is already locked by %"PRIx32,
+					vid, entry->acl);
+				ret = SD_RES_VDI_DENIED;
+			} else
+				ret = add_new_participant(entry, owner);
 			break;
 		case LOCK_STATE_LOCKED:
 			sd_info("VDI %"PRIx32" is already locked as normal"
 				" mode", vid);
+			ret = SD_RES_VDI_LOCKED;
 			break;
 		default:
 			sd_alert("lock state of VDI (%"PRIx32") is unknown: %d",
@@ -782,47 +794,56 @@ out:
 	return ret;
 }
 
-bool vdi_unlock(uint32_t vid, const struct node_id *owner, int type)
+int vdi_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 {
 	struct vdi_state_entry *entry;
-	bool ret = false;
+	int ret = SD_RES_NO_VDI;
 
 	sd_write_lock(&vdi_state_lock);
 
 	entry = vdi_state_search(&vdi_state_root, vid);
 	if (!entry) {
 		sd_err("no vdi state entry of %"PRIx32" found", vid);
-		ret = false;
 		goto out;
 	}
 
-	if (type == LOCK_TYPE_NORMAL) {
+	if (acl == LOCK_TYPE_NORMAL) {
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 			sd_err("unlocking unlocked VDI: %"PRIx32, vid);
+			ret = SD_RES_INVALID_PARMS;
 			break;
 		case LOCK_STATE_LOCKED:
 			entry->lock_state = LOCK_STATE_UNLOCKED;
 			memset(&entry->owner, 0, sizeof(entry->owner));
-			ret = true;
+			ret = SD_RES_SUCCESS;
 			break;
 		default:
 			sd_alert("lock state of VDI (%"PRIx32") is unknown: %d",
 				 vid, entry->lock_state);
+			ret = SD_RES_SYSTEM_ERROR;
 			break;
 		}
 	} else {		/* LOCK_TYPE_SHARED */
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 			sd_alert("leaving from unlocked VDI: %"PRIx32, vid);
+			ret = SD_RES_SUCCESS;
 			break;
 		case LOCK_STATE_SHARED:
-			del_participant(entry, owner, true);
-			ret = true;
+			if (acl != entry->acl) {
+				sd_info("VDI %"PRIx32" is locked by %"PRIx32,
+					vid, entry->acl);
+				ret = SD_RES_VDI_DENIED;
+			} else {
+				del_participant(entry, owner, true);
+				ret = SD_RES_SUCCESS;
+			}
 			break;
 		case LOCK_STATE_LOCKED:
 			sd_alert("leaving from normally locked VDI %"PRIx32,
 				 vid);
+			ret = SD_RES_VDI_LOCKED;
 			break;
 		default:
 			sd_alert("lock state of VDI (%"PRIx32") is unknown: %d",
@@ -845,7 +866,11 @@ void apply_vdi_lock_state(struct vdi_state *vs)
 		sd_err("no vdi state entry of %"PRIx32" found", vs->vid);
 		goto out;
 	}
-
+	if (entry->acl != LOCK_TYPE_NORMAL) {
+		sd_err("VDI %"PRIx32" locked by ACL %"PRIx32", cannot update",
+		       vs->vid, entry->acl);
+		goto out;
+	}
 	entry->lock_state = vs->lock_state;
 	memcpy(&entry->owner, &vs->lock_owner, sizeof(vs->lock_owner));
 
@@ -859,7 +884,7 @@ out:
 	sd_rw_unlock(&vdi_state_lock);
 }
 
-static void apply_vdi_lock_state_shared(uint32_t vid, bool lock,
+static void apply_vdi_lock_state_shared(uint32_t vid, uint32_t acl, bool lock,
 					struct node_id *locker)
 {
 	struct vdi_state_entry *entry;
@@ -868,6 +893,16 @@ static void apply_vdi_lock_state_shared(uint32_t vid, bool lock,
 	entry = vdi_state_search(&vdi_state_root, vid);
 	if (!entry) {
 		sd_err("no vdi state entry of %"PRIx32" found", vid);
+		goto out;
+	}
+
+	if (entry->acl == LOCK_TYPE_NORMAL) {
+		sd_err("VDI %"PRIx32" has an exclusive lock, cannot update",
+		       vid);
+		goto out;
+	} else if (entry->acl == acl) {
+		sd_err("VDI %"PRIx32" locked by ACL %"PRIx32", cannot update",
+		       vid, entry->acl);
 		goto out;
 	}
 
@@ -884,33 +919,33 @@ static LIST_HEAD(logged_vdi_ops);
 
 struct vdi_op_log {
 	bool lock;
-	int type;
+	uint32_t acl;
 	uint32_t vid;
 	struct node_id owner;
 
 	struct list_node list;
 };
 
-void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, int type)
+void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 {
 	struct vdi_op_log *op;
 
 	op = xzalloc(sizeof(*op));
 	op->lock = true;
-	op->type = type;
+	op->acl = acl;
 	op->vid = vid;
 	memcpy(&op->owner, owner, sizeof(*owner));
 	INIT_LIST_NODE(&op->list);
 	list_add_tail(&op->list, &logged_vdi_ops);
 }
 
-void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, int type)
+void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 {
 	struct vdi_op_log *op;
 
 	op = xzalloc(sizeof(*op));
 	op->lock = false;
-	op->type = type;
+	op->acl = acl;
 	op->vid = vid;
 	memcpy(&op->owner, owner, sizeof(*owner));
 	INIT_LIST_NODE(&op->list);
@@ -927,7 +962,7 @@ void play_logged_vdi_ops(void)
 		memset(&entry, 0, sizeof(entry));
 		entry.vid = op->vid;
 
-		if (op->type == LOCK_TYPE_NORMAL) {
+		if (op->acl == LOCK_TYPE_NORMAL) {
 			memcpy(&entry.lock_owner, &op->owner,
 			       sizeof(op->owner));
 			if (op->lock)
@@ -937,9 +972,7 @@ void play_logged_vdi_ops(void)
 
 			apply_vdi_lock_state(&entry);
 		} else {
-			sd_assert(op->type == LOCK_TYPE_SHARED);
-
-			apply_vdi_lock_state_shared(op->vid,
+			apply_vdi_lock_state_shared(op->vid, op->acl,
 						    op->lock, &op->owner);
 		}
 	}

@@ -374,10 +374,11 @@ uint32_t get_vdi_object_size(uint32_t vid);
 uint8_t get_vdi_block_size_shift(uint32_t vid);
 int get_obj_copy_number(uint64_t oid, int nr_zones);
 int get_req_copy_number(struct request *req);
-int add_vdi_state(uint32_t vid, int nr_copies, bool snapshot,
-		  uint8_t, uint8_t block_size_shift, uint32_t parent_vid);
-int add_vdi_state_unordered(uint32_t vid, int nr_copies, bool snapshot,
-		  uint8_t, uint8_t block_size_shift, uint32_t parent_vid);
+int add_vdi_state(uint32_t vid, uint32_t acl, int nr_copies, bool snapshot,
+		  uint8_t cp, uint8_t bss, uint32_t parent_vid);
+int add_vdi_state_unordered(uint32_t vid, uint32_t acl, int nr_copies,
+			    bool snapshot, uint8_t cp, uint8_t bss,
+			    uint32_t parent_vid);
 int vdi_exist(uint32_t vid);
 int vdi_create(const struct vdi_iocb *iocb, uint32_t *new_vid);
 int vdi_snapshot(const struct vdi_iocb *iocb, uint32_t *new_vid);
@@ -389,14 +390,14 @@ int sd_delete_vdi(const char *name);
 int sd_lookup_vdi(const char *name, uint32_t *vid);
 int sd_create_hyper_volume(const char *name, uint32_t *vdi_id);
 
-bool vdi_lock(uint32_t vid, const struct node_id *owner, int type);
-bool vdi_unlock(uint32_t vid, const struct node_id *owner, int type);
+int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl);
+int vdi_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl);
 void apply_vdi_lock_state(struct vdi_state *vs);
 void create_vdi_state_checkpoint(int epoch);
 int get_vdi_state_checkpoint(int epoch, uint32_t vid, void *data);
 void free_vdi_state_checkpoint(int epoch);
-void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, int type);
-void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, int type);
+void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, uint32_t acl);
+void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl);
 void play_logged_vdi_ops(void);
 bool is_refresh_required(uint32_t vid);
 void validate_myself(uint32_t vid);
