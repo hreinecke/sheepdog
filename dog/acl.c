@@ -27,56 +27,17 @@
 static struct json_object *out_obj;
 
 static struct sd_option acl_options[] = {
-	{'P', "prealloc", false, "preallocate all the data objects"},
-	{'n', "no-share", false, "share nothing with its parent"},
-	{'i', "index", true, "specify the index of data objects"},
 	{'s', "snapshot", true, "specify a snapshot id or tag name"},
-	{'x', "exclusive", false, "write in an exclusive mode"},
-	{'d', "delete", false, "delete a key"},
-	{'w', "writeback", false, "use writeback mode"},
 	{'c', "copies", true, "specify the data redundancy level"},
-	{'F', "from", true, "create a differential backup from the snapshot"},
-	{'f', "force", false, "do operation forcibly"},
-	{'y', "hyper", false, "create a hyper volume"},
-	{'o', "oid", true, "specify the object id of the tracking object"},
-	{'e', "exist", false, "only check objects exist or not,\n"
-	 "                          neither comparing nor repairing"},
-	{'z', "block_size_shift", true, "specify the bit shift num for"
-			       " data object size"},
-	{'R', "reduce-identical-snapshots", false, "do not create snapshot if "
-	 "working VDI doesn't have its own objects"},
-	{'B', "nr-batched-reclamation", true, "specify a number of batched"
-	 "reclamation during VDI deletion"},
-	{'I', "reclamation-interval", true, "specify how long (unit: second)"
-	 "in reclamation loop during VDI deletion"},
-	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
-	 "(if this option is specified, an inode object won't be reclaimed)"},
-	{'A', "acl", true, "specify the ACL id for accessing the VDI"},
 	{ 0, NULL, false, NULL },
 };
 
 static struct acl_cmd_data {
-	uint64_t index;
 	int snapshot_id;
 	char snapshot_tag[SD_MAX_VDI_TAG_LEN];
-	bool exclusive;
-	bool delete;
-	bool prealloc;
 	int nr_copies;
-	uint8_t block_size_shift;
-	bool writeback;
-	int from_snapshot_id;
-	char from_snapshot_tag[SD_MAX_VDI_TAG_LEN];
-	bool force;
 	uint8_t copy_policy;
 	uint8_t store_policy;
-	uint64_t oid;
-	bool no_share;
-	bool exist;
-	bool reduce_identical_snapshots;
-	int nr_batched_reclamation;
-	int reclamation_interval;
-	int nr_max_reclaim;
 } acl_cmd_data = { ~0, };
 
 /*
@@ -435,17 +396,118 @@ out:
 	return ret;
 }
 
+static int acl_remove(int argc, char **argv)
+{
+	const char *aclname = argv[optind++];
+	const char *vdiname = NULL;
+	uint32_t acl_vid, vid;
+	uint32_t old_idx = UINT32_MAX, last_idx = 1;
+	struct sd_inode *inode = NULL;
+	int ret, i;
+
+	if (!argv[optind]) {
+		sd_err("Please specify the VDI to remove");
+		return EXIT_USAGE;
+	}
+	vdiname = argv[optind];
+
+	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to open VDI %s: %s",
+		       vdiname, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+
+	inode = xmalloc(sizeof(*inode));
+	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
+	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
+		if (!inode->data_vdi_id[i])
+			break;
+		if (inode->data_vdi_id[i] == vid) {
+			inode->data_vdi_id[i] = 0;
+			old_idx = i;
+			last_idx = i + 1;
+			break;
+		}
+	}
+	if (old_idx == UINT32_MAX) {
+		sd_err("ACL %" PRIx32 " does not contains VDI %"PRIx32,
+		       acl_vid, vid);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	/* Reshuffle array to avoid holes */
+	for (i = old_idx; i < SD_INODE_DATA_INDEX - 1; i++) {
+		if (!inode->data_vdi_id[i + 1])
+			break;
+		inode->data_vdi_id[i] = inode->data_vdi_id[i + 1];
+		inode->data_vdi_id[i + 1] = 0;
+		last_idx = i + 1;
+	}
+	if (old_idx == UINT32_MAX) {
+		sd_err("ACL %"PRIx32" index table exhausted", acl_vid);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+			       &inode->data_vdi_id[old_idx],
+			       sizeof(uint32_t) * (last_idx - old_idx),
+			       offsetof(struct sd_inode,
+					data_vdi_id[old_idx]),
+			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       inode->header.copy_policy, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode for object: %016" PRIx64,
+		       vid_to_vdi_oid(acl_vid));
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	if (verbose) {
+		if (json_output) {
+			const char *o;
+
+			out_obj = json_object_new_array();
+
+			for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
+				struct json_object *vdi_obj;
+
+				if (!inode->data_vdi_id[i])
+					break;
+				vdi_obj = json_object_new_object();
+				JSON_ADD_INT(vdi_obj, "vdi_id",
+					     inode->data_vdi_id[i]);
+				json_object_array_add(out_obj, vdi_obj);
+			}
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
+			printf("%x\n", vid);
+		else
+			printf("VDI %x removed from ACL %x\n", vid, acl_vid);
+	}
+out:
+	free(inode);
+	return ret;
+}
+
 static struct subcommand acl_cmd[] = {
-	{"create", "<aclname>", "PycajphrvzTA", "create an acl",
+	{"create", "<aclname>", "scajphrvz", "create an acl",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_create, acl_options},
-	{"delete", "<aclname>", "saphTBImA", "delete an acl",
+	{"delete", "<aclname>", "sajphrvTBImA", "delete an acl",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_delete, acl_options},
-	{"list", "[aclname]", "ajprhoTA", "list images",
+	{"list", "[aclname]", "ajprhrvoTA", "list images",
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
 	 NULL, CMD_NEED_ARG, acl_add, acl_options},
+	{"remove", "<aclname> <vdiname>", "ajprvhT", "remove an entry from ACL",
+	 NULL, CMD_NEED_ARG, acl_remove, acl_options},
 	{NULL,},
 };
 
@@ -454,17 +516,6 @@ static int acl_parser(int ch, const char *opt)
 	char *p;
 
 	switch (ch) {
-	case 'i':
-		if (strncmp(opt, "0x", 2) == 0)
-			acl_cmd_data.index = strtol(opt, &p, 16);
-		else
-			acl_cmd_data.index = strtol(opt, &p, 10);
-		if (opt == p) {
-			sd_err("The index must be a decimal integer "
-				"or a hexadecimal integer started with 0x");
-			exit(EXIT_FAILURE);
-		}
-		break;
 	case 's':
 		acl_cmd_data.snapshot_id = strtol(opt, &p, 10);
 		if (opt == p || *p != '\0') {
@@ -477,13 +528,17 @@ static int acl_parser(int ch, const char *opt)
 			exit(EXIT_FAILURE);
 		}
 		break;
-	case 'f':
-		acl_cmd_data.force = true;
-		break;
-	case 'o':
-		acl_cmd_data.oid = strtoull(opt, &p, 16);
-		if (opt == p) {
-			sd_err("object id must be a hex integer");
+	case 'c':
+		acl_cmd_data.nr_copies = parse_copy(opt,
+						    &acl_cmd_data.copy_policy);
+		if (!acl_cmd_data.nr_copies) {
+			sd_err("Invalid parameter %s\n"
+			       "To create replicated acl, set -c x\n"
+			       "  x(1 to %d)   - number of replicated copies\n"
+			       "To create erasure coded acl, set -c x:y\n"
+			       "  x(2,4,8,16)  - number of data strips\n"
+			       "  y(1 to 15)   - number of parity strips",
+			       opt, SD_MAX_COPIES);
 			exit(EXIT_FAILURE);
 		}
 		break;
