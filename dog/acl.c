@@ -401,7 +401,7 @@ static int acl_remove(int argc, char **argv)
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
 	uint32_t acl_vid, vid;
-	uint32_t old_idx = UINT32_MAX, last_idx = 1;
+	uint32_t old_idx = UINT32_MAX, last_idx = 0;
 	struct sd_inode *inode = NULL;
 	int ret, i;
 
@@ -430,12 +430,12 @@ static int acl_remove(int argc, char **argv)
 		if (inode->data_vdi_id[i] == vid) {
 			inode->data_vdi_id[i] = 0;
 			old_idx = i;
-			last_idx = i + 1;
+			last_idx = i;
 			break;
 		}
 	}
 	if (old_idx == UINT32_MAX) {
-		sd_err("ACL %" PRIx32 " does not contains VDI %"PRIx32,
+		sd_err("ACL %" PRIx32 " does not contain VDI %"PRIx32,
 		       acl_vid, vid);
 		ret = EXIT_FAILURE;
 		goto out;
@@ -453,9 +453,10 @@ static int acl_remove(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+	/* every slot from the removed one up to the new hole has moved */
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->data_vdi_id[old_idx],
-			       sizeof(uint32_t) * (last_idx - old_idx),
+			       sizeof(uint32_t) * (last_idx - old_idx + 1),
 			       offsetof(struct sd_inode,
 					data_vdi_id[old_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
@@ -496,13 +497,13 @@ out:
 }
 
 static struct subcommand acl_cmd[] = {
-	{"create", "<aclname>", "scajphrvz", "create an acl",
+	{"create", "<aclname>", "cajphrvT", "create an acl",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_create, acl_options},
-	{"delete", "<aclname>", "sajphrvTBImA", "delete an acl",
+	{"delete", "<aclname>", "sajphrvT", "delete an acl",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_delete, acl_options},
-	{"list", "[aclname]", "ajprhrvoTA", "list images",
+	{"list", "[aclname]", "ajprhvT", "list images",
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
 	 NULL, CMD_NEED_ARG, acl_add, acl_options},
