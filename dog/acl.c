@@ -29,6 +29,7 @@ static struct json_object *out_obj;
 static struct sd_option acl_options[] = {
 	{'s', "snapshot", true, "specify a snapshot id or tag name"},
 	{'c', "copies", true, "specify the data redundancy level"},
+	{'f', "force", false, "do operation forcibly"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -38,6 +39,7 @@ static struct acl_cmd_data {
 	int nr_copies;
 	uint8_t copy_policy;
 	uint8_t store_policy;
+	bool force;
 } acl_cmd_data = { ~0, };
 
 /*
@@ -71,11 +73,27 @@ static int read_acl_inode(const char *aclname, uint32_t *acl_vid,
 	return SD_RES_SUCCESS;
 }
 
+struct acl_vdi_info {
+	uint32_t acl;
+	unsigned int count;
+};
+
+static void count_acl_objs(uint32_t vid, const char *name, const char *tag,
+			   uint32_t snapid, uint32_t flags,
+			   const struct sd_inode *i, void *data)
+{
+	struct acl_vdi_info *info = data;
+
+	if (i->header.acl_id == info->acl)
+		info->count++;
+}
+
 static int acl_create(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	char buf[SD_MAX_VDI_LEN];
-	uint32_t vid;
+	struct acl_vdi_info info;
+	uint32_t acl_vid;
 	int ret;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -118,21 +136,45 @@ static int acl_create(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	vid = rsp->vdi.vdi_id;
+	acl_vid = rsp->vdi.vdi_id;
 
+	/* Sanity check: the ACL should not be referenced by any VDI objects */
+	memset(&info, 0, sizeof(info));
+	info.acl = acl_vid;
+	if (parse_vdi(count_acl_objs, SD_INODE_HEADER_SIZE,
+		      &info, true, false) < 0)
+		return EXIT_SYSFAIL;
+	if (info.count) {
+		sd_err("ACL %"PRIx32" referenced by %u VDI ACLs",
+		       acl_vid, info.count);
+		if (!acl_cmd_data.force) {
+			sd_init_req(&hdr, SD_OP_DEL_VDI);
+			hdr.flags = SD_FLAG_CMD_WRITE;
+			hdr.data_length = sizeof(buf);
+			memset(buf, 0, sizeof(buf));
+			pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
+
+			ret = dog_exec_req(&sd_nid, &hdr, buf);
+			if (ret < 0) {
+				sd_err("Failed to execute SD_OP_DEL_VDI");
+				return EXIT_SYSFAIL;
+			}
+			return EXIT_FAILURE;
+		}
+	}
 	if (verbose) {
 		if (json_output) {
 			const char *o;
 
 			out_obj = json_object_new_object();
-			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			JSON_ADD_INT(out_obj, "vdi_id", acl_vid);
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
 		} else if (raw_output)
-			printf("%x\n", vid);
+			printf("%x\n", acl_vid);
 		else
-			printf("VDI ID of newly created ACL: %x\n", vid);
+			printf("VDI ID of newly created ACL: %x\n", acl_vid);
 	}
 	return EXIT_SUCCESS;
 }
@@ -144,33 +186,29 @@ static int acl_delete(int args, char **argv)
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	struct sd_inode *inode;
+	struct acl_vdi_info info;
 	uint32_t acl_vid;
-	int nr_members = 0;
 	int ret = EXIT_SUCCESS;
 
 	/* refuse to delete an ordinary VDI which happens to share the name */
-	inode = xzalloc(sizeof(*inode));
-	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
-	if (ret != SD_RES_SUCCESS) {
-		free(inode);
-		return ret == SD_RES_NO_VDI ? EXIT_MISSING : EXIT_FAILURE;
-	}
-
-	/*
-	 * The members name their ACL in the inode header, so deleting a
-	 * non-empty ACL would leave them pointing at a VDI which is gone.
-	 */
-	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
-		if (inode->data_vdi_id[i])
-			nr_members++;
-	}
+	inode = xzalloc(SD_INODE_HEADER_SIZE);
+	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
 	free(inode);
-	if (nr_members) {
-		sd_err("ACL %"PRIx32" is not empty, remove its %d VDI%s first",
-		       acl_vid, nr_members, nr_members > 1 ? "s" : "");
-		return EXIT_FAILURE;
-	}
+	if (ret != SD_RES_SUCCESS)
+		return ret == SD_RES_NO_VDI ? EXIT_MISSING : EXIT_FAILURE;
 
+	/* refuse to delete an ACL which is still referenced by VDI objects */
+	memset(&info, 0, sizeof(info));
+	info.acl = acl_vid;
+	if (parse_vdi(count_acl_objs, SD_INODE_HEADER_SIZE,
+		      &info, true, false) < 0)
+		return EXIT_SYSFAIL;
+	if (info.count) {
+		sd_err("ACL %"PRIx32" is not empty, %u VDI ACLs still in use",
+		       acl_vid, info.count);
+		if (!acl_cmd_data.force)
+			return EXIT_FAILURE;
+	}
 	sd_init_req(&hdr, SD_OP_DEL_VDI);
 	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.data_length = sizeof(buf);
@@ -321,12 +359,29 @@ static int acl_list(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+static void print_acl_obj_list(uint32_t vid, const char *name, const char *tag,
+			       uint32_t snapid, uint32_t flags,
+			       const struct sd_inode *i, void *data)
+{
+	struct json_object *obj = data;
+
+	if (json_output) {
+		struct json_object *vdi_obj =
+			json_object_new_object();
+
+		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
+		json_object_array_add(obj, vdi_obj);
+	} else if (raw_output)
+		printf("%08"PRIx32" ", vid);
+	else
+		printf("VDI %x\n", vid);
+}
+
 static int acl_add(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
-	uint32_t acl_vid, vid;
-	uint32_t new_idx = UINT32_MAX;
+	uint32_t acl_vid, vid, new_idx = UINT32_MAX;
 	struct sd_inode *inode = NULL;
 	int ret, i;
 
@@ -343,19 +398,7 @@ static int acl_add(int argc, char **argv)
 		goto out;
 	}
 
-	/* only a VDI which does not belong to an ACL yet can be added */
-	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
-	if (ret != SD_RES_SUCCESS) {
-		if (find_vdi_name(vdiname, 0, "", acl_vid, &vid) ==
-		    SD_RES_SUCCESS)
-			sd_err("ACL %"PRIx32" already contains VDI %"PRIx32,
-			       acl_vid, vid);
-		else
-			sd_err("Failed to open VDI %s: %s",
-			       vdiname, sd_strerror(ret));
-		ret = EXIT_FAILURE;
-		goto out;
-	}
+	vid = sd_hash_vdi(vdiname);
 	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i])
 			break;
@@ -365,6 +408,14 @@ static int acl_add(int argc, char **argv)
 			ret = EXIT_FAILURE;
 			goto out;
 		}
+	}
+	/* only a VDI which does not exist can be added */
+	ret = find_vdi_name(vdiname, 0, "", ACL_ANY_ID, &vid);
+	if (ret == SD_RES_SUCCESS) {
+		sd_err("ACL entry %s cannot be added, duplicate VDI name",
+		       vdiname);
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i]) {
@@ -378,11 +429,6 @@ static int acl_add(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	/* the VDI has to name its ACL, too, or it stays out of reach of it */
-	ret = do_vdi_alter_acl(vdiname, 0, acl_vid);
-	if (ret != EXIT_SUCCESS)
-		goto out;
-
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->data_vdi_id[new_idx],
 			       sizeof(uint32_t),
@@ -393,35 +439,34 @@ static int acl_add(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode for object: %016" PRIx64,
 		       vid_to_vdi_oid(acl_vid));
-		if (do_vdi_alter_acl(vdiname, acl_vid, 0) != EXIT_SUCCESS)
-			sd_err("VDI %"PRIx32" is left behind in ACL %"PRIx32,
-			       vid, acl_vid);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+
+	/* Alter the ACL of the VDI */
+	ret = do_vdi_alter_acl(vdiname, 0, acl_vid);
+	if (ret != EXIT_SUCCESS)
+		goto out;
+
 	if (verbose) {
+		if (json_output)
+			out_obj = json_object_new_array();
+		else if (!raw_output)
+			printf("ACL %"PRIx32" contains:\n", acl_vid);
+
+		if (parse_vdi(print_acl_obj_list, SD_INODE_HEADER_SIZE,
+			      out_obj, true, false) < 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
 		if (json_output) {
 			const char *o;
 
-			out_obj = json_object_new_array();
-
-			for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
-				struct json_object *vdi_obj;
-
-				if (!inode->data_vdi_id[i])
-					break;
-				vdi_obj = json_object_new_object();
-				JSON_ADD_INT(vdi_obj, "vdi_id",
-					     inode->data_vdi_id[i]);
-				json_object_array_add(out_obj, vdi_obj);
-			}
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
 		} else if (raw_output)
-			printf("%x\n", vid);
-		else
-			printf("VDI %x added to ACL %x\n", vid, acl_vid);
+			printf("\n");
 	}
 out:
 	free(inode);
@@ -443,8 +488,8 @@ static int acl_remove(int argc, char **argv)
 	}
 	vdiname = argv[optind];
 
-	inode = xmalloc(sizeof(*inode));
-	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
+	inode = xmalloc(SD_INODE_HEADER_SIZE);
+	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
 	if (ret != SD_RES_SUCCESS) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -543,10 +588,10 @@ out:
 }
 
 static struct subcommand acl_cmd[] = {
-	{"create", "<aclname>", "cajphrvT", "create an acl",
+	{"create", "<aclname>", "cfajphrvT", "create an acl",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_create, acl_options},
-	{"delete", "<aclname>", "sajphrvT", "delete an acl",
+	{"delete", "<aclname>", "sfajphrvT", "delete an acl",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_delete, acl_options},
 	{"list", "[aclname]", "ajprhvT", "list images",
@@ -588,6 +633,9 @@ static int acl_parser(int ch, const char *opt)
 			       opt, SD_MAX_COPIES);
 			exit(EXIT_FAILURE);
 		}
+		break;
+	case 'f':
+		acl_cmd_data.force = true;
 		break;
 	}
 

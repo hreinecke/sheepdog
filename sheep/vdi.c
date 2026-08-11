@@ -1614,7 +1614,8 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 			 * with; remember that we skipped one so that we can
 			 * tell the caller why nothing matched.
 			 */
-			if (inode.acl_id != iocb->acl) {
+			if (iocb->acl != ACL_ANY_ID &&
+			    inode.acl_id != iocb->acl) {
 				sd_debug("VDI %" PRIx32 " belongs to ACL %"
 					 PRIx32 ", not %" PRIx32, inode.vdi_id,
 					 inode.acl_id, iocb->acl);

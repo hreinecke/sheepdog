@@ -135,6 +135,7 @@
 
 #define LOCK_TYPE_NORMAL 0
 #define LOCK_TYPE_SHARED (UINT32_MAX - 1)
+#define ACL_ANY_ID UINT32_MAX
 
 struct sd_req {
 	uint8_t		proto_ver;
