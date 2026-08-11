@@ -221,7 +221,8 @@ reread:
 	ret = read(sockfd, buf, len);
 	if (ret == 0) {
 		sd_debug("connection is closed (%d bytes left)", len);
-		return 1;
+		errno = ENOTCONN;
+		return -1;
 	}
 	if (ret < 0) {
 		if (errno == EINTR)
@@ -237,7 +238,7 @@ reread:
 		}
 
 		sd_err("failed to read from socket: %d, %m", ret);
-		return 1;
+		return -1;
 	}
 
 	len -= ret;
@@ -282,7 +283,7 @@ rewrite:
 		}
 
 		sd_err("failed to write to socket: %m");
-		return 1;
+		return -1;
 	}
 
 	len -= ret;
@@ -318,10 +319,8 @@ int send_req(int sockfd, struct sd_req *hdr, void *data, unsigned int wlen,
 
 	ret = do_write(sockfd, &msg, sizeof(*hdr) + wlen, need_retry, epoch,
 		       max_count);
-	if (ret) {
+	if (ret < 0)
 		sd_err("failed to send request %x, %d: %m", hdr->opcode, wlen);
-		ret = -1;
-	}
 
 	return ret;
 }
@@ -345,13 +344,14 @@ int exec_req(int sockfd, struct sd_req *hdr, void *data,
 		rlen = hdr->data_length;
 	}
 
-	if (send_req(sockfd, hdr, data, wlen, need_retry, epoch, max_count))
-		return 1;
+	ret = send_req(sockfd, hdr, data, wlen, need_retry, epoch, max_count);
+	if (ret < 0)
+		return ret;
 
 	ret = do_read(sockfd, rsp, sizeof(*rsp), need_retry, epoch, max_count);
-	if (ret) {
-		sd_err("failed to read a response");
-		return 1;
+	if (ret < 0) {
+		sd_err("failed to read a response: %m");
+		return ret;
 	}
 
 	if (rlen > rsp->data_length)
@@ -359,9 +359,9 @@ int exec_req(int sockfd, struct sd_req *hdr, void *data,
 
 	if (rlen) {
 		ret = do_read(sockfd, data, rlen, need_retry, epoch, max_count);
-		if (ret) {
-			sd_err("failed to read the response data");
-			return 1;
+		if (ret < 0) {
+			sd_err("failed to read the response data: %m");
+			return ret;
 		}
 	}
 

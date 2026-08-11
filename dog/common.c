@@ -97,7 +97,7 @@ int dog_read_object(uint64_t oid, void *data, unsigned int datalen,
 
 	ret = dog_exec_req(&sd_nid, &hdr, data);
 	if (ret < 0) {
-		sd_err("Failed to read object %016" PRIx64, oid);
+		sd_err("Error reading object %016" PRIx64, oid);
 		return SD_RES_EIO;
 	}
 
@@ -248,7 +248,7 @@ int dog_exec_req(const struct node_id *nid, struct sd_req *hdr, void *buf)
 
 	sockfd_cache_put(nid, sfd);
 
-	return ret ? -1 : 0;
+	return ret;
 }
 
 /* Light request only contains header, without body content. */

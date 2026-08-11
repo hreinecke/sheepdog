@@ -174,7 +174,7 @@ static int volume_rw_object(char *buf, uint64_t oid, size_t size,
 	ret = exec_req(fd, &hdr, buf, NULL, 0, MAX_RETRY_COUNT);
 	put_socket_fd(vdi, sock_idx);
 
-	if (ret || rsp->result != SD_RES_SUCCESS) {
+	if (ret < 0 || rsp->result != SD_RES_SUCCESS) {
 		sheepfs_pr("failed to %s object %016" PRIx64 " ret %d, res %s\n",
 			   rw == VOLUME_READ ? "read" : "write",
 			   oid, ret, sd_strerror(rsp->result));
@@ -322,7 +322,7 @@ static int volume_do_sync(uint32_t vid)
 		goto out;
 	}
 
-	if (ret || rsp->result != SD_RES_SUCCESS) {
+	if (ret < 0 || rsp->result != SD_RES_SUCCESS) {
 		sheepfs_pr("failed to flush vdi %"PRIx32"\n", vid);
 		return -1;
 	}
@@ -500,7 +500,7 @@ static int volume_sync_and_delete(uint32_t vid)
 	ret = exec_req(fd, &hdr, NULL, NULL, 0, MAX_RETRY_COUNT);
 	put_socket_fd(vdi, idx);
 
-	if (ret || rsp->result != SD_RES_SUCCESS) {
+	if (ret < 0 || rsp->result != SD_RES_SUCCESS) {
 		sheepfs_pr("failed to flush vdi %" PRIx32 "\n", vid);
 		return -1;
 	}

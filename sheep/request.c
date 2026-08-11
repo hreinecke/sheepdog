@@ -1221,7 +1221,7 @@ worker_fn int sheep_exec_req(const struct node_id *nid, struct sd_req *hdr,
 
 	ret = exec_req(sfd->fd, hdr, buf, sheep_need_retry, hdr->epoch,
 		       MAX_RETRY_COUNT);
-	if (ret) {
+	if (ret < 0) {
 		sd_debug("remote node might have gone away");
 		sockfd_cache_del(nid, sfd);
 		return SD_RES_NETWORK_ERROR;
