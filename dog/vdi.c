@@ -79,6 +79,7 @@ static struct vdi_cmd_data {
 	bool no_share;
 	bool exist;
 	bool reduce_identical_snapshots;
+	bool acl_vdi;
 	int nr_batched_reclamation;
 	int reclamation_interval;
 	int nr_max_reclaim;
@@ -576,7 +577,8 @@ static int vdi_list(int argc, char **argv)
 
 	if (vdiname) {
 		info.name = vdiname;
-		if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info, true) < 0)
+		if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info,
+			      true, false) < 0)
 			return EXIT_SYSFAIL;
 		if (json_output) {
 			const char *o = json_object_to_json_string(out_obj);
@@ -590,7 +592,7 @@ static int vdi_list(int argc, char **argv)
 		if (!is_data_obj(vdi_cmd_data.oid))
 			return EXIT_FAILURE;
 		if (parse_vdi(print_obj_ref, SD_INODE_SIZE,
-					&vdi_cmd_data.oid, true) < 0)
+			      &vdi_cmd_data.oid, true, false) < 0)
 			return EXIT_SYSFAIL;
 		if (json_output) {
 			const char *o;
@@ -602,7 +604,7 @@ static int vdi_list(int argc, char **argv)
 		return EXIT_SUCCESS;
 	}
 
-	if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info, true) < 0)
+	if (parse_vdi(print_vdi_list, SD_INODE_SIZE, &info, true, false) < 0)
 		return EXIT_SYSFAIL;
 
 	if (json_output) {
@@ -621,7 +623,8 @@ static int vdi_tree(int argc, char **argv)
 		out_obj = json_object_new_array();
 
 	init_tree();
-	if (parse_vdi(print_vdi_tree, SD_INODE_HEADER_SIZE, out_obj, true) < 0)
+	if (parse_vdi(print_vdi_tree, SD_INODE_HEADER_SIZE,
+		      out_obj, true, false) < 0)
 		return EXIT_SYSFAIL;
 	dump_tree();
 
@@ -642,7 +645,8 @@ static int vdi_graph(int argc, char **argv)
 	printf("  node [shape = \"box\", fontname = \"Courier\"];\n\n");
 	printf("  \"0\" [shape = \"ellipse\", label = \"root\"];\n\n");
 
-	if (parse_vdi(print_vdi_graph, SD_INODE_HEADER_SIZE, NULL, true) < 0)
+	if (parse_vdi(print_vdi_graph, SD_INODE_HEADER_SIZE,
+		      NULL, true, false) < 0)
 		return EXIT_SYSFAIL;
 
 	/* print a footer */
@@ -3238,7 +3242,7 @@ static bool is_vdi_standalone(uint32_t vid, const char *name)
 
 	init_tree();
 	if (parse_vdi(construct_vdi_tree, SD_INODE_HEADER_SIZE,
-			NULL, true) < 0)
+		      NULL, true, false) < 0)
 		return EXIT_SYSFAIL;
 
 	vdi = find_vdi_from_root(vid, name);
@@ -3475,7 +3479,7 @@ static int vdi_alter_acl(int argc, char **argv)
 	}
 
 	if (parse_vdi(collect_vdi_family, SD_INODE_HEADER_SIZE, &info,
-		      true) < 0) {
+		      true, false) < 0) {
 		sd_err("Failed to read the list of VDIs.");
 		ret = EXIT_SYSFAIL;
 		goto out;
@@ -3533,7 +3537,7 @@ static int lock_list(int argc, char **argv)
 	printf("  Name         Id  VDI id  Tag            Owner node(s)\n");
 
 	struct lock_list_data data = { .sorted = vs, .nmemb = nmemb };
-	ret = parse_vdi(print_lock_list, SD_INODE_SIZE, &data, true);
+	ret = parse_vdi(print_lock_list, SD_INODE_SIZE, &data, true, false);
 	ret = ret ? EXIT_SYSFAIL : EXIT_SUCCESS;
 
 out:

@@ -709,7 +709,7 @@ static int save_snapshot(int argc, char **argv)
 	opt.count = argc - optind;
 	opt.name = argv + optind;
 	if (parse_vdi(fill_object_tree, SD_INODE_SIZE,
-			&opt, false) != SD_RES_SUCCESS)
+		      &opt, false, true) != SD_RES_SUCCESS)
 		goto out;
 
 	if (opt.nr_snapshot == 0) {
@@ -950,7 +950,7 @@ static void cluster_check_cb(uint32_t vid, const char *name, const char *tag,
 
 static int cluster_check(int argc, char **argv)
 {
-	if (parse_vdi(cluster_check_cb, SD_INODE_SIZE, NULL, true) < 0)
+	if (parse_vdi(cluster_check_cb, SD_INODE_SIZE, NULL, true, false) < 0)
 		return EXIT_SYSFAIL;
 
 	return EXIT_SUCCESS;

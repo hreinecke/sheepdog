@@ -81,7 +81,7 @@ typedef void (*vdi_parser_func_t)(uint32_t vid, const char *name,
 				  uint32_t flags,
 				  const struct sd_inode *i, void *data);
 int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
-			bool no_deleted);
+	      bool no_deleted, bool acl_vdi);
 int dog_read_object(uint64_t oid, void *data, unsigned int datalen,
 		    uint64_t offset, bool direct);
 int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
@@ -123,6 +123,7 @@ extern struct command cluster_command;
 extern struct command alter_command;
 extern struct command upgrade_command;
 extern struct command benchmark_command;
+extern struct command acl_command;
 
 #ifdef HAVE_TRACE
 extern struct command trace_command;

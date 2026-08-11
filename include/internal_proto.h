@@ -118,9 +118,9 @@
 #define SD_OP_CLUSTER_STATUS 0xCE
 #define SD_OP_ALTER_VDI_ACL 0xCF
 
-/* internal flags for hdr.flags, must be above 0x80 */
-#define SD_FLAG_CMD_RECOVERY 0x0080
-#define SD_FLAG_CMD_WILDCARD 0x0100
+/* internal flags for hdr.flags, must be above 0x100 */
+#define SD_FLAG_CMD_RECOVERY 0x0100
+#define SD_FLAG_CMD_WILDCARD 0x0200
 
 /* flags for VDI attribute operations */
 #define SD_FLAG_CMD_CREAT    0x0100

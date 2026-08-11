@@ -154,7 +154,7 @@ int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
 
 int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
-		bool no_deleted)
+	      bool no_deleted, bool acl_vdi)
 {
 	int ret;
 	unsigned long nr;
@@ -167,7 +167,6 @@ int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 
 	sd_init_req(&req, SD_OP_READ_VDIS);
 	req.data_length = sizeof(vdi_inuse);
-
 	ret = dog_exec_req(&sd_nid, &req, vdi_inuse);
 	if (ret < 0)
 		goto out;
@@ -194,7 +193,10 @@ int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 		if (test_bit(nr, vdi_deleted))
 			continue;
 
-		oid = vid_to_vdi_oid(nr);
+		if (acl_vdi)
+			oid = vid_to_acl_oid(nr);
+		else
+			oid = vid_to_vdi_oid(nr);
 
 		/* for B-tree inode, we also need sd_index_header */
 		ret = dog_read_object(oid, i, SD_INODE_HEADER_SIZE +

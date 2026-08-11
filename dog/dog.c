@@ -177,6 +177,7 @@ static void init_commands(const struct command **commands)
 #endif
 		upgrade_command,
 		benchmark_command,
+		acl_command,
 		{NULL,}
 	};
 
