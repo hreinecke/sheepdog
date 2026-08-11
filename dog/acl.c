@@ -145,14 +145,31 @@ static int acl_delete(int args, char **argv)
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	struct sd_inode *inode;
 	uint32_t acl_vid;
+	int nr_members = 0;
 	int ret = EXIT_SUCCESS;
 
 	/* refuse to delete an ordinary VDI which happens to share the name */
-	inode = xzalloc(SD_INODE_HEADER_SIZE);
-	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
-	free(inode);
-	if (ret != SD_RES_SUCCESS)
+	inode = xzalloc(sizeof(*inode));
+	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
+	if (ret != SD_RES_SUCCESS) {
+		free(inode);
 		return ret == SD_RES_NO_VDI ? EXIT_MISSING : EXIT_FAILURE;
+	}
+
+	/*
+	 * The members name their ACL in the inode header, so deleting a
+	 * non-empty ACL would leave them pointing at a VDI which is gone.
+	 */
+	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
+		if (inode->data_vdi_id[i])
+			nr_members++;
+	}
+	free(inode);
+	if (nr_members) {
+		sd_err("ACL %"PRIx32" is not empty, remove its %d VDI%s first",
+		       acl_vid, nr_members, nr_members > 1 ? "s" : "");
+		return EXIT_FAILURE;
+	}
 
 	sd_init_req(&hdr, SD_OP_DEL_VDI);
 	hdr.flags = SD_FLAG_CMD_WRITE;
@@ -319,16 +336,23 @@ static int acl_add(int argc, char **argv)
 	}
 	vdiname = argv[optind];
 
-	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open VDI %s: %s",
-		       vdiname, sd_strerror(ret));
-		return EXIT_FAILURE;
-	}
-
 	inode = xmalloc(sizeof(*inode));
 	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
 	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	/* only a VDI which does not belong to an ACL yet can be added */
+	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		if (find_vdi_name(vdiname, 0, "", acl_vid, &vid) ==
+		    SD_RES_SUCCESS)
+			sd_err("ACL %"PRIx32" already contains VDI %"PRIx32,
+			       acl_vid, vid);
+		else
+			sd_err("Failed to open VDI %s: %s",
+			       vdiname, sd_strerror(ret));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -354,6 +378,11 @@ static int acl_add(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+	/* the VDI has to name its ACL, too, or it stays out of reach of it */
+	ret = do_vdi_alter_acl(vdiname, 0, acl_vid);
+	if (ret != EXIT_SUCCESS)
+		goto out;
+
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->data_vdi_id[new_idx],
 			       sizeof(uint32_t),
@@ -364,6 +393,9 @@ static int acl_add(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode for object: %016" PRIx64,
 		       vid_to_vdi_oid(acl_vid));
+		if (do_vdi_alter_acl(vdiname, acl_vid, 0) != EXIT_SUCCESS)
+			sd_err("VDI %"PRIx32" is left behind in ACL %"PRIx32,
+			       vid, acl_vid);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -411,16 +443,22 @@ static int acl_remove(int argc, char **argv)
 	}
 	vdiname = argv[optind];
 
-	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open VDI %s: %s",
-		       vdiname, sd_strerror(ret));
-		return EXIT_FAILURE;
-	}
-
 	inode = xmalloc(sizeof(*inode));
 	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
 	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	/* the VDI is only reachable through the ACL it belongs to */
+	ret = find_vdi_name(vdiname, 0, "", acl_vid, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		if (find_vdi_name(vdiname, 0, "", 0, &vid) == SD_RES_SUCCESS)
+			sd_err("ACL %"PRIx32" does not contain VDI %"PRIx32,
+			       acl_vid, vid);
+		else
+			sd_err("Failed to open VDI %s: %s",
+			       vdiname, sd_strerror(ret));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -453,6 +491,11 @@ static int acl_remove(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+	/* the VDI must not keep pointing at an ACL it is no longer part of */
+	ret = do_vdi_alter_acl(vdiname, acl_vid, 0);
+	if (ret != EXIT_SUCCESS)
+		goto out;
+
 	/* every slot from the removed one up to the new hole has moved */
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->data_vdi_id[old_idx],
@@ -464,6 +507,9 @@ static int acl_remove(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode for object: %016" PRIx64,
 		       vid_to_vdi_oid(acl_vid));
+		if (do_vdi_alter_acl(vdiname, 0, acl_vid) != EXIT_SUCCESS)
+			sd_err("VDI %"PRIx32" is left outside of ACL %"PRIx32,
+			       vid, acl_vid);
 		ret = EXIT_FAILURE;
 		goto out;
 	}

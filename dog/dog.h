@@ -117,6 +117,7 @@ int dog_bnode_reader(uint64_t oid, void **mem, unsigned int len,
 
 int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
 		  uint32_t acl, uint32_t *vid);
+int do_vdi_alter_acl(const char *vdiname, uint32_t old_acl, uint32_t new_acl);
 int read_vdi_obj(const char *vdiname, int snapid, const char *tag,
 		 uint32_t acl, uint32_t *pvid, void *inode, size_t size);
 

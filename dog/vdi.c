@@ -3454,34 +3454,15 @@ static int check_vdi_family(const struct alter_acl_info *info)
 	return ret;
 }
 
-static int vdi_alter_acl(int argc, char **argv)
+/*
+ * Move a VDI and its snapshots from one ACL to another.  On failure the VDIs
+ * which have been moved already are moved back, so that the family either
+ * belongs to the new ACL as a whole or stays where it was.
+ */
+int do_vdi_alter_acl(const char *vdiname, uint32_t old_acl, uint32_t new_acl)
 {
-	const char *vdiname = argv[optind++];
-	const uint32_t old_acl = vdi_cmd_data.acl_id;
 	struct alter_acl_info info = { .name = vdiname, .acl = old_acl };
-	uint32_t new_acl;
-	char *p;
 	int ret = EXIT_SUCCESS;
-
-	if (!argv[optind]) {
-		sd_err("Please specify the new ACL ID for the VDI");
-		return EXIT_USAGE;
-	}
-	new_acl = strtoul(argv[optind], &p, 10);
-	if (argv[optind] == p || *p != '\0') {
-		sd_err("The ACL ID is invalid: %s", argv[optind]);
-		return EXIT_USAGE;
-	}
-	if (new_acl >= LOCK_TYPE_SHARED) {
-		sd_err("The ACL ID is out of range, must be between 0 and %"
-		       PRIu32, LOCK_TYPE_SHARED - 1);
-		return EXIT_USAGE;
-	}
-	if (new_acl == old_acl) {
-		sd_err("%s already belongs to ACL %"PRIu32".", vdiname,
-		       new_acl);
-		return EXIT_FAILURE;
-	}
 
 	if (parse_vdi(collect_vdi_family, SD_INODE_HEADER_SIZE, &info,
 		      true, false) < 0) {
@@ -3515,11 +3496,44 @@ static int vdi_alter_acl(int argc, char **argv)
 		}
 		goto out;
 	}
-
-	sd_info("%s's ACL is set to %"PRIu32", the old one was %"PRIu32,
-		vdiname, new_acl, old_acl);
 out:
 	free(info.vids);
+	return ret;
+}
+
+static int vdi_alter_acl(int argc, char **argv)
+{
+	const char *vdiname = argv[optind++];
+	const uint32_t old_acl = vdi_cmd_data.acl_id;
+	uint32_t new_acl;
+	char *p;
+	int ret;
+
+	if (!argv[optind]) {
+		sd_err("Please specify the new ACL ID for the VDI");
+		return EXIT_USAGE;
+	}
+	new_acl = strtoul(argv[optind], &p, 10);
+	if (argv[optind] == p || *p != '\0') {
+		sd_err("The ACL ID is invalid: %s", argv[optind]);
+		return EXIT_USAGE;
+	}
+	if (new_acl >= LOCK_TYPE_SHARED) {
+		sd_err("The ACL ID is out of range, must be between 0 and %"
+		       PRIu32, LOCK_TYPE_SHARED - 1);
+		return EXIT_USAGE;
+	}
+	if (new_acl == old_acl) {
+		sd_err("%s already belongs to ACL %"PRIu32".", vdiname,
+		       new_acl);
+		return EXIT_FAILURE;
+	}
+
+	ret = do_vdi_alter_acl(vdiname, old_acl, new_acl);
+	if (ret == EXIT_SUCCESS)
+		sd_info("%s's ACL is set to %"PRIu32", the old one was %"PRIu32,
+			vdiname, new_acl, old_acl);
+
 	return ret;
 }
 
