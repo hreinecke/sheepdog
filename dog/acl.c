@@ -77,7 +77,6 @@ static struct acl_cmd_data {
 	int nr_batched_reclamation;
 	int reclamation_interval;
 	int nr_max_reclaim;
-	uint32_t acl_id;
 } acl_cmd_data = { ~0, };
 
 static int acl_create(int argc, char **argv)
@@ -314,8 +313,8 @@ static int acl_list(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-static int find_acl_name(const char *aclname, uint32_t snapid, const char *tag,
-			 uint32_t *vid)
+static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
+			 uint32_t *vid, bool use_acl)
 {
 	int ret;
 	struct sd_req hdr;
@@ -323,13 +322,14 @@ static int find_acl_name(const char *aclname, uint32_t snapid, const char *tag,
 	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
 
 	memset(buf, 0, sizeof(buf));
-	pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
 	if (tag)
 		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
 
 	sd_init_req(&hdr, SD_OP_GET_VDI_INFO);
 	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
-	hdr.flags = SD_FLAG_CMD_WRITE | SD_FLAG_CMD_ACL;
+	if (use_acl)
+		hdr.flags = SD_FLAG_CMD_ACL;
 	hdr.vdi.snapid = snapid;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
@@ -345,17 +345,33 @@ static int find_acl_name(const char *aclname, uint32_t snapid, const char *tag,
 static int acl_add(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
+	const char *vdiname = NULL;
 	char buf[SD_MAX_VDI_LEN];
-	uint32_t vid;
+	uint32_t acl_vid, vid;
+	uint32_t new_idx = UINT32_MAX;
 	struct sd_inode *inode = NULL;
-	int ret;
+	int ret, i;
 
-	ret = find_acl_name(aclname, 0, "", &vid);
+	if (!argv[optind]) {
+		sd_err("Please specify the VDI to add");
+		return EXIT_USAGE;
+	}
+	vdiname = argv[optind];
+
+	ret = find_vdi_name(aclname, 0, "", &acl_vid, true);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to open ACL %s: %s",
 		       aclname, sd_strerror(ret));
 		return EXIT_FAILURE;
 	}
+
+	ret = find_vdi_name(vdiname, 0, "", &vid, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to open VDI %s: %s",
+		       vdiname, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+
 	memset(buf, 0, sizeof(buf));
 	pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
 
@@ -366,12 +382,58 @@ static int acl_add(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
+		if (!inode->data_vdi_id[i])
+			break;
+		if (inode->data_vdi_id[i] == vid) {
+			sd_err("ACL %" PRIx32 " already contains VDI %"PRIx32,
+			       acl_vid, vid);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
+		if (!inode->data_vdi_id[i]) {
+			inode->data_vdi_id[i] = vid;
+			new_idx = i;
+			break;
+		}
+	}
+	if (new_idx == UINT32_MAX) {
+		sd_err("ACL %"PRIx32" index table exhausted", acl_vid);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	ret = dog_write_object(vid_to_acl_oid(acl_vid), 0,
+			       &inode->data_vdi_id[new_idx],
+			       sizeof(uint32_t),
+			       offsetof(struct sd_inode,
+					data_vdi_id[new_idx]),
+			       0, inode->header.nr_copies,
+			       inode->header.copy_policy,
+			       false, true);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode for object: %016" PRIx64,
+		       vid_to_acl_oid(acl_vid));
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 	if (verbose) {
 		if (json_output) {
 			const char *o;
 
-			out_obj = json_object_new_object();
-			JSON_ADD_INT(out_obj, "vdi_id", vid);
+			out_obj = json_object_new_array();
+
+			for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
+				struct json_object *vdi_obj;
+
+				if (!inode->data_vdi_id[i])
+					break;
+				vdi_obj = json_object_new_object();
+				JSON_ADD_INT(vdi_obj, "vdi_id",
+					     inode->data_vdi_id[i]);
+				json_object_array_add(out_obj, vdi_obj);
+			}
 			o = json_object_to_json_string(out_obj);
 			printf("%s\n", o);
 			json_object_put(out_obj);
