@@ -409,9 +409,8 @@ static int acl_add(int argc, char **argv)
 			       sizeof(uint32_t),
 			       offsetof(struct sd_inode,
 					data_vdi_id[new_idx]),
-			       0, inode->header.nr_copies,
-			       inode->header.copy_policy,
-			       false, true);
+			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode for object: %016" PRIx64,
 		       vid_to_acl_oid(acl_vid));

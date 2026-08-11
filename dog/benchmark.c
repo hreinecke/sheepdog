@@ -67,7 +67,7 @@ static void benchmark_io_worker(struct work *work)
 
 	ret = dog_write_object(oid, 0, io_work->buf, io_work->buf_len,
 			       io_work->offset, 0, io_work->nr_copies,
-			       io_work->copy_policy, false, false);
+			       io_work->copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to write object %016"PRIx64", %s",
 		       oid, sd_strerror(ret));

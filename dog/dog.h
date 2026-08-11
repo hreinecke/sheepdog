@@ -86,7 +86,7 @@ int dog_read_object(uint64_t oid, void *data, unsigned int datalen,
 		    uint64_t offset, bool direct);
 int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
 		     unsigned int datalen, uint64_t offset, uint32_t flags,
-		     uint8_t copies, uint8_t, bool create, bool direct);
+		     uint8_t copies, uint8_t, bool create);
 int dog_exec_req(const struct node_id *, struct sd_req *hdr, void *data);
 int send_light_req(const struct node_id *, struct sd_req *hdr);
 int do_generic_subcommand(struct subcommand *sub, int argc, char **argv);

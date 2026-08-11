@@ -112,8 +112,7 @@ int dog_read_object(uint64_t oid, void *data, unsigned int datalen,
 
 int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
 		     unsigned int datalen, uint64_t offset, uint32_t flags,
-		     uint8_t copies, uint8_t copy_policy, bool create,
-		     bool direct)
+		     uint8_t copies, uint8_t copy_policy, bool create)
 {
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -128,8 +127,6 @@ int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
 	hdr.flags = flags | SD_FLAG_CMD_WRITE;
 	if (cow_oid)
 		hdr.flags |= SD_FLAG_CMD_COW;
-	if (direct)
-		hdr.flags |= SD_FLAG_CMD_DIRECT;
 
 	hdr.obj.copies = copies;
 	hdr.obj.copy_policy = copy_policy;

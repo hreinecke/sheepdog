@@ -101,8 +101,10 @@ int dog_bnode_writer(uint64_t oid, void *mem, unsigned int len, uint64_t offset,
 		     uint32_t flags, int copies, int copy_policy, bool create,
 		     bool direct)
 {
+	if (direct)
+		flags |= SD_FLAG_CMD_DIRECT;
 	return dog_write_object(oid, 0, mem, len, offset, flags, copies,
-			       copy_policy, create, direct);
+			       copy_policy, create);
 }
 
 int dog_bnode_reader(uint64_t oid, void **mem, unsigned int len,
@@ -853,9 +855,10 @@ static int vdi_create(int argc, char **argv)
 		vdi_show_progress(idx * object_size, inode->header.vdi_size);
 		oid = vid_to_data_oid(vid, idx);
 
-		ret = dog_write_object(oid, 0, NULL, 0, 0, 0,
+		ret = dog_write_object(oid, 0, NULL, 0, 0,
+				       SD_FLAG_CMD_DIRECT,
 				       inode->header.nr_copies,
-				       inode->header.copy_policy, true, true);
+				       inode->header.copy_policy, true);
 		if (ret != SD_RES_SUCCESS) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -1043,7 +1046,7 @@ static int vdi_snapshot(int argc, char **argv)
 			       SD_MAX_VDI_TAG_LEN,
 			       offsetof(struct sd_inode_header, tag),
 			       0, inode->nr_copies, inode->copy_policy,
-			       false, false);
+			       false);
 	if (ret != SD_RES_SUCCESS)
 		goto out;
 
@@ -1152,9 +1155,10 @@ static int vdi_clone(int argc, char **argv)
 		}
 
 		oid = vid_to_data_oid(new_vid, idx);
-		ret = dog_write_object(oid, 0, buf, size, 0, 0,
+		ret = dog_write_object(oid, 0, buf, size, 0,
+				       SD_FLAG_CMD_DIRECT,
 				       inode->header.nr_copies,
-				       inode->header.copy_policy, true, true);
+				       inode->header.copy_policy, true);
 		if (ret != SD_RES_SUCCESS) {
 			ret = EXIT_FAILURE;
 			goto out;
@@ -1239,9 +1243,9 @@ static int vdi_resize(int argc, char **argv)
 	inode.vdi_size = new_size;
 
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
-			      &inode, SD_INODE_HEADER_SIZE, 0,
-			      0, inode.nr_copies, inode.copy_policy,
-			      false, true);
+			       &inode, SD_INODE_HEADER_SIZE, 0,
+			       SD_FLAG_CMD_DIRECT, inode.nr_copies,
+			       inode.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to update an inode header");
 		return EXIT_FAILURE;
@@ -1315,9 +1319,10 @@ static int do_vdi_delete(const char *vdiname, int snap_id, const char *snap_tag,
 				       (i - start_idx) * sizeof(uint32_t),
 				       offsetof(struct sd_inode,
 						data_vdi_id[start_idx]),
-				       0, inode->header.nr_copies,
+				       SD_FLAG_CMD_DIRECT,
+				       inode->header.nr_copies,
 				       inode->header.copy_policy,
-				       false, true);
+				       false);
 		if (ret) {
 			sd_err("failed to update inode for discarding objects:"
 			       " %016"PRIx64, vid_to_vdi_oid(vid));
@@ -2227,7 +2232,7 @@ static int vdi_write(int argc, char **argv)
 		ret = dog_write_object(oid, old_oid, buf, len, offset, flags,
 				       inode->header.nr_copies,
 				       inode->header.copy_policy,
-				       create, false);
+				       create);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("Failed to write VDI");
 			ret = EXIT_FAILURE;
@@ -2916,16 +2921,16 @@ static int restore_obj(struct obj_backup *backup, uint32_t vid,
 
 	/* send a copy-on-write request */
 	ret = dog_write_object(vid_to_data_oid(vid, backup->idx), parent_oid,
-			       backup->data, backup->length, backup->offset,
-			       0, parent_inode->header.nr_copies,
-			       parent_inode->header.copy_policy, true, true);
+			backup->data, backup->length, backup->offset,
+			SD_FLAG_CMD_DIRECT, parent_inode->header.nr_copies,
+			parent_inode->header.copy_policy, true);
 	if (ret != SD_RES_SUCCESS)
 		return ret;
 
 	return dog_write_object(vid_to_vdi_oid(vid), 0, &vid, sizeof(vid),
 			SD_INODE_HEADER_SIZE + sizeof(vid) * backup->idx,
-				0, parent_inode->header.nr_copies,
-				parent_inode->header.copy_policy, false, true);
+			SD_FLAG_CMD_DIRECT, parent_inode->header.nr_copies,
+			parent_inode->header.copy_policy, false);
 }
 
 static uint32_t do_restore(const char *vdiname, int snapid, const char *tag,
@@ -3322,8 +3327,8 @@ static int vdi_alter_copy(int argc, char **argv)
 
 	inode.nr_copies = vdi_cmd_data.nr_copies;
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0, &inode,
-			SD_INODE_HEADER_SIZE, 0, 0, old_nr_copies,
-			inode.copy_policy, false, true);
+			SD_INODE_HEADER_SIZE, 0, SD_FLAG_CMD_DIRECT,
+			old_nr_copies, inode.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Overwrite the vdi object's header of %s failure "
 			   "while setting its redundancy level.", vdiname);

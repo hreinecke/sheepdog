@@ -428,9 +428,9 @@ static void do_load_object(struct work *work)
 		goto error;
 
 	/* the vids of all objects have been reserved by reserve_load_vdis() */
-	if (dog_write_object(sw->entry.oid, 0, buffer, size, 0, 0,
-			     sw->entry.nr_copies, sw->entry.copy_policy,
-			     true, true) != 0)
+	if (dog_write_object(sw->entry.oid, 0, buffer, size, 0,
+			     SD_FLAG_CMD_DIRECT, sw->entry.nr_copies,
+			     sw->entry.copy_policy, true) != 0)
 		goto error;
 
 	if (is_vdi_obj(sw->entry.oid))
