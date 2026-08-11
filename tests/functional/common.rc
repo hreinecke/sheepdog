@@ -967,6 +967,12 @@ _vdi_list()
 	$DOG vdi list $args | _filter_iso_date
 }
 
+_acl_list()
+{
+	local args=$*
+	$DOG acl list $args | _filter_iso_date
+}
+
 _vdi_tree()
 {
     $DOG vdi tree -j | jq | grep -v create_time

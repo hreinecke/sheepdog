@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Test 'dog acl add' and 'dog acl remove'
+
+. ./common
+
+err=0
+
+for i in 0 1 2; do
+    _start_sheep $i
+done
+_wait_for_sheep 3
+_cluster_format -c 3
+
+echo "= create an ACL and the VDIs to guard with it"
+$DOG acl create acl_one -v || err=1
+$DOG vdi create vdi_one 16M || err=1
+$DOG vdi create vdi_two 16M || err=1
+$DOG vdi create vdi_three 16M || err=1
+
+echo "= ACLs and VDIs are listed apart"
+_vdi_list
+_acl_list
+
+echo "= add VDIs to the ACL"
+$DOG acl add acl_one vdi_one -v || err=1
+$DOG acl add acl_one vdi_two -v || err=1
+$DOG acl add acl_one vdi_three -v -j || err=1
+
+echo "= a VDI can only be added once"
+$DOG acl add acl_one vdi_two && err=1
+
+echo "= add needs an ACL and a VDI which both exist"
+$DOG acl add acl_one no_such_vdi && err=1
+$DOG acl add no_such_acl vdi_one && err=1
+$DOG acl add vdi_one vdi_two && err=1
+# the usage text is not interesting here, keep the complaint only
+$DOG acl add acl_one 2>&1 >/dev/null && err=1
+
+echo "= removing a VDI closes the hole it leaves behind"
+$DOG acl remove acl_one vdi_two -v -j || err=1
+
+echo "= the removal is persistent, so the VDI is appended when added again"
+$DOG acl add acl_one vdi_two -v -j || err=1
+
+echo "= a VDI can only be removed once"
+$DOG acl remove acl_one vdi_two -v || err=1
+$DOG acl remove acl_one vdi_two && err=1
+
+echo "= remove needs an ACL and a VDI which both exist"
+$DOG acl remove acl_one no_such_vdi && err=1
+$DOG acl remove no_such_acl vdi_one && err=1
+$DOG acl remove vdi_one vdi_three && err=1
+$DOG acl remove acl_one 2>&1 >/dev/null && err=1
+
+echo "= a VDI can be moved to another ACL"
+$DOG acl create acl_two -v || err=1
+$DOG acl add acl_two vdi_one -v -j || err=1
+$DOG acl remove acl_one vdi_one -v -j || err=1
+
+echo "= an ACL can be emptied again"
+$DOG acl remove acl_one vdi_three -v -j || err=1
+$DOG acl remove acl_one vdi_three && err=1
+
+echo "= the VDIs outlive the ACL holding them"
+$DOG acl delete acl_two || err=1
+_acl_list
+_vdi_list
+
+exit $err
