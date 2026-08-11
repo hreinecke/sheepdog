@@ -55,8 +55,7 @@
 #define SD_FLAG_CMD_PIGGYBACK   0x10
 #define SD_FLAG_CMD_TGT   0x20
 #define SD_FLAG_CMD_FWD   0x40
-#define SD_FLAG_CMD_ACL   0x80
-/* flags above 0x100 are sheepdog-internal */
+/* flags above 0x80 are sheepdog-internal */
 
 #define SD_RES_SUCCESS       0x00 /* Success */
 #define SD_RES_UNKNOWN       0x01 /* Unknown error */
@@ -107,7 +106,6 @@
 #define VDI_ATTR_BIT (UINT64_C(1) << 61)
 #define VDI_BTREE_BIT (UINT64_C(1) << 60)
 #define LEDGER_BIT (UINT64_C(1) << 59)
-#define ACL_BIT (UINT64_C(1) << 58)
 #define OLD_MAX_DATA_OBJS (1ULL << 20)
 #define MAX_DATA_OBJS (1ULL << 32)
 #define SD_MAX_VDI_LEN 256U
@@ -166,6 +164,7 @@ struct sd_req {
 			uint8_t		block_size_shift;
 			uint32_t	snapid;
 			uint32_t        acl;
+			uint32_t        vdi_flags;
 		} vdi;
 
 		/* sheepdog-internal */
@@ -341,6 +340,10 @@ struct sd_inode_0_8 {
  * users of the released area:
  * - uint32_t btree_counter
  * - uint8_t[16] uuid
+ * - uint32_t vdi_flags
+ *
+ * New users must be appended, so that inode objects written by an older
+ * sheep keep reading back with the new fields cleared.
  */
 #define OLD_MAX_CHILDREN 1024U
 
@@ -357,6 +360,9 @@ struct recovery_throttling {
 
 #define SD_DEFAULT_STORE_POLICY 0
 #define SD_HYPER_STORE_POLICY 1
+
+/* flags for sd_inode_header.vdi_flags */
+#define SD_VDI_FLAG_ACL 0x00000001 /* VDI holds an access control list */
 
 struct sd_inode_header {
 	char name[SD_MAX_VDI_LEN];
@@ -376,7 +382,8 @@ struct sd_inode_header {
 	uint32_t btree_counter;
 	uint32_t acl_id;
 	uint8_t  uuid[16];
-	uint32_t __unused1[OLD_MAX_CHILDREN - 18];
+	uint32_t vdi_flags;
+	uint32_t __unused1[OLD_MAX_CHILDREN - 19];
 };
 
 struct sd_inode {
@@ -565,16 +572,11 @@ static inline bool is_ledger_object(uint64_t oid)
 	return !!(oid & LEDGER_BIT);
 }
 
-static inline bool is_acl_object(uint64_t oid)
-{
-	return !!(oid & ACL_BIT);
-}
-
 static inline bool is_data_obj(uint64_t oid)
 {
 	return !is_vdi_obj(oid) && !is_vmstate_obj(oid) &&
 		!is_vdi_attr_obj(oid) && !is_vdi_btree_obj(oid) &&
-		!is_ledger_object(oid) && !is_acl_object(oid);
+		!is_ledger_object(oid);
 }
 
 static inline size_t get_objsize(uint64_t oid, uint32_t object_size)
@@ -590,9 +592,6 @@ static inline size_t get_objsize(uint64_t oid, uint32_t object_size)
 
 	if (is_ledger_object(oid))
 		return SD_LEDGER_OBJ_SIZE;
-
-	if (is_acl_object(oid))
-		return SD_INODE_SIZE;
 
 	return object_size;
 }
@@ -632,14 +631,14 @@ static inline uint64_t vid_to_vmstate_oid(uint32_t vid, uint32_t idx)
 	return VMSTATE_BIT | ((uint64_t)vid << VDI_SPACE_SHIFT) | idx;
 }
 
-static inline uint64_t vid_to_acl_oid(uint32_t vid)
-{
-	return ACL_BIT | ((uint64_t)vid << VDI_SPACE_SHIFT);
-}
-
 static inline bool vdi_is_snapshot(const struct sd_inode_header *inode)
 {
 	return !!inode->snap_ctime;
+}
+
+static inline bool vdi_is_acl(const struct sd_inode_header *inode)
+{
+	return !!(inode->vdi_flags & SD_VDI_FLAG_ACL);
 }
 
 static inline uint64_t ledger_oid_to_data_oid(uint64_t oid)

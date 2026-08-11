@@ -1272,6 +1272,7 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	new->header.store_policy = iocb->store_policy;
 	new->header.nr_copies = iocb->nr_copies;
 	new->header.acl_id = iocb->acl;
+	new->header.vdi_flags = iocb->vdi_flags;
 	new->header.block_size_shift =
 		find_next_bit(&block_size, BITS_PER_LONG, 0);
 	new->header.snap_id = new_snapid;
@@ -1375,6 +1376,8 @@ static int clone_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 	/* create a new vdi */
 	new = alloc_inode(iocb, new_snapid, new_vid, base->data_vdi_id,
 			  base->gref);
+	/* the flags describe the kind of VDI, so they follow the base */
+	new->header.vdi_flags = base->header.vdi_flags;
 	ret = sd_write_object(vid_to_vdi_oid(new_vid), (char *)new,
 			      sizeof(*new), 0, true);
 	if (ret != SD_RES_SUCCESS)
@@ -1441,6 +1444,8 @@ static int snapshot_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 	/* create a new vdi */
 	new = alloc_inode(iocb, new_snapid, new_vid, base->data_vdi_id,
 			  base->gref);
+	/* the flags describe the kind of VDI, so they follow the base */
+	new->header.vdi_flags = base->header.vdi_flags;
 	ret = sd_write_object(vid_to_vdi_oid(new_vid), (char *)new,
 			      sizeof(*new), 0, true);
 	if (ret != SD_RES_SUCCESS)
@@ -1518,6 +1523,8 @@ static int rebase_vdi(const struct vdi_iocb *iocb, uint32_t new_snapid,
 	/* create a new vdi */
 	new = alloc_inode(iocb, new_snapid, new_vid, base->data_vdi_id,
 			  base->gref);
+	/* the flags describe the kind of VDI, so they follow the base */
+	new->header.vdi_flags = base->header.vdi_flags;
 	ret = sd_write_object(vid_to_vdi_oid(new_vid), (char *)new,
 			      sizeof(*new), 0, true);
 	if (ret != SD_RES_SUCCESS)

@@ -79,12 +79,42 @@ static struct acl_cmd_data {
 	int nr_max_reclaim;
 } acl_cmd_data = { ~0, };
 
+/*
+ * An ACL is an ordinary VDI carrying the SD_VDI_FLAG_ACL marker; the VDIs it
+ * grants access to are listed in its data_vdi_id[] array.  Look one up by name
+ * and read the first 'size' bytes of its inode, which must cover at least the
+ * header.
+ */
+static int read_acl_inode(const char *aclname, uint32_t *acl_vid,
+			  struct sd_inode *inode, size_t size)
+{
+	uint32_t vid;
+	int ret;
+
+	ret = find_vdi_name(aclname, 0, "", 0, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to open ACL %s: %s", aclname, sd_strerror(ret));
+		return ret;
+	}
+
+	ret = dog_read_object(vid_to_vdi_oid(vid), inode, size, 0, true);
+	if (ret != SD_RES_SUCCESS)
+		return ret;
+
+	if (!vdi_is_acl(&inode->header)) {
+		sd_err("%s is not an ACL", aclname);
+		return SD_RES_INVALID_PARMS;
+	}
+
+	*acl_vid = vid;
+	return SD_RES_SUCCESS;
+}
+
 static int acl_create(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	char buf[SD_MAX_VDI_LEN];
 	uint32_t vid;
-	struct sd_inode *inode = NULL;
 	int ret;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -111,9 +141,10 @@ static int acl_create(int argc, char **argv)
 	pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
 
 	sd_init_req(&hdr, SD_OP_NEW_VDI);
-	hdr.flags = SD_FLAG_CMD_WRITE | SD_FLAG_CMD_ACL;
+	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.data_length = SD_MAX_VDI_LEN;
-	hdr.vdi.vdi_size = sizeof(*inode);
+	hdr.vdi.vdi_size = SD_INODE_SIZE;
+	hdr.vdi.vdi_flags = SD_VDI_FLAG_ACL;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0) {
@@ -127,15 +158,7 @@ static int acl_create(int argc, char **argv)
 	}
 
 	vid = rsp->vdi.vdi_id;
-	inode = xmalloc(sizeof(*inode));
 
-	ret = dog_read_object(vid_to_acl_oid(vid), inode, sizeof(*inode), 0,
-			      true);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to read a newly created ACL object");
-		ret = EXIT_FAILURE;
-		goto out;
-	}
 	if (verbose) {
 		if (json_output) {
 			const char *o;
@@ -150,9 +173,7 @@ static int acl_create(int argc, char **argv)
 		else
 			printf("VDI ID of newly created ACL: %x\n", vid);
 	}
-out:
-	free(inode);
-	return ret;
+	return EXIT_SUCCESS;
 }
 
 static int acl_delete(int args, char **argv)
@@ -161,7 +182,16 @@ static int acl_delete(int args, char **argv)
 	char buf[SD_MAX_VDI_LEN];
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	struct sd_inode *inode;
+	uint32_t acl_vid;
 	int ret = EXIT_SUCCESS;
+
+	/* refuse to delete an ordinary VDI which happens to share the name */
+	inode = xzalloc(SD_INODE_HEADER_SIZE);
+	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
+	free(inode);
+	if (ret != SD_RES_SUCCESS)
+		return ret == SD_RES_NO_VDI ? EXIT_MISSING : EXIT_FAILURE;
 
 	sd_init_req(&hdr, SD_OP_DEL_VDI);
 	hdr.flags = SD_FLAG_CMD_WRITE;
@@ -313,40 +343,10 @@ static int acl_list(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
-			 uint32_t *vid, bool use_acl)
-{
-	int ret;
-	struct sd_req hdr;
-	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
-
-	memset(buf, 0, sizeof(buf));
-	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
-	if (tag)
-		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
-
-	sd_init_req(&hdr, SD_OP_GET_VDI_INFO);
-	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
-	if (use_acl)
-		hdr.flags = SD_FLAG_CMD_ACL;
-	hdr.vdi.snapid = snapid;
-
-	ret = dog_exec_req(&sd_nid, &hdr, buf);
-	if (ret < 0)
-		return SD_RES_EIO;
-
-	if (rsp->result == SD_RES_SUCCESS)
-		*vid = rsp->vdi.vdi_id;
-
-	return rsp->result;
-}
-
 static int acl_add(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
-	char buf[SD_MAX_VDI_LEN];
 	uint32_t acl_vid, vid;
 	uint32_t new_idx = UINT32_MAX;
 	struct sd_inode *inode = NULL;
@@ -358,26 +358,15 @@ static int acl_add(int argc, char **argv)
 	}
 	vdiname = argv[optind];
 
-	ret = find_vdi_name(aclname, 0, "", &acl_vid, true);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open ACL %s: %s",
-		       aclname, sd_strerror(ret));
-		return EXIT_FAILURE;
-	}
-
-	ret = find_vdi_name(vdiname, 0, "", &vid, false);
+	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to open VDI %s: %s",
 		       vdiname, sd_strerror(ret));
 		return EXIT_FAILURE;
 	}
 
-	memset(buf, 0, sizeof(buf));
-	pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
-
 	inode = xmalloc(sizeof(*inode));
-	ret = dog_read_object(vid_to_acl_oid(vid), inode, sizeof(*inode), 0,
-			      true);
+	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
 	if (ret != SD_RES_SUCCESS) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -404,7 +393,7 @@ static int acl_add(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	ret = dog_write_object(vid_to_acl_oid(acl_vid), 0,
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->data_vdi_id[new_idx],
 			       sizeof(uint32_t),
 			       offsetof(struct sd_inode,
@@ -413,7 +402,7 @@ static int acl_add(int argc, char **argv)
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode for object: %016" PRIx64,
-		       vid_to_acl_oid(acl_vid));
+		       vid_to_vdi_oid(acl_vid));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -439,7 +428,7 @@ static int acl_add(int argc, char **argv)
 		} else if (raw_output)
 			printf("%x\n", vid);
 		else
-			printf("VDI ID of newly created ACL: %x\n", vid);
+			printf("VDI %x added to ACL %x\n", vid, acl_vid);
 	}
 out:
 	free(inode);
@@ -455,7 +444,7 @@ static struct subcommand acl_cmd[] = {
 	 acl_delete, acl_options},
 	{"list", "[aclname]", "ajprhoTA", "list images",
 	 NULL, 0, acl_list, acl_options},
-	{"add", "<aclname>", "a", "add an entry to ACL",
+	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
 	 NULL, CMD_NEED_ARG, acl_add, acl_options},
 	{NULL,},
 };

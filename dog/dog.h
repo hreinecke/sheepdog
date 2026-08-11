@@ -80,6 +80,11 @@ typedef void (*vdi_parser_func_t)(uint32_t vid, const char *name,
 				  const char *tag, uint32_t snapid,
 				  uint32_t flags,
 				  const struct sd_inode *i, void *data);
+/*
+ * Walk the VDIs of the cluster and invoke 'func' on each one.  'acl_vdi'
+ * selects which half of the namespace is visited: true for the VDIs holding
+ * an ACL, false for the ordinary ones.
+ */
 int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 	      bool no_deleted, bool acl_vdi);
 int dog_read_object(uint64_t oid, void *data, unsigned int datalen,
@@ -110,6 +115,8 @@ int dog_bnode_writer(uint64_t oid, void *mem, unsigned int len, uint64_t offset,
 int dog_bnode_reader(uint64_t oid, void **mem, unsigned int len,
 		     uint64_t offset);
 
+int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
+		  uint32_t acl, uint32_t *vid);
 int read_vdi_obj(const char *vdiname, int snapid, const char *tag,
 		 uint32_t acl, uint32_t *pvid, void *inode, size_t size);
 

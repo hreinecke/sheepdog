@@ -709,7 +709,7 @@ static int save_snapshot(int argc, char **argv)
 	opt.count = argc - optind;
 	opt.name = argv + optind;
 	if (parse_vdi(fill_object_tree, SD_INODE_SIZE,
-		      &opt, false, true) != SD_RES_SUCCESS)
+		      &opt, false, false) != SD_RES_SUCCESS)
 		goto out;
 
 	if (opt.nr_snapshot == 0) {

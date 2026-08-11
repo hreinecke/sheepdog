@@ -657,8 +657,8 @@ static int vdi_graph(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-static int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
-			 uint32_t acl, uint32_t *vid)
+int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
+		  uint32_t acl, uint32_t *vid)
 {
 	int ret;
 	struct sd_req hdr;

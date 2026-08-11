@@ -190,10 +190,7 @@ int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 		if (test_bit(nr, vdi_deleted))
 			continue;
 
-		if (acl_vdi)
-			oid = vid_to_acl_oid(nr);
-		else
-			oid = vid_to_vdi_oid(nr);
+		oid = vid_to_vdi_oid(nr);
 
 		/* for B-tree inode, we also need sd_index_header */
 		ret = dog_read_object(oid, i, SD_INODE_HEADER_SIZE +
@@ -205,6 +202,13 @@ int parse_vdi(vdi_parser_func_t func, size_t size, void *data,
 
 		/* this VDI has been deleted, and no need to handle it */
 		if (no_deleted && i->header.name[0] == '\0')
+			continue;
+
+		/*
+		 * ACL VDIs share the namespace with ordinary VDIs, so the
+		 * caller has to state which of the two it wants to see.
+		 */
+		if (vdi_is_acl(&i->header) != acl_vdi)
 			continue;
 
 		if (size > SD_INODE_HEADER_SIZE) {

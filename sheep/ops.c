@@ -96,6 +96,7 @@ static int cluster_new_vdi(struct request *req)
 		.block_size_shift = hdr->vdi.block_size_shift,
 		.time = (uint64_t) tv.tv_sec << 32 | tv.tv_usec * 1000,
 		.acl = hdr->vdi.acl,
+		.vdi_flags = hdr->vdi.vdi_flags,
 	};
 
 	/* Client doesn't specify redundancy scheme (copy = 0) */
