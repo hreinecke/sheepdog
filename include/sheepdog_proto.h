@@ -383,7 +383,7 @@ struct sd_inode_header {
 	uint32_t acl_id;
 	uint8_t  uuid[16];
 	uint32_t vdi_flags;
-	uint32_t __unused1[OLD_MAX_CHILDREN - 19];
+	uint32_t __unused1[OLD_MAX_CHILDREN - 7];
 };
 
 struct sd_inode {
