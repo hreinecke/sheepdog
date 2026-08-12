@@ -1240,6 +1240,18 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	case SD_OP_SHUTDOWN:
 		break;
 	case SD_OP_FORCE_RECOVER:
+		/*
+		 * The node list of the previous epoch is generated in
+		 * process_work() and has to be handed over to every node
+		 * to allow it to start recovery.
+		 */
+		if (data_len >= sizeof(struct sd_node)) {
+			data_obj = json_object_new_object();
+			nodes_to_json((struct sd_node *)data,
+				      data_len / sizeof(struct sd_node),
+				      data_obj);
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_REWEIGHT:
 		break;
@@ -1632,6 +1644,19 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 			}
 			memset(node, 0, sizeof(*node));
 			json_to_node(val_obj, node);
+		} else if (!strcmp(key, "nodes")) {
+			struct sd_node *nodes = (struct sd_node *)data;
+			size_t len = json_object_array_length(val_obj) *
+				sizeof(*nodes);
+			int nr_nodes = 0;
+
+			if (data_length < len) {
+				sd_warn("invalid nodes data size %lu",
+					data_length);
+				return;
+			}
+			memset(nodes, 0, len);
+			json_to_nodes(val_obj, nodes, &nr_nodes);
 		} else
 			sd_warn("unhandled attribute '%s'", key);
 		json_object_iter_next(&itb);
