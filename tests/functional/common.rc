@@ -757,7 +757,8 @@ _list_stale_obj()
 
 _list_obj()
 {
-    _list_all_obj | _filter_obj | sort | uniq -c | awk '{ print $2, $1, "copies" }'
+    _list_all_obj | grep -v .stale | _filter_obj | sort | uniq -c | \
+	awk '{ print $2, $1, "copies" }'
 }
 
 # Check that an object is stored on exactly those nodes that sheepdog's

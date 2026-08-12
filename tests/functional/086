@@ -16,6 +16,9 @@ _node_info
 for i in `seq 0 3`; do
     $DOG vdi snapshot test -s snap$i
     $DOG vdi write test $((4 * 1024 ** 2 * $i)) 512 < /dev/zero
+    # ledger objects are updated by the reclaim work queue, ie after
+    # the write itself has completed
+    sleep 1
     _node_info
 done
 

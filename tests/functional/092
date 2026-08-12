@@ -18,6 +18,9 @@ $DOG vdi clone test -s 1 test_cloned
 
 $DOG vdi write test_cloned 0 512 < /dev/zero
 $DOG vdi write test_cloned $((4 * 1024 ** 2 * 1)) 512 < /dev/zero
+# ledger objects are updated by the reclaim work queue, ie after
+# the write itself has completed
+sleep 1
 _node_info
 
 _vdi_list
@@ -26,6 +29,7 @@ $DOG vdi clone test -s 1 test_cloned2 # create branch
 
 $DOG vdi write test_cloned2 0 512 < /dev/zero
 $DOG vdi write test_cloned2 $((4 * 1024 ** 2 * 1)) 512 < /dev/zero
+sleep 1
 _node_info
 
 _vdi_list

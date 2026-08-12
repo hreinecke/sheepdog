@@ -26,4 +26,10 @@ _vdi_list
 _start_sheep 3
 _wait_for_sheep 4
 
+# recovery moves the objects of the restarted node out of the way before
+# deciding whether to revive them, so only the settled state is meaningful
+for i in 0 1 2 3; do
+    _wait_for_sheep_recovery $i
+done
+
 _list_obj
