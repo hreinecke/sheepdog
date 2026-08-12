@@ -338,6 +338,7 @@ _check_sheep()
 # passed, this waits for all the sheeps to be stopped
 _wait_for_sheep_stop()
 {
+    local node
     local cnt portstr
 
     if [ $# -eq 0 ]; then
@@ -345,6 +346,7 @@ _wait_for_sheep_stop()
     else
 	portnum=$((7000 + $1))
 	portstr=$(printf "00000000:%X" $portnum)
+	node=$1
     fi
     for cnt in `seq 60`; do # wait at most 60 seconds
 	# check sheep process
@@ -384,7 +386,11 @@ _wait_for_sheep_stop()
 	sleep 1
     done
 
-    _die "sheep $1 is expected to be stopped."
+    if [[ "$node" ]]; then
+	_die "sheep ${node} is expected to be stopped."
+    else
+	_die "${SHEEPS} nodes are still running after ${cnt} seconds."
+    fi
 }
 
 # wait for all sheep to join completely
