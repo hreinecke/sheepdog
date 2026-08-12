@@ -22,9 +22,13 @@ _vdi_list
 
 echo "original data" | $DOG vdi write test
 
+# which node holds the object depends on the node ids and hence on the
+# cluster driver, so pick one of the copies instead of hardcoding a node
+data_node=$(_find_nodes_with_obj test 0 | head -1)
+
 $DOG cluster shutdown
 
-_delete_data_obj 0 007c2b2500000000
+_delete_data_obj ${data_node} 007c2b2500000000
 
 for i in `seq 0 1`; do
     _start_sheep $i -z 0
@@ -35,7 +39,8 @@ _start_sheep 2 -z 1
 _wait_for_sheep_recovery 0
 _wait_for_sheep 3
 
-$DOG vdi check -e test | _filter_ip_port
+$DOG vdi check -e test | _filter_ip_port | \
+    sed -e "s/\[127.0.0.1:700${data_node}\]/[NODE]/"
 
 $DOG vdi check test
 

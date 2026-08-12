@@ -792,6 +792,24 @@ _check_obj_location()
     fi
 }
 
+# Print the numbers of the nodes holding a copy of an object of a vdi.
+# Takes a vdi name and an optional index; without an index the inode
+# object is looked up.  Which node a given object ends up on depends on
+# the node ids and hence on the cluster driver, so tests must not
+# hardcode it.
+_find_nodes_with_obj()
+{
+    local vdi=$1
+    local index=$2
+    local DOG_ARGS="vdi object location -j"
+
+    if [[ "$index" ]] ; then
+	DOG_ARGS="${DOG_ARGS} -i $index"
+    fi
+    $DOG $DOG_ARGS $vdi | jq -r '.location[]' | _filter_ip_port | \
+	sed -e 's/.*:700//'
+}
+
 _find_obj()
 {
     local oid=$1
