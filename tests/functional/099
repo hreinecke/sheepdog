@@ -4,6 +4,11 @@
 
 . ./common
 
+_objs_on_node()
+{
+    _list_obj_on_node $1 | grep -v .stale | _filter_obj | sort
+}
+
 for i in 0 1 2 3; do
     _start_sheep $i
 done
@@ -15,6 +20,10 @@ $DOG vdi create test 16M -P
 _vdi_list
 
 _list_obj
+
+# which objects end up on which node depends on the node ids, so record
+# the objects of the node to be killed instead of hardcoding them
+_objs_on_node 3 > $STORE/orphans
 
 _kill_sheep 3
 _wait_for_sheep_stop 3
@@ -32,4 +41,10 @@ for i in 0 1 2 3; do
     _wait_for_sheep_recovery $i
 done
 
-_list_obj
+# the objects the restarted node missed the deletion of are revived
+_objs_on_node 3 | diff $STORE/orphans -
+
+# on all other nodes only the inode object of the deleted vdi is left
+for i in 0 1 2; do
+    _objs_on_node $i
+done | sort -u
