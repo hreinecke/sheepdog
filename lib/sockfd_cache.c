@@ -458,6 +458,11 @@ grab:
 		 * commands such as dog.
 		 */
 		entry = sockfd_cache_search(nid);
+		if (!entry) {
+			sd_warn("no sockfd cache entry for %s",
+				addr_to_str(nid->addr, nid->port));
+			return NULL;
+		}
 		sd_write_lock(&sockfd_cache.lock);
 		prepare_conns(entry, true);
 		sd_rw_unlock(&sockfd_cache.lock);
