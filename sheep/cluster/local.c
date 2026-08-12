@@ -497,9 +497,33 @@ static bool local_process_event(void)
 		ev->callbacked = sd_block_handler(&ev->sender.node);
 		msync(ev, sizeof(*ev), MS_SYNC);
 		return false;
-	case EVENT_NOTIFY:
-		sd_notify_handler(&ev->sender.node, ev->buf, ev->buf_len);
+	case EVENT_NOTIFY: {
+		struct sd_node sender = ev->sender.node;
+		size_t buf_len = ev->buf_len;
+		void *buf = NULL;
+
+		/*
+		 * The notify handler may send requests to the other nodes;
+		 * a gateway node eg queries the number of vnodes of every
+		 * other node during MAKE_FS. Those nodes are sitting in
+		 * shm_queue_lock() waiting to process the very same event,
+		 * so keeping the lock here deadlocks the cluster until the
+		 * request times out.
+		 * The handler does modify its buffer, though; force recovery
+		 * eg builds an rbtree of the node list in it. So hand it a
+		 * private copy, otherwise the nodes running the handler in
+		 * parallel corrupt the shared event.
+		 */
+		if (buf_len) {
+			buf = xmalloc(buf_len);
+			memcpy(buf, ev->buf, buf_len);
+		}
+		shm_queue_unlock();
+		sd_notify_handler(&sender, buf, buf_len);
+		shm_queue_lock();
+		free(buf);
 		break;
+	}
 	case EVENT_UPDATE_NODE:
 		if (lnode_eq(&ev->sender, &this_node))
 			this_node = ev->sender;
