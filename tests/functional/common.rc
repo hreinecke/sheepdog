@@ -543,7 +543,7 @@ _start_sheep()
 	SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	VALGRIND=${VALGRIND} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} start ${sheep} 2> /dev/null
     else
-	$SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS
+	SHEEP_VNODES=${vnodes} $SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS
     fi
 
     if [ $? != 0 ]; then
