@@ -388,7 +388,7 @@ _wait_for_sheep_stop()
 
     if [[ "$node" ]]; then
 	_die "sheep ${node} is expected to be stopped."
-    else
+    elif [ ${SHEEPS} != 0 ]; then
 	_die "${SHEEPS} nodes are still running after ${cnt} seconds."
     fi
 }
@@ -513,7 +513,11 @@ _start_sheep()
     elif [[ "$2" == '-g' ]]; then
 	vnodes=0
     elif [[ "$2" == '-j' ]]; then
-	echo "SHEEP_JOURNAL=$3" >> ${sheep_env}
+	if [[ "$DRIVER" == etcd* ]]; then
+	    echo "SHEEP_JOURNAL=$3" >> ${sheep_env}
+	else
+	    SHEEP_JOURNAL="$3"
+	fi
     fi
     if [[ "$MD" ]]; then
 	if [[ "$MD" -eq 4 ]]; then
@@ -528,14 +532,18 @@ _start_sheep()
     fi
 
     if [[ "$MD_STORE" ]]; then
-	echo "SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}" >> ${sheep_env}
+	if [[ "$DRIVER" == etcd* ]]; then
+	    echo "SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}" >> ${sheep_env}
+	else
+	    SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}
+	fi
     fi
 
     if [[ "$DRIVER" == etcd* ]]; then
 	SHEEP_VNODES=${vnodes} SHEEP_ZONE=${zone} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} up --no-start ${sheep} 2> /dev/null
 	VALGRIND=${VALGRIND} docker compose --env-file ${sheep_env} -f ${DOCKER_YAML} start ${sheep} 2> /dev/null
     else
-	$SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS $2
+	$SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS
     fi
 
     if [ $? != 0 ]; then

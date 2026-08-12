@@ -15,9 +15,9 @@ function setUpDevice
 
 function setUpFixedNode
 {
-	SHEEP_OPTIONS='-V 100' _start_sheep 0
-	SHEEP_OPTIONS='-V 200' _start_sheep 1
-	SHEEP_OPTIONS='-V 300' _start_sheep 2
+	SHEEP_VNODES=100 _start_sheep 0
+	SHEEP_VNODES=200 _start_sheep 1
+	SHEEP_VNODES=300 _start_sheep 2
 	_wait_for_sheep 3
 }
 
@@ -28,7 +28,7 @@ function setUpFixedCluster
 	_cluster_format -V -c 2
 }
 
-# Give me SHEEP_OPTIONS when you call testJoinSucceeded
+# Give me SHEEP_VNODES when you call testJoinSucceeded
 function testJoinSucceeded
 {
 	"$1" # setUpFoobarCluster
@@ -45,7 +45,7 @@ function testJoinSucceeded
 	_cleanup
 }
 
-# Give me SHEEP_OPTIONS when you call testJoinFailed
+# Give me SHEEP_VNODES when you call testJoinFailed
 function testJoinFailed
 {
 	"$1" # setUpFoobarCluster
@@ -63,5 +63,5 @@ function testJoinFailed
 	_cleanup
 }
 
-SHEEP_OPTIONS='-V 400' testJoinSucceeded setUpFixedCluster
-SHEEP_OPTIONS=''       testJoinFailed    setUpFixedCluster
+SHEEP_VNODES=400 testJoinSucceeded setUpFixedCluster
+SHEEP_VNODES=''  testJoinFailed    setUpFixedCluster

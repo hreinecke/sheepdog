@@ -11,9 +11,9 @@ function setUpCluster3
 	_make_device 0 $((200*1024**2))
 	_make_device 1 $((100*1024**2))
 	_make_device 2 $((100*1024**2))
-	SHEEP_OPTIONS='-V 200' _start_sheep 0
-	SHEEP_OPTIONS='-V 100' _start_sheep 1
-	SHEEP_OPTIONS='-V 100' _start_sheep 2
+	SHEEP_VNODES=200 _start_sheep 0
+	SHEEP_VNODES=100 _start_sheep 1
+	SHEEP_VNODES=100 _start_sheep 2
 	_wait_for_sheep 3
 	_cluster_format -V -c 2
 }
@@ -24,10 +24,10 @@ function setUpCluster4
 	_make_device 1 $((100*1024**2))
 	_make_device 2 $((100*1024**2))
 	_make_device 3 $((100*1024**2))
-	SHEEP_OPTIONS='-V 200' _start_sheep 0
-	SHEEP_OPTIONS='-V 100' _start_sheep 1
-	SHEEP_OPTIONS='-V 100' _start_sheep 2
-	SHEEP_OPTIONS='-V 100' _start_sheep 3
+	SHEEP_VNODES=200 _start_sheep 0
+	SHEEP_VNODES=100 _start_sheep 1
+	SHEEP_VNODES=100 _start_sheep 2
+	SHEEP_VNODES=100 _start_sheep 3
 	_wait_for_sheep 4
 	_cluster_format -V -c 2
 }
@@ -40,7 +40,7 @@ function testJoinCluster
 	$DOG node info
 
 	_make_device 3 $((100*1024**2))
-	SHEEP_OPTIONS='-V 100' _start_sheep 3
+	SHEEP_VNODES=100 _start_sheep 3
 	_wait_for_sheep 4
 	for i in 0 1 2 3 ; do
 		_wait_for_sheep_recovery "$i"
@@ -98,7 +98,7 @@ function testJoinClusterStepByStep
 	$DOG node info
 
 	_make_device 3 $((100*1024**2))
-	SHEEP_OPTIONS='-V 10' _start_sheep 3
+	SHEEP_VNODES=10 _start_sheep 3
 	_wait_for_sheep 4
 	for i in 0 1 2 3 ; do
 		_wait_for_sheep_recovery "$i"

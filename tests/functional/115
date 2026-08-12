@@ -15,9 +15,9 @@ function setUpDevice
 
 function setUpAutoNode
 {
-	SHEEP_OPTIONS='' _start_sheep 0
-	SHEEP_OPTIONS='' _start_sheep 1
-	SHEEP_OPTIONS='' _start_sheep 2
+	SHEEP_VNODES='' _start_sheep 0
+	SHEEP_VNODES='' _start_sheep 1
+	SHEEP_VNODES='' _start_sheep 2
 	_wait_for_sheep 3
 }
 
@@ -30,9 +30,9 @@ function setUpAutoCluster
 
 function setUpFixedNode
 {
-	SHEEP_OPTIONS='-V 100' _start_sheep 0
-	SHEEP_OPTIONS='-V 200' _start_sheep 1
-	SHEEP_OPTIONS='-V 300' _start_sheep 2
+	SHEEP_VNODES=100 _start_sheep 0
+	SHEEP_VNODES=200 _start_sheep 1
+	SHEEP_VNODES=300 _start_sheep 2
 	_wait_for_sheep 3
 }
 
@@ -89,10 +89,10 @@ function testFormatMixedClusterFailed
 	_make_device 1 $((200*1024**2))
 	_make_device 2 $((300*1024**2))
 	_make_device 3 $((400*1024**2))
-	SHEEP_OPTIONS=''       _start_sheep 0
-	SHEEP_OPTIONS='-V 200' _start_sheep 1
-	SHEEP_OPTIONS=''       _start_sheep 2
-	SHEEP_OPTIONS='-V 400' _start_sheep 3
+	SHEEP_VNODES=''  _start_sheep 0
+	SHEEP_VNODES=200 _start_sheep 1
+	SHEEP_VNODES=''  _start_sheep 2
+	SHEEP_VNODES=400 _start_sheep 3
 	_wait_for_sheep 4
 
 	# format failed with or without -V

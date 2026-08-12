@@ -15,9 +15,9 @@ function setUpDevice
 
 function setUpAutoNode
 {
-	SHEEP_OPTIONS='' _start_sheep 0
-	SHEEP_OPTIONS='' _start_sheep 1
-	SHEEP_OPTIONS='' _start_sheep 2
+	SHEEP_VNODES='' _start_sheep 0
+	SHEEP_VNODES='' _start_sheep 1
+	SHEEP_VNODES='' _start_sheep 2
 	_wait_for_sheep 3
 }
 
@@ -30,9 +30,9 @@ function setUpAutoCluster
 
 function setUpFixedNode
 {
-	SHEEP_OPTIONS='-V 100' _start_sheep 0
-	SHEEP_OPTIONS='-V 200' _start_sheep 1
-	SHEEP_OPTIONS='-V 300' _start_sheep 2
+	SHEEP_VNODES=100 _start_sheep 0
+	SHEEP_VNODES=200 _start_sheep 1
+	SHEEP_VNODES=300 _start_sheep 2
 	_wait_for_sheep 3
 }
 
@@ -59,7 +59,7 @@ function testRejoinSucceeded
 	_cleanup
 }
 
-# Give me SHEEP_OPTIONS when you call testRejoinFailed
+# Give me SHEEP_VNODES when you call testRejoinFailed
 function testRejoinFailed
 {
 	setUpClusterShutdown "$1" # setUpFoobarCluster
@@ -71,6 +71,6 @@ function testRejoinFailed
 testRejoinSucceeded setUpAutoCluster  setUpAutoNode
 testRejoinSucceeded setUpFixedCluster setUpFixedNode
 
-SHEEP_OPTIONS='-V 42' testRejoinFailed setUpAutoCluster
-SHEEP_OPTIONS=''      testRejoinFailed setUpFixedCluster
-SHEEP_OPTIONS='-V 42' testRejoinFailed setUpFixedCluster
+SHEEP_VNODES=42 testRejoinFailed setUpAutoCluster
+SHEEP_VNODES='' testRejoinFailed setUpFixedCluster
+SHEEP_VNODES=42 testRejoinFailed setUpFixedCluster
