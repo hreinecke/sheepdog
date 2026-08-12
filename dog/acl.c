@@ -233,6 +233,7 @@ static int acl_delete(int args, char **argv)
 }
 
 struct get_acl_info {
+	struct json_object *obj;
 	const char *name;
 	const char *tag;
 	uint32_t vid;
@@ -251,12 +252,43 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 	struct tm tm;
 	char dbuf[128];
 	struct get_acl_info *info = data;
+	struct json_object *acl_vdi_obj = NULL;
+	struct json_object *acl_member_obj = NULL;
+	int j;
 
 	if (info) {
 		if (info->name && strcmp(name, info->name) != 0)
 			return;
+		if (info->vid && vid != info->vid)
+			return;
 	}
 
+	if (json_output) {
+		acl_vdi_obj = json_object_new_array();
+		acl_member_obj = json_object_new_array();
+	}
+	if (i->header.vdi_flags & SD_VDI_FLAG_ACL) {
+		for (j = 0; j < i->header.max_data_id_nr; j++) {
+			struct get_acl_info vdi_info = {};
+
+			vdi_info.vid = i->data_vdi_id[j];
+			if (json_output)
+				vdi_info.obj = acl_vdi_obj;
+
+			parse_vdi(print_acl_list, SD_INODE_SIZE, &vdi_info,
+				  true, false);
+		}
+		for (j = 0; j < sizeof(i->header.metadata);
+		     j += SD_MAX_VDI_LEN) {
+			char *member = (char *)&i->header.metadata[j];
+
+			if (strlen(member)) {
+				if (json_output)
+					json_object_array_add(acl_member_obj,
+						json_object_new_string(member));
+			}
+		}
+	}
 	ti = i->header.create_time >> 32;
 	if (raw_output) {
 		snprintf(dbuf, sizeof(dbuf), "%" PRIu64, (uint64_t) ti);
@@ -294,7 +326,12 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 		if (strlen(i->header.tag))
 			JSON_ADD_STRING(vdi_obj, "tag",
 					i->header.tag);
-		json_object_array_add(out_obj, vdi_obj);
+		if (i->header.vdi_flags & SD_VDI_FLAG_ACL) {
+			json_object_object_add(vdi_obj, "vdi", acl_vdi_obj);
+			json_object_object_add(vdi_obj, "member",
+					       acl_member_obj);
+		}
+		json_object_array_add(info->obj, vdi_obj);
 	} else if (raw_output) {
 		printf("%c ", vdi_is_snapshot(&i->header) ?
 		       's' : (is_clone ? 'c' : '='));
@@ -326,8 +363,10 @@ static int acl_list(int argc, char **argv)
 
 	memset(&info, 0, sizeof(info));
 
-	if (json_output)
+	if (json_output) {
 		out_obj = json_object_new_array();
+		info.obj = out_obj;
+	}
 	else if (!raw_output)
 		printf("  Name        Id    Size    Used  Shared"
 		       "    Creation time   ACL id  Copies  Tag"
@@ -398,9 +437,9 @@ static int acl_add_vdi(int argc, char **argv)
 		goto out;
 	}
 
-	/* only a VDI which does not exist can be added */
-	ret = find_vdi_name(vdiname, 0, "", ACL_ANY_ID, &vid);
-	if (ret == SD_RES_SUCCESS) {
+	/* only a VDI which is not part of an ACL can be added */
+	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
+	if (ret != SD_RES_SUCCESS) {
 		sd_err("ACL entry %s cannot be added, duplicate VDI name",
 		       vdiname);
 		ret = EXIT_FAILURE;
@@ -485,14 +524,14 @@ static int acl_add_member(int argc, char **argv)
 	char *member = NULL;
 	uint32_t acl_vid;
 	struct sd_inode *inode = NULL;
-	int ret, i, free_idx = -1;
+	int ret, i, free_idx = -1, num_entries;
 
 	if (!argv[optind]) {
 		sd_err("Please specify the VDI to add");
 		return EXIT_USAGE;
 	}
 	member = argv[optind];
-	if (!strlen(member) || strlen(member) > SD_MAX_VDI_SIZE) {
+	if (!strlen(member) || strlen(member) > SD_MAX_VDI_LEN) {
 		sd_err("Invalid ACL member name '%s'", member);
 		return EXIT_USAGE;
 	}
@@ -504,11 +543,12 @@ static int acl_add_member(int argc, char **argv)
 		goto out;
 	}
 
-	for (i = 0; i < sizeof(inode->header.metadata); i += SD_MAX_VDI_SIZE) {
-		char *item = (char *)&inode->header.metadata[i];
+	num_entries = sizeof(inode->header.metadata) / SD_MAX_VDI_LEN;
+	for (i = 0; i < num_entries; i++) {
+		char *item = (char *)&inode->header.metadata[i * SD_MAX_VDI_LEN];
 		if (free_idx < 0 && !strlen(item))
-			free_idx = i;
-		if (!strncmp(item, member, strlen(member))) {
+			free_idx = i * SD_MAX_VDI_LEN;
+		if (!strcmp(item, member)) {
 			sd_err("ACL %" PRIx32 " already contains member %s",
 			       acl_vid, member);
 			ret = EXIT_FAILURE;
@@ -525,7 +565,7 @@ static int acl_add_member(int argc, char **argv)
 
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->header.metadata[free_idx],
-			       (unsigned int)SD_MAX_VDI_SIZE,
+			       (unsigned int)SD_MAX_VDI_LEN,
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
@@ -713,7 +753,7 @@ static int acl_remove_member(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	member = argv[optind];
-	if (!strlen(member) || strlen(member) > SD_MAX_VDI_SIZE) {
+	if (!strlen(member) || strlen(member) > SD_MAX_VDI_LEN) {
 		sd_err("Invalid ACL member name '%s'", member);
 		return EXIT_USAGE;
 	}
@@ -725,12 +765,10 @@ static int acl_remove_member(int argc, char **argv)
 		goto out;
 	}
 
-	for (i = 0; i < sizeof(inode->header.metadata); i += SD_MAX_VDI_SIZE) {
+	for (i = 0; i < sizeof(inode->header.metadata); i += SD_MAX_VDI_LEN) {
 		char *item = (char *)&inode->header.metadata[i];
-		if (!strncmp(item, member, strlen(member))) {
-			sd_err("ACL %" PRIx32 " already contains member %s",
-			       acl_vid, member);
-			memset(item, 0, SD_MAX_VDI_SIZE);
+		if (!strcmp(item, member)) {
+			memset(item, 0, SD_MAX_VDI_LEN);
 			free_idx = i;
 			break;
 		}
@@ -744,7 +782,7 @@ static int acl_remove_member(int argc, char **argv)
 
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->header.metadata[free_idx],
-			       (unsigned int)SD_MAX_VDI_SIZE,
+			       (unsigned int)SD_MAX_VDI_LEN,
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
