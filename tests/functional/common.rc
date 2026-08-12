@@ -516,7 +516,7 @@ _start_sheep()
 	if [[ "$DRIVER" == etcd* ]]; then
 	    echo "SHEEP_JOURNAL=$3" >> ${sheep_env}
 	else
-	    SHEEP_JOURNAL="$3"
+	    SHEEP_OPTIONS="-j $3"
 	fi
     fi
     if [[ "$MD" ]]; then
