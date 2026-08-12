@@ -399,9 +399,7 @@ static int acl_add(int argc, char **argv)
 	}
 
 	vid = sd_hash_vdi(vdiname);
-	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
-		if (!inode->data_vdi_id[i])
-			break;
+	for (i = 0; i < inode->header.max_data_id_nr; i++) {
 		if (inode->data_vdi_id[i] == vid) {
 			sd_err("ACL %" PRIx32 " already contains VDI %"PRIx32,
 			       acl_vid, vid);
@@ -417,36 +415,44 @@ static int acl_add(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
-		if (!inode->data_vdi_id[i]) {
-			inode->data_vdi_id[i] = vid;
-			new_idx = i;
-			break;
-		}
-	}
-	if (new_idx == UINT32_MAX) {
-		sd_err("ACL %"PRIx32" index table exhausted", acl_vid);
-		ret = EXIT_FAILURE;
-		goto out;
-	}
+	/* Update the ACL VDI mapping table first */
+	new_idx = inode->header.max_data_id_nr;
+	inode->data_vdi_id[new_idx] = vid;
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-			       &inode->data_vdi_id[new_idx],
-			       sizeof(uint32_t),
+			       &vid, sizeof(uint32_t),
 			       offsetof(struct sd_inode,
 					data_vdi_id[new_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode for object: %016" PRIx64,
-		       vid_to_vdi_oid(acl_vid));
+		sd_err("failed to update ACL inode %"PRIx64": %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-
-	/* Alter the ACL of the VDI */
+	/* The alter the ACL of the VDI */
 	ret = do_vdi_alter_acl(vdiname, 0, acl_vid);
-	if (ret != EXIT_SUCCESS)
+	if (ret != EXIT_SUCCESS) {
+		sd_err("failed to update VDI %s with ACL id",
+		       vdiname);
 		goto out;
+	}
+
+	/* And finally the upper limit of the mapping table */
+	inode->header.max_data_id_nr++;
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+			       &inode->header.max_data_id_nr,
+			       sizeof(uint32_t),
+			       offsetof(struct sd_inode_header,
+					max_data_id_nr),
+			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       inode->header.copy_policy, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode %"PRIx64" header: %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 
 	if (verbose) {
 		if (json_output)
@@ -478,7 +484,7 @@ static int acl_remove(int argc, char **argv)
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
 	uint32_t acl_vid, vid;
-	uint32_t old_idx = UINT32_MAX, last_idx = 0;
+	uint32_t old_idx = UINT32_MAX;
 	struct sd_inode *inode = NULL;
 	int ret, i;
 
@@ -507,13 +513,9 @@ static int acl_remove(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
-		if (!inode->data_vdi_id[i])
-			break;
+	for (i = 0; i < inode->header.max_data_id_nr; i++) {
 		if (inode->data_vdi_id[i] == vid) {
-			inode->data_vdi_id[i] = 0;
 			old_idx = i;
-			last_idx = i;
 			break;
 		}
 	}
@@ -523,38 +525,53 @@ static int acl_remove(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	/* Reshuffle array to avoid holes */
-	for (i = old_idx; i < SD_INODE_DATA_INDEX - 1; i++) {
-		if (!inode->data_vdi_id[i + 1])
-			break;
-		inode->data_vdi_id[i] = inode->data_vdi_id[i + 1];
-		inode->data_vdi_id[i + 1] = 0;
-		last_idx = i + 1;
+	inode->data_vdi_id[old_idx] = 0;
+	if (old_idx == inode->header.max_data_id_nr - 1) {
+		/* Modify the upper limit of the VDI mapping first */
+		inode->header.max_data_id_nr--;
+		ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+				       &inode->header.max_data_id_nr,
+				       sizeof(uint32_t),
+				       offsetof(struct sd_inode_header,
+						max_data_id_nr),
+				       SD_FLAG_CMD_DIRECT,
+				       inode->header.nr_copies,
+				       inode->header.copy_policy, false);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("failed to update ACL inode %"PRIx64" header: %s",
+			       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+			ret = EXIT_FAILURE;
+			goto out;
+		}
 	}
-	if (old_idx == UINT32_MAX) {
-		sd_err("ACL %"PRIx32" index table exhausted", acl_vid);
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-	/* the VDI must not keep pointing at an ACL it is no longer part of */
-	ret = do_vdi_alter_acl(vdiname, acl_vid, 0);
-	if (ret != EXIT_SUCCESS)
-		goto out;
 
-	/* every slot from the removed one up to the new hole has moved */
+	/* Now update the VDI ACL */
+	ret = do_vdi_alter_acl(vdiname, acl_vid, 0);
+	if (ret != EXIT_SUCCESS) {
+		sd_err("failed to update VDI %s with ACL id",
+		       vdiname);
+		goto out;
+	}
+	/* And finally the VDI mapping */
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       &inode->data_vdi_id[old_idx],
-			       sizeof(uint32_t) * (last_idx - old_idx + 1),
+			       sizeof(uint32_t),
 			       offsetof(struct sd_inode,
 					data_vdi_id[old_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode for object: %016" PRIx64,
-		       vid_to_vdi_oid(acl_vid));
+		sd_err("failed to update ACL inode %"PRIx64": %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
 		if (do_vdi_alter_acl(vdiname, 0, acl_vid) != EXIT_SUCCESS)
 			sd_err("VDI %"PRIx32" is left outside of ACL %"PRIx32,
 			       vid, acl_vid);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode for object: %016" PRIx64,
+		       vid_to_vdi_oid(acl_vid));
 		ret = EXIT_FAILURE;
 		goto out;
 	}

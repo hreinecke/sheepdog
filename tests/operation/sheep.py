@@ -29,7 +29,7 @@ class Connection(object):
 
 
 class Inode(object):
-    fmt = '<256s256sQQQQQBBBBLLLL4092x1048576L2097152L'
+    fmt = '<256s256sQQLLQQBBBBLLLLL4068x1048576L2097152L'
     size = struct.calcsize(fmt)
     packer = struct.Struct(fmt)
 
@@ -45,19 +45,21 @@ class Inode(object):
         self.tag = pieces[1]
         self.create_time = pieces[2] >> 32
         self.snap_ctime = pieces[3] >> 32
-        self.vm_clock_nsec = pieces[4]
-        self.vdi_size = pieces[5]
-        self.vm_state_size = pieces[6]
-        self.copy_policy = pieces[7]
-        self.store_policy = pieces[8]
-        self.nr_copies = pieces[9]
-        self.block_size_shift = pieces[10]
-        self.snap_id = pieces[11]
-        self.vdi_id = pieces[12]
-        self.parent_vdi_id = pieces[13]
-        self.btree_counter = pieces[14]
+        self.max_data_id_nr = pieces[4]
+        self.max_zone_nr = pieces[5]
+        self.vdi_size = pieces[6]
+        self.vm_state_size = pieces[7]
+        self.copy_policy = pieces[8]
+        self.store_policy = pieces[9]
+        self.nr_copies = pieces[10]
+        self.block_size_shift = pieces[11]
+        self.snap_id = pieces[12]
+        self.vdi_id = pieces[13]
+        self.parent_vdi_id = pieces[14]
+        self.btree_counter = pieces[15]
+        self.acl_id = pieces[16]
 
-        self.data_vdi_id = pieces[15:1048591]
+        self.data_vdi_id = pieces[17:1048591]
         self.generation_reference = pieces[1048591:3145728]
 
 

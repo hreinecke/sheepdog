@@ -370,7 +370,8 @@ struct sd_inode_header {
 	char tag[SD_MAX_VDI_TAG_LEN];
 	uint64_t create_time;
 	uint64_t snap_ctime;
-	uint64_t vm_clock_nsec;
+	uint32_t max_data_id_nr;
+	uint32_t __unused0;
 	uint64_t vdi_size;
 	uint64_t vm_state_size;
 	uint8_t  copy_policy;
