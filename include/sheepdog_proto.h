@@ -364,6 +364,7 @@ struct recovery_throttling {
 
 /* flags for sd_inode_header.vdi_flags */
 #define SD_VDI_FLAG_ACL 0x00000001 /* VDI holds an access control list */
+#define SD_INODE_META_INDEX (OLD_MAX_CHILDREN - 8)
 
 struct sd_inode_header {
 	char name[SD_MAX_VDI_LEN];
@@ -385,7 +386,8 @@ struct sd_inode_header {
 	uint32_t acl_id;
 	uint8_t  uuid[16];
 	uint32_t vdi_flags;
-	uint32_t __unused1[OLD_MAX_CHILDREN - 7];
+	uint32_t __unused1;
+	uint8_t metadata[SD_INODE_META_INDEX * 4];
 };
 
 struct sd_inode {

@@ -377,7 +377,7 @@ static void print_acl_obj_list(uint32_t vid, const char *name, const char *tag,
 		printf("VDI %x\n", vid);
 }
 
-static int acl_add(int argc, char **argv)
+static int acl_add_vdi(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
@@ -398,15 +398,6 @@ static int acl_add(int argc, char **argv)
 		goto out;
 	}
 
-	vid = sd_hash_vdi(vdiname);
-	for (i = 0; i < inode->header.max_data_id_nr; i++) {
-		if (inode->data_vdi_id[i] == vid) {
-			sd_err("ACL %" PRIx32 " already contains VDI %"PRIx32,
-			       acl_vid, vid);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-	}
 	/* only a VDI which does not exist can be added */
 	ret = find_vdi_name(vdiname, 0, "", ACL_ANY_ID, &vid);
 	if (ret == SD_RES_SUCCESS) {
@@ -414,6 +405,15 @@ static int acl_add(int argc, char **argv)
 		       vdiname);
 		ret = EXIT_FAILURE;
 		goto out;
+	}
+
+	for (i = 0; i < inode->header.max_data_id_nr; i++) {
+		if (inode->data_vdi_id[i] == vid) {
+			sd_err("ACL %" PRIx32 " already contains VDI %"PRIx32,
+			       acl_vid, vid);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
 	}
 	/* Update the ACL VDI mapping table first */
 	new_idx = inode->header.max_data_id_nr;
@@ -479,7 +479,98 @@ out:
 	return ret;
 }
 
-static int acl_remove(int argc, char **argv)
+static int acl_add_member(int argc, char **argv)
+{
+	const char *aclname = argv[optind++];
+	char *member = NULL;
+	uint32_t acl_vid;
+	struct sd_inode *inode = NULL;
+	int ret, i, free_idx = -1;
+
+	if (!argv[optind]) {
+		sd_err("Please specify the VDI to add");
+		return EXIT_USAGE;
+	}
+	member = argv[optind];
+
+	inode = xmalloc(SD_INODE_HEADER_SIZE);
+	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
+	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	for (i = 0; i < sizeof(inode->header.metadata); i += 256) {
+		char *item = (char *)&inode->header.metadata[i];
+		if (free_idx < 0 && !strlen(item))
+			free_idx = i;
+		if (!strncmp(item, member, strlen(member))) {
+			sd_err("ACL %" PRIx32 " already contains member %s",
+			       acl_vid, member);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+	if (free_idx < 0) {
+		sd_err("ACL %" PRIx32 " member list full, cannot add",
+		       acl_vid);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+	memcpy(&inode->header.metadata[free_idx], member, strlen(member));
+
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+			       member, 256,
+			       offsetof(struct sd_inode_header,
+					metadata[free_idx]),
+			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       inode->header.copy_policy, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode %"PRIx64": %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	if (verbose) {
+		if (json_output)
+			out_obj = json_object_new_array();
+		else if (!raw_output)
+			printf("ACL %"PRIx32" contains:\n", acl_vid);
+
+		if (parse_vdi(print_acl_obj_list, SD_INODE_HEADER_SIZE,
+			      out_obj, true, false) < 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (json_output) {
+			const char *o;
+
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
+			printf("\n");
+	}
+out:
+	free(inode);
+	return ret;
+}
+
+static struct subcommand acl_add_cmd[] = {
+	{"vdi", NULL, NULL, "add VDI to ACL", NULL,
+	 CMD_NEED_ARG, acl_add_vdi},
+	{"member", NULL, NULL, "add member to ACL", NULL,
+	 CMD_NEED_ARG, acl_add_member},
+	{NULL},
+};
+
+static int acl_add(int argc, char **argv)
+{
+	return do_generic_subcommand(acl_add_cmd, argc, argv);
+}
+
+static int acl_remove_vdi(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
@@ -604,6 +695,95 @@ out:
 	return ret;
 }
 
+static int acl_remove_member(int argc, char **argv)
+{
+	const char *aclname = argv[optind++];
+	char *member = NULL;
+	uint32_t acl_vid;
+	struct sd_inode *inode = NULL;
+	int ret, i, free_idx = -1;
+
+	if (!argv[optind]) {
+		sd_err("Please specify the VDI to add");
+		return EXIT_USAGE;
+	}
+	member = argv[optind];
+
+	inode = xmalloc(SD_INODE_HEADER_SIZE);
+	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
+	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	for (i = 0; i < sizeof(inode->header.metadata); i += 256) {
+		char *item = (char *)&inode->header.metadata[i];
+		if (!strncmp(item, member, strlen(member))) {
+			sd_err("ACL %" PRIx32 " already contains member %s",
+			       acl_vid, member);
+			memset(item, 0, 256);
+			free_idx = i;
+			break;
+		}
+	}
+	if (free_idx < 0) {
+		sd_err("ACL %" PRIx32 " member %s not found, cannot remove",
+		       acl_vid, member);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+			       &inode->header.metadata[free_idx], 256,
+			       offsetof(struct sd_inode_header,
+					metadata[free_idx]),
+			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       inode->header.copy_policy, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode %"PRIx64" header: %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	if (verbose) {
+		if (json_output)
+			out_obj = json_object_new_array();
+		else if (!raw_output)
+			printf("ACL %"PRIx32" contains:\n", acl_vid);
+
+		if (parse_vdi(print_acl_obj_list, SD_INODE_HEADER_SIZE,
+			      out_obj, true, false) < 0) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+		if (json_output) {
+			const char *o;
+
+			o = json_object_to_json_string(out_obj);
+			printf("%s\n", o);
+			json_object_put(out_obj);
+		} else if (raw_output)
+			printf("\n");
+	}
+out:
+	free(inode);
+	return ret;
+}
+
+static struct subcommand acl_remove_cmd[] = {
+	{"vdi", NULL, NULL, "rmove VDI from ACL", NULL,
+	 CMD_NEED_ARG, acl_remove_vdi},
+	{"member", NULL, NULL, "remove member from ACL", NULL,
+	 CMD_NEED_ARG, acl_remove_member},
+	{NULL},
+};
+
+static int acl_remove(int argc, char **argv)
+{
+	return do_generic_subcommand(acl_remove_cmd, argc, argv);
+}
+
 static struct subcommand acl_cmd[] = {
 	{"create", "<aclname>", "cfajphrvT", "create an acl",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
@@ -614,9 +794,9 @@ static struct subcommand acl_cmd[] = {
 	{"list", "[aclname]", "ajprhvT", "list images",
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
-	 NULL, CMD_NEED_ARG, acl_add, acl_options},
+	 acl_add_cmd, CMD_NEED_ARG, acl_add, acl_options},
 	{"remove", "<aclname> <vdiname>", "ajprvhT", "remove an entry from ACL",
-	 NULL, CMD_NEED_ARG, acl_remove, acl_options},
+	 acl_remove_cmd, CMD_NEED_ARG, acl_remove, acl_options},
 	{NULL,},
 };
 
