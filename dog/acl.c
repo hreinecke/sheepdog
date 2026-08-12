@@ -492,6 +492,10 @@ static int acl_add_member(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	member = argv[optind];
+	if (!strlen(member) || strlen(member) > SD_MAX_VDI_SIZE) {
+		sd_err("Invalid ACL member name '%s'", member);
+		return EXIT_USAGE;
+	}
 
 	inode = xmalloc(SD_INODE_HEADER_SIZE);
 	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
@@ -500,7 +504,7 @@ static int acl_add_member(int argc, char **argv)
 		goto out;
 	}
 
-	for (i = 0; i < sizeof(inode->header.metadata); i += 256) {
+	for (i = 0; i < sizeof(inode->header.metadata); i += SD_MAX_VDI_SIZE) {
 		char *item = (char *)&inode->header.metadata[i];
 		if (free_idx < 0 && !strlen(item))
 			free_idx = i;
@@ -520,7 +524,8 @@ static int acl_add_member(int argc, char **argv)
 	memcpy(&inode->header.metadata[free_idx], member, strlen(member));
 
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-			       member, 256,
+			       &inode->header.metadata[free_idx],
+			       (unsigned int)SD_MAX_VDI_SIZE,
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
@@ -708,6 +713,10 @@ static int acl_remove_member(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	member = argv[optind];
+	if (!strlen(member) || strlen(member) > SD_MAX_VDI_SIZE) {
+		sd_err("Invalid ACL member name '%s'", member);
+		return EXIT_USAGE;
+	}
 
 	inode = xmalloc(SD_INODE_HEADER_SIZE);
 	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
@@ -716,12 +725,12 @@ static int acl_remove_member(int argc, char **argv)
 		goto out;
 	}
 
-	for (i = 0; i < sizeof(inode->header.metadata); i += 256) {
+	for (i = 0; i < sizeof(inode->header.metadata); i += SD_MAX_VDI_SIZE) {
 		char *item = (char *)&inode->header.metadata[i];
 		if (!strncmp(item, member, strlen(member))) {
 			sd_err("ACL %" PRIx32 " already contains member %s",
 			       acl_vid, member);
-			memset(item, 0, 256);
+			memset(item, 0, SD_MAX_VDI_SIZE);
 			free_idx = i;
 			break;
 		}
@@ -734,7 +743,8 @@ static int acl_remove_member(int argc, char **argv)
 	}
 
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-			       &inode->header.metadata[free_idx], 256,
+			       &inode->header.metadata[free_idx],
+			       (unsigned int)SD_MAX_VDI_SIZE,
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
