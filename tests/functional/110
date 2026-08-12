@@ -6,7 +6,7 @@
 
 function testStartVnodesFailed
 {
-	( SHEEP_VNODES="$1" _start_sheep 0 ) && :
+	( SHEEP_VNODES="$1" _start_sheep 0 -e 2> /dev/null ) && :
 	_wait_for_sheep_stop 0
 	_cleanup
 	_setup

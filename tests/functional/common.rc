@@ -489,6 +489,8 @@ _start_sheep()
     local store=${STORE}
     local sheep_env=${DOCKER_ENV}
     local cnt
+    local expect_fail=false
+
     for cnt in `seq 1 10`; do  # wait at most 10 seconds
 	local SHEEPS=$(_check_sheep $node)
         if [ $SHEEPS == 0 ]; then
@@ -518,6 +520,8 @@ _start_sheep()
 	else
 	    SHEEP_OPTIONS="-j $3"
 	fi
+    elif [[ "$2" == '-e' ]]; then
+	expect_fail=true
     fi
     if [[ "$MD" ]]; then
 	if [[ "$MD" -eq 4 ]]; then
@@ -546,7 +550,7 @@ _start_sheep()
 	SHEEP_VNODES=${vnodes} $SHEEP $STORE/${node}${MD_STORE} -z ${zone} -p $((7000+$1)) -c $DRIVER $SHEEP_OPTIONS
     fi
 
-    if [ $? != 0 ]; then
+    if ! $expect_fail && [ $? != 0 ]; then
         _die "cannot start sheep $1"
     fi
     unset MD_STORE

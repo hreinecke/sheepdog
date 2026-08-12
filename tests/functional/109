@@ -18,7 +18,7 @@ function testStartZoneSucceeded
 function testStartZoneFailed
 {
     zone="$1"
-    _start_sheep 0 -z ${zone} > /dev/null 2>&1
+    _start_sheep 0 -z ${zone} -e 2> /dev/null
     _wait_for_sheep_stop 0
     _cleanup
 }
