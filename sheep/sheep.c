@@ -852,31 +852,15 @@ int main(int argc, char **argv, char **envp)
 	install_sighandler(SIGHUP, sighup_handler, false);
 
 	cdrv_options = getenv("SHEEP_CLUSTER_DRIVER");
-	if (cdrv_options)
-		sd_info("Using SHEEP_CLUSTER_DRIVER='%s'",
-			cdrv_options);
 	log_options = getenv("SHEEP_LOGGING");
-	if (log_options)
-		sd_info("Using SHEEP_LOGGING='%s'",
-		       log_options);
 	pid_file = getenv("SHEEP_PID_FILE");
-	if (pid_file)
-		sd_info("Using SHEEP_PID_FILE='%s'",
-		       pid_file);
 	base_dir = getenv("SHEEP_BASE_DIR");
-	if (base_dir)
-		sd_info("Using SHEEP_BASE_DIR='%s'",
-		       base_dir);
 	if ((bindaddr = getenv("SHEEP_BINDADDR"))) {
 		if (!inetaddr_is_valid(bindaddr))
 			bindaddr = NULL;
-		if (bindaddr)
-			sd_info("Using SHEEP_BINDADDR='%s'",
-			       bindaddr);
 	}
 	if ((opt = getenv("SHEEP_ADDR"))) {
 		if (str_to_addr(opt, sys->this_node.nid.addr)) {
-			sd_info("Using SHEEP_ADDR='%s'", opt);
 			explicit_addr = true;
 		}
 	}
@@ -886,8 +870,6 @@ int main(int argc, char **argv, char **envp)
 			sd_err("Invalide port number '%s'", opt);
 			port = SD_LISTEN_PORT;
 		}
-		if (port != SD_LISTEN_PORT)
-			sd_info("Using SHEEP_PORT='%u'", port);
 	}
 	if ((opt = getenv("SHEEP_ZONE")) && strlen(opt)) {
 		zone = str_to_u32(opt);
@@ -897,19 +879,14 @@ int main(int argc, char **argv, char **envp)
 			       opt, UINT32_MAX);
 			exit(1);
 		}
-		if (zone >= 0)
-			sd_info("Using SHEEP_ZONE='%lu'", zone);
 	}
 	if ((opt = getenv("SHEEP_VNODES")) && strlen(opt)) {
 		nr_vnodes = str_to_u16(opt);
 		if (errno != 0) {
 			sd_err("Invalid number of vnodes '%s'", opt);
 			exit(1);
-		} else if (nr_vnodes > 0) {
+		} else if (nr_vnodes > 0)
 			sys->cinfo.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
-			sd_info("Using SHEEP_VNODES='%u'", nr_vnodes);
-		} else
-			sd_info("Using SHEEP_VNODES='0' (gateway mode)");
 	}
 	if ((opt = getenv("SHEEP_JOURNAL")) && strlen(opt)) {
 		if (option_parse((char *)opt, ",", journal_parsers) < 0) {
@@ -921,7 +898,6 @@ int main(int argc, char **argv, char **envp)
 			exit(1);
 		}
 		uatomic_set_true(&sys->use_journal);
-		sd_info("Using SHEEP_JOURNAL='%s'", opt);
 	}
 	if ((opt = getenv("SHEEP_OPTS"))) {
 		int o;
