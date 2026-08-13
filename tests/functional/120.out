@@ -2,13 +2,59 @@ QA output created by 120
 using backend plain store
 = create an ACL and the VDIs to guard with it
 = ACLs and VDIs are listed apart
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_one      0   16 MB  0.0 MB  0.0 MB DATE   5c0b0d      3                22
-  vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
-  vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3                22
-  vdi_two      0   16 MB  0.0 MB  0.0 MB DATE   8cc667      3                22
-  Name        Id    Size    Used  Shared    Creation time   ACL id  Copies  Tag   Block Size Shift
-  acl_one      0   12 MB DATE   8efba8                22
+[
+  {
+    "name": "vdi_one",
+    "vdi_id": 6032141,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_three",
+    "vdi_id": 6464925,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120221,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_two",
+    "vdi_id": 9225831,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]
+[
+  {
+    "name": "acl_one",
+    "vdi_id": 9370536,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [],
+    "member": []
+  }
+]
 = add VDIs to the ACL
 ACL 8efba8 contains:
 VDI 5c0b0d
@@ -17,12 +63,56 @@ VDI 5c0b0d
 VDI 8cc667
 [ { "vdi_id": 6032141 }, { "vdi_id": 9225831 }, { "vdi_id": 6464925 } ]
 = the members carry the ACL in their inode now
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3                22
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_one      0   16 MB  0.0 MB  0.0 MB DATE   5c0b0d      3                22
-  vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
-  vdi_two      0   16 MB  0.0 MB  0.0 MB DATE   8cc667      3                22
+[
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120221,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]
+  Name        Id    Size    Used  Shared    Creation time   ACL id  Copies  Tag   Block Size Shift
+  acl_one      0   12 MB DATE   8efba8                22
+[
+  {
+    "name": "acl_one",
+    "vdi_id": 9370536,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [
+      {
+        "name": "vdi_one",
+        "vdi_id": 6032141,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      },
+      {
+        "name": "vdi_two",
+        "vdi_id": 9225831,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      },
+      {
+        "name": "vdi_three",
+        "vdi_id": 6464925,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      }
+    ],
+    "member": []
+  }
+]
 = a VDI can only be added once
 ACL 8efba8 already contains VDI 8cc667
 = add needs an ACL and a VDI which both exist
@@ -33,12 +123,57 @@ Please specify the VDI to add
 = removing a VDI closes the hole it leaves behind
 [ { "vdi_id": 6032141 }, { "vdi_id": 6464925 } ]
 = the removed VDI does not belong to an ACL anymore
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3                22
-  vdi_two      0   16 MB  0.0 MB  0.0 MB DATE   8cc667      3                22
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_one      0   16 MB  0.0 MB  0.0 MB DATE   5c0b0d      3                22
-  vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
+[
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120221,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_two",
+    "vdi_id": 9225831,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]
+[
+  {
+    "name": "acl_one",
+    "vdi_id": 9370536,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [
+      {
+        "name": "vdi_one",
+        "vdi_id": 6032141,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      },
+      {},
+      {
+        "name": "vdi_three",
+        "vdi_id": 6464925,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      }
+    ],
+    "member": []
+  }
+]
 = the removal is persistent, so the VDI is appended when added again
 [ { "vdi_id": 6032141 }, { "vdi_id": 6464925 }, { "vdi_id": 9225831 } ]
 = a VDI can only be removed once
@@ -52,36 +187,205 @@ Failed to open ACL no_such_acl: No VDI found
 vdi_free is not an ACL
 Please specify the VDI to remove
 = a VDI can be moved to another ACL
+{ "vdi_id": 7945294 }
 Failed to open VDI vdi_one: Permission denied accessing VDI
 [ { "vdi_id": 6464925 } ]
 [ { "vdi_id": 6032141 } ]
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_one      0   16 MB  0.0 MB  0.0 MB DATE   5c0b0d      3                22
+[
+  {
+    "name": "acl_one",
+    "vdi_id": 9370536,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [
+      {},
+      {},
+      {
+        "name": "vdi_three",
+        "vdi_id": 6464925,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      }
+    ],
+    "member": []
+  }
+]
+[
+  {
+    "name": "acl_two",
+    "vdi_id": 7945294,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [
+      {
+        "name": "vdi_one",
+        "vdi_id": 6032141,
+        "acl_id": 7945294,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      }
+    ],
+    "member": []
+  }
+]
 = an ACL can be emptied again
 [ ]
 ACL 8efba8 does not contain VDI 62a59d
 = a VDI is added and removed together with its snapshots
 ACL 8efba8 contains:
 VDI 8b29de
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-s vdi_free     1   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3          snap  22
-  vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29de      3                22
+[
+  {
+    "name": "acl_one",
+    "vdi_id": 9370536,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [
+      {
+        "name": "vdi_free",
+        "vdi_id": 9120222,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      }
+    ],
+    "member": []
+  }
+]
+[
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120221,
+    "acl_id": 9370536,
+    "vdi_size": 16777216,
+    "snapid": 1,
+    "object_size": 0,
+    "is_snapshot": true,
+    "is_clone": false,
+    "nr_copies": 3,
+    "tag": "snap",
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120222,
+    "acl_id": 9370536,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]
 ACL 8efba8 contains:
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
-s vdi_free     1   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3          snap  22
-  vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29de      3                22
-  vdi_two      0   16 MB  0.0 MB  0.0 MB DATE   8cc667      3                22
+[
+  {
+    "name": "vdi_three",
+    "vdi_id": 6464925,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120221,
+    "vdi_size": 16777216,
+    "snapid": 1,
+    "object_size": 0,
+    "is_snapshot": true,
+    "is_clone": false,
+    "nr_copies": 3,
+    "tag": "snap",
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120222,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_two",
+    "vdi_id": 9225831,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]
 = an ACL still holding VDIs cannot be deleted
 ACL 793c4e is not empty, 1 VDI ACLs still in use
 = the VDIs outlive the ACL holding them
 [ ]
-  Name        Id    Size    Used  Shared    Creation time   ACL id  Copies  Tag   Block Size Shift
-  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
-  vdi_one      0   16 MB  0.0 MB  0.0 MB DATE   5c0b0d      3                22
-  vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
-s vdi_free     1   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3          snap  22
-  vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29de      3                22
-  vdi_two      0   16 MB  0.0 MB  0.0 MB DATE   8cc667      3                22
+[]
+[
+  {
+    "name": "vdi_one",
+    "vdi_id": 6032141,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_three",
+    "vdi_id": 6464925,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120221,
+    "vdi_size": 16777216,
+    "snapid": 1,
+    "object_size": 0,
+    "is_snapshot": true,
+    "is_clone": false,
+    "nr_copies": 3,
+    "tag": "snap",
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_free",
+    "vdi_id": 9120222,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_two",
+    "vdi_id": 9225831,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]

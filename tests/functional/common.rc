@@ -1004,10 +1004,22 @@ _vdi_list()
 	$DOG vdi list $args | _filter_iso_date
 }
 
+_vdi_list_json()
+{
+	local args=$*
+	$DOG vdi list -j $args | jq | grep -v -e create_time -e uuid
+}
+
 _acl_list()
 {
 	local args=$*
 	$DOG acl list $args | _filter_iso_date
+}
+
+_acl_list_json()
+{
+	local args=$*
+	$DOG acl list -j $args | jq | grep -v -e create_time -e uuid
 }
 
 _vdi_tree()

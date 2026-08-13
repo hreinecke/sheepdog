@@ -13,6 +13,7 @@ _wait_for_sheep 3
 _cluster_format -c 3
 
 echo "= create an ACL and the VDIs to guard with it"
+# the vid is needed to look at the ACL from the VDI side further down
 acl_one=$($DOG acl create acl_one -v -r) || err=1
 $DOG vdi create vdi_one 16M || err=1
 $DOG vdi create vdi_two 16M || err=1
@@ -20,8 +21,8 @@ $DOG vdi create vdi_three 16M || err=1
 $DOG vdi create vdi_free 16M || err=1
 
 echo "= ACLs and VDIs are listed apart"
-_vdi_list
-_acl_list
+_vdi_list_json
+_acl_list_json
 
 echo "= add VDIs to the ACL"
 $DOG acl add vdi acl_one vdi_one -v || err=1
@@ -29,8 +30,9 @@ $DOG acl add vdi acl_one vdi_two -v || err=1
 $DOG acl add vdi acl_one vdi_three -v -j || err=1
 
 echo "= the members carry the ACL in their inode now"
-_vdi_list
-_vdi_list -A $((0x$acl_one))
+_vdi_list_json
+_acl_list
+_acl_list_json acl_one
 
 echo "= a VDI can only be added once"
 $DOG acl add vdi acl_one vdi_two && err=1
@@ -46,8 +48,8 @@ echo "= removing a VDI closes the hole it leaves behind"
 $DOG acl remove vdi acl_one vdi_two -v -j || err=1
 
 echo "= the removed VDI does not belong to an ACL anymore"
-_vdi_list
-_vdi_list -A $((0x$acl_one))
+_vdi_list_json
+_acl_list_json acl_one
 
 echo "= the removal is persistent, so the VDI is appended when added again"
 $DOG acl add vdi acl_one vdi_two -v -j || err=1
@@ -63,12 +65,12 @@ $DOG acl remove vdi vdi_free vdi_one && err=1
 $DOG acl remove vdi acl_one 2>&1 >/dev/null && err=1
 
 echo "= a VDI can be moved to another ACL"
-acl_two=$($DOG acl create acl_two -v -r) || err=1
+$DOG acl create acl_two -v -j || err=1
 $DOG acl add vdi acl_two vdi_one && err=1
 $DOG acl remove vdi acl_one vdi_one -v -j || err=1
 $DOG acl add vdi acl_two vdi_one -v -j || err=1
-_vdi_list -A $((0x$acl_one))
-_vdi_list -A $((0x$acl_two))
+_acl_list_json acl_one
+_acl_list_json acl_two
 
 echo "= an ACL can be emptied again"
 $DOG acl remove vdi acl_one vdi_three -v -j || err=1
@@ -77,9 +79,11 @@ $DOG acl remove vdi acl_one vdi_three && err=1
 echo "= a VDI is added and removed together with its snapshots"
 $DOG vdi snapshot vdi_free -s snap || err=1
 $DOG acl add vdi acl_one vdi_free -v || err=1
-_vdi_list -A $((0x$acl_one))
+# only the head is mapped by the ACL, so check the snapshot from the VDI side
+_acl_list_json acl_one
+_vdi_list_json -A $((0x$acl_one))
 $DOG acl remove vdi acl_one vdi_free -v || err=1
-_vdi_list
+_vdi_list_json
 
 echo "= an ACL still holding VDIs cannot be deleted"
 $DOG acl delete acl_two && err=1
@@ -88,7 +92,7 @@ echo "= the VDIs outlive the ACL holding them"
 $DOG acl remove vdi acl_two vdi_one -v -j || err=1
 $DOG acl delete acl_two || err=1
 $DOG acl delete acl_one || err=1
-_acl_list
-_vdi_list
+_acl_list_json
+_vdi_list_json
 
 exit $err
