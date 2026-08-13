@@ -472,6 +472,7 @@ static int acl_add_vdi(int argc, char **argv)
 	/* The alter the ACL of the VDI */
 	ret = do_vdi_alter_acl(vdiname, 0, acl_vid);
 	if (ret != EXIT_SUCCESS) {
+		/* ACL VDI mapping entry will be ignored, no need to clear it */
 		sd_err("failed to update VDI %s with ACL id",
 		       vdiname);
 		goto out;
@@ -489,6 +490,10 @@ static int acl_add_vdi(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		/* Revert VDI ACL changes */
+		if (do_vdi_alter_acl(vdiname, acl_vid, 0) != EXIT_SUCCESS)
+			sd_err("failed to revert ACL changes for VDI %s",
+			       vdiname);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -620,7 +625,7 @@ static int acl_remove_vdi(int argc, char **argv)
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
 	uint32_t acl_vid, vid;
-	uint32_t old_idx = UINT32_MAX;
+	uint32_t old_idx = UINT32_MAX, limit;
 	struct sd_inode *inode = NULL;
 	int ret, i;
 
@@ -662,12 +667,15 @@ static int acl_remove_vdi(int argc, char **argv)
 		goto out;
 	}
 	inode->data_vdi_id[old_idx] = 0;
-	if (old_idx == inode->header.max_data_id_nr - 1) {
+	limit = inode->header.max_data_id_nr;
+	if (old_idx == limit - 1) {
+		while (limit > 0 && inode->data_vdi_id[limit - 1] == 0)
+			limit--;
+
 		/* Modify the upper limit of the VDI mapping first */
-		inode->header.max_data_id_nr--;
+		inode->header.max_data_id_nr = limit;
 		ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-				       &inode->header.max_data_id_nr,
-				       sizeof(uint32_t),
+				       &limit, sizeof(uint32_t),
 				       offsetof(struct sd_inode_header,
 						max_data_id_nr),
 				       SD_FLAG_CMD_DIRECT,
