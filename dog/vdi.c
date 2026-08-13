@@ -3757,7 +3757,7 @@ out:
 }
 
 static struct subcommand vdi_lock_cmd[] = {
-	{"list", NULL, NULL, "list locked VDIs", NULL, CMD_NEED_ARG, lock_list},
+	{"list", NULL, NULL, "list locked VDIs", NULL, 0, lock_list},
 	{"lock", "<vdiname>", NULL, "lock VDI", NULL, CMD_NEED_ARG, lock_lock},
 	{"unlock", "<vdiname>", NULL, "unlock locked VDI forcibly", NULL,
 	 CMD_NEED_ARG, lock_unlock},
