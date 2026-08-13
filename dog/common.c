@@ -272,6 +272,35 @@ int send_light_req(const struct node_id *nid, struct sd_req *hdr)
 	return 0;
 }
 
+int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
+		  uint32_t acl, uint32_t *vid)
+{
+	int ret;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
+
+	memset(buf, 0, sizeof(buf));
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+	if (tag)
+		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
+
+	sd_init_req(&hdr, SD_OP_GET_VDI_INFO);
+	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.vdi.snapid = snapid;
+	hdr.vdi.acl = acl;
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0)
+		return SD_RES_EIO;
+
+	if (rsp->result == SD_RES_SUCCESS)
+		*vid = rsp->vdi.vdi_id;
+
+	return rsp->result;
+}
+
 int subcmd_depth = -1;
 struct subcommand *subcmd_stack[MAX_SUBCMD_DEPTH];
 
