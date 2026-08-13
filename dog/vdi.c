@@ -56,7 +56,7 @@ static struct sd_option vdi_options[] = {
 	 "in reclamation loop during VDI deletion"},
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
-	{'A', "acl", true, "specify the ACL id for accessing the VDI"},
+	{'A', "acl", true, "specify the ACL for accessing the VDI"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -84,7 +84,49 @@ static struct vdi_cmd_data {
 	int reclamation_interval;
 	int nr_max_reclaim;
 	uint32_t acl_id;
+	char acl_name[SD_MAX_VDI_LEN];
 } vdi_cmd_data = { ~0, };
+
+/*
+ * Resolve an ACL name to the id the sheeps know it by, complaining in the same
+ * terms as 'dog acl' about the two ways this can go wrong.
+ */
+static int lookup_acl_name(const char *aclname, uint32_t *acl_id)
+{
+	int ret = find_acl_name(aclname, acl_id);
+
+	if (ret == SD_RES_INVALID_PARMS)
+		sd_err("%s is not an ACL", aclname);
+	else if (ret != SD_RES_SUCCESS)
+		sd_err("Failed to open ACL %s: %s", aclname, sd_strerror(ret));
+
+	return ret;
+}
+
+/*
+ * The ACL name given with '-A' can only be turned into an id once the cluster
+ * can be reached, which is not the case while the options are parsed.  Resolve
+ * it on first use and remember the outcome; no ACL ever gets the id 0.
+ */
+static uint32_t vdi_acl_id(void)
+{
+	if (vdi_cmd_data.acl_name[0] && !vdi_cmd_data.acl_id) {
+		if (lookup_acl_name(vdi_cmd_data.acl_name,
+				    &vdi_cmd_data.acl_id) != SD_RES_SUCCESS)
+			exit(EXIT_FAILURE);
+	}
+
+	return vdi_cmd_data.acl_id;
+}
+
+/* The ACL '-A' was given as, for the messages which name it back */
+static const char *acl_option_name(void)
+{
+	if (vdi_cmd_data.acl_name[0])
+		return vdi_cmd_data.acl_name;
+
+	return vdi_cmd_data.acl_id == ACL_ANY_ID ? "any" : "none";
+}
 
 struct get_vdi_info {
 	const char *name;
@@ -568,7 +610,7 @@ static int vdi_list(int argc, char **argv)
 	struct get_vdi_info info;
 
 	memset(&info, 0, sizeof(info));
-	info.acl = vdi_cmd_data.acl_id;
+	info.acl = vdi_acl_id();
 
 	if (json_output)
 		out_obj = json_object_new_array();
@@ -803,7 +845,7 @@ static int vdi_create(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 
-	ret = do_vdi_create(vdiname, size, 0, vdi_cmd_data.acl_id, &vid, false,
+	ret = do_vdi_create(vdiname, size, 0, vdi_acl_id(), &vid, false,
 			    vdi_cmd_data.nr_copies, vdi_cmd_data.copy_policy,
 			    vdi_cmd_data.store_policy,
 			    vdi_cmd_data.block_size_shift);
@@ -936,7 +978,7 @@ static int vdi_snapshot(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	uint32_t vid, new_vid;
-	uint32_t acl_id = vdi_cmd_data.acl_id;
+	uint32_t acl_id = vdi_acl_id();
 	int ret;
 	struct sd_inode_header *inode;
 	bool fail_if_snapshot = false;
@@ -1077,7 +1119,7 @@ static int vdi_clone(int argc, char **argv)
 	inode = xmalloc(sizeof(*inode));
 
 	ret = read_vdi_obj(src_vdi, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   &base_vid, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
@@ -1087,7 +1129,7 @@ static int vdi_clone(int argc, char **argv)
 
 	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	ret = do_vdi_create(dst_vdi, inode->header.vdi_size,
-			    base_vid, vdi_cmd_data.acl_id, &new_vid, false,
+			    base_vid, vdi_acl_id(), &new_vid, false,
 			    inode->header.nr_copies,
 			    inode->header.copy_policy,
 			    inode->header.store_policy,
@@ -1097,7 +1139,7 @@ static int vdi_clone(int argc, char **argv)
 		goto out;
 
 	new_inode = xmalloc(sizeof(*inode));
-	ret = read_vdi_obj(dst_vdi, 0, "", vdi_cmd_data.acl_id,
+	ret = read_vdi_obj(dst_vdi, 0, "", vdi_acl_id(),
 			   NULL, new_inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
@@ -1174,7 +1216,7 @@ static int vdi_resize(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint64_t new_size, old_max_total_size;
 	uint32_t vid, object_size;
-	uint32_t acl_id = vdi_cmd_data.acl_id;
+	uint32_t acl_id = vdi_acl_id();
 	int ret;
 	struct sd_inode_header inode;
 
@@ -1345,7 +1387,7 @@ static int vdi_delete(int argc, char **argv)
 	const char *vdiname = argv[optind];
 
 	return do_vdi_delete(vdiname, vdi_cmd_data.snapshot_id,
-			     vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			     vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			     vdi_cmd_data.nr_batched_reclamation,
 			     vdi_cmd_data.reclamation_interval);
 }
@@ -1355,7 +1397,7 @@ static int vdi_rollback(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint32_t base_vid, new_vid;
 	uint32_t snap_id = vdi_cmd_data.snapshot_id;
-	uint32_t acl_id = vdi_cmd_data.acl_id;
+	uint32_t acl_id = vdi_acl_id();
 	int ret;
 	struct sd_inode_header inode;
 
@@ -1413,7 +1455,7 @@ static int vdi_object_map(int argc, char **argv)
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: %s not found", vdiname);
@@ -1515,7 +1557,7 @@ static int vdi_object_location(int argc, char **argv)
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
@@ -1821,7 +1863,7 @@ static int vdi_track(int argc, char **argv)
 	struct json_object *epoch_objs = NULL;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
@@ -1917,7 +1959,7 @@ static int find_vdi_attr_oid(const char *vdiname, const char *tag, uint32_t snap
 	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.data_length = SD_ATTR_OBJ_SIZE;
 	hdr.vdi.snapid = vdi_cmd_data.snapshot_id;
-	hdr.vdi.acl = vdi_cmd_data.acl_id;
+	hdr.vdi.acl = vdi_acl_id();
 
 	if (create)
 		hdr.flags |= SD_FLAG_CMD_CREAT;
@@ -2076,7 +2118,7 @@ static int vdi_read(int argc, char **argv)
 	inode = malloc(sizeof(*inode));
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
@@ -2153,7 +2195,7 @@ static int vdi_write(int argc, char **argv)
 
 	inode = xmalloc(sizeof(*inode));
 
-	ret = read_vdi_obj(vdiname, 0, "", vdi_cmd_data.acl_id,
+	ret = read_vdi_obj(vdiname, 0, "", vdi_acl_id(),
 			   &vid, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
@@ -2683,7 +2725,7 @@ static int vdi_check(int argc, char **argv)
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("FATAL: no inode objects");
@@ -2801,13 +2843,13 @@ static int vdi_backup(int argc, char **argv)
 	}
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.from_snapshot_id,
-			   vdi_cmd_data.from_snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.from_snapshot_tag, vdi_acl_id(),
 			   NULL, from_inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, to_inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto load_inode_err;
@@ -2968,7 +3010,7 @@ static uint32_t do_restore(const char *vdiname, int snapid, const char *tag,
 		ret = restore_obj(backup, vid, inode);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("failed to restore backup");
-			do_vdi_delete(vdiname, 0, NULL, vdi_cmd_data.acl_id,
+			do_vdi_delete(vdiname, 0, NULL, vdi_acl_id(),
 				      vdi_cmd_data.nr_batched_reclamation,
 				      vdi_cmd_data.reclamation_interval);
 			ret = EXIT_FAILURE;
@@ -3000,7 +3042,7 @@ static int vdi_restore(int argc, char **argv)
 	}
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode_for_check, SD_INODE_SIZE);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Snapshot ID %d or tag %s doesn't exist",
@@ -3013,7 +3055,7 @@ static int vdi_restore(int argc, char **argv)
 	 * delete the current vdi temporarily first to avoid making
 	 * the current state become snapshot
 	 */
-	ret = read_vdi_obj(vdiname, 0, "", vdi_cmd_data.acl_id,
+	ret = read_vdi_obj(vdiname, 0, "", vdi_acl_id(),
 			   NULL, &current, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
@@ -3031,7 +3073,7 @@ static int vdi_restore(int argc, char **argv)
 		goto out;
 	}
 
-	ret = do_vdi_delete(vdiname, 0, NULL, vdi_cmd_data.acl_id,
+	ret = do_vdi_delete(vdiname, 0, NULL, vdi_acl_id(),
 			    vdi_cmd_data.nr_batched_reclamation,
 			    vdi_cmd_data.reclamation_interval);
 	if (ret != EXIT_SUCCESS) {
@@ -3042,14 +3084,14 @@ static int vdi_restore(int argc, char **argv)
 
 	/* restore backup data */
 	ret = do_restore(vdiname, vdi_cmd_data.snapshot_id,
-			 vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id);
+			 vdi_cmd_data.snapshot_tag, vdi_acl_id());
 out:
 	if (need_current_recovery) {
 		int recovery_ret;
 		/* recreate the current vdi object */
 		recovery_ret = do_vdi_create(vdiname, current.vdi_size,
 					     current.parent_vdi_id,
-					     vdi_cmd_data.acl_id, NULL,
+					     vdi_acl_id(), NULL,
 					     true, current.nr_copies,
 					     current.copy_policy,
 					     current.store_policy,
@@ -3074,7 +3116,7 @@ static int vdi_object_dump_inode(int argc, char **argv)
 	int ret;
 
 	ret = read_vdi_obj(vdiname, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_cmd_data.acl_id,
+			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
 			   NULL, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("no inode object");
@@ -3286,7 +3328,7 @@ static int vdi_alter_copy(int argc, char **argv)
 		confirm(info);
 	}
 
-	ret = read_vdi_obj(vdiname, 0, "", vdi_cmd_data.acl_id,
+	ret = read_vdi_obj(vdiname, 0, "", vdi_acl_id(),
 			   &vid, &inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS) {
 		sd_err("Reading %s's vdi object failure.", vdiname);
@@ -3496,35 +3538,30 @@ out:
 static int vdi_alter_acl(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
-	const uint32_t old_acl = vdi_cmd_data.acl_id;
-	uint32_t new_acl;
-	char *p;
+	const uint32_t old_acl = vdi_acl_id();
+	const char *old_name = acl_option_name();
+	const char *new_name = argv[optind];
+	uint32_t new_acl = 0;
 	int ret;
 
-	if (!argv[optind]) {
-		sd_err("Please specify the new ACL ID for the VDI");
+	if (!new_name) {
+		sd_err("Please specify the new ACL for the VDI");
 		return EXIT_USAGE;
 	}
-	new_acl = strtoul(argv[optind], &p, 10);
-	if (argv[optind] == p || *p != '\0') {
-		sd_err("The ACL ID is invalid: %s", argv[optind]);
-		return EXIT_USAGE;
-	}
-	if (new_acl >= LOCK_TYPE_SHARED) {
-		sd_err("The ACL ID is out of range, must be between 0 and %"
-		       PRIu32, LOCK_TYPE_SHARED - 1);
-		return EXIT_USAGE;
-	}
+	/* 'none' drops the ACL; it shadows an ACL which goes by that name */
+	if (strcmp(new_name, "none") &&
+	    lookup_acl_name(new_name, &new_acl) != SD_RES_SUCCESS)
+		return EXIT_FAILURE;
+
 	if (new_acl == old_acl) {
-		sd_err("%s already belongs to ACL %"PRIu32".", vdiname,
-		       new_acl);
+		sd_err("%s already belongs to ACL %s.", vdiname, new_name);
 		return EXIT_FAILURE;
 	}
 
 	ret = do_vdi_alter_acl(vdiname, old_acl, new_acl);
 	if (ret == EXIT_SUCCESS)
-		sd_info("%s's ACL is set to %"PRIu32", the old one was %"PRIu32,
-			vdiname, new_acl, old_acl);
+		sd_info("%s's ACL is set to %s, the old one was %s", vdiname,
+			new_name, old_name);
 
 	return ret;
 }
@@ -3563,7 +3600,7 @@ static int lock_lock(int argc, char **argv)
 	const char *vdiname = argv[optind];
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
-	uint32_t acl_id = vdi_cmd_data.acl_id;
+	uint32_t acl_id = vdi_acl_id();
 	uint32_t vid = 0;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -3623,7 +3660,7 @@ static int lock_unlock(int argc, char **argv)
 
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
-	uint32_t acl_id = vdi_cmd_data.acl_id;
+	uint32_t acl_id = vdi_acl_id();
 	uint32_t vid = 0;
 	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
 	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
@@ -3766,7 +3803,7 @@ static struct subcommand vdi_cmd[] = {
 	 vdi_restore, vdi_options},
 	{"alter-copy", "<vdiname>", "caphTfA", "set the vdi's redundancy level",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
-	{"alter-acl", "<vdiname> <new acl>", "aphTA", "set the vdi's ACL ID",
+	{"alter-acl", "<vdiname> <new acl>", "aphTA", "set the vdi's ACL",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_alter_acl, vdi_options},
 	{"lock", NULL, "saphTA", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},
@@ -3923,16 +3960,15 @@ static int vdi_parser(int ch, const char *opt)
 			vdi_cmd_data.acl_id = ACL_ANY_ID;
 			break;
 		}
-		vdi_cmd_data.acl_id = strtol(opt, &p, 10);
-		if (opt == p) {
-			sd_err("The ACL ID is invalid: %s", opt);
+		if (strlen(opt) >= SD_MAX_VDI_LEN) {
+			sd_err("The ACL name is too long: %s", opt);
 			exit(EXIT_FAILURE);
 		}
-		if (vdi_cmd_data.acl_id == 0 ||
-		    vdi_cmd_data.acl_id >= ACL_ANY_ID) {
-			sd_err("The ACL ID is out of range, must be between 1 and %ul", ACL_ANY_ID - 1);
-			exit(EXIT_FAILURE);
-		}
+		/*
+		 * The cluster cannot be reached while the options are parsed,
+		 * so record the name and resolve it in vdi_acl_id().
+		 */
+		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
 		break;
 	}
 

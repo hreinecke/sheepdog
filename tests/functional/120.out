@@ -1,6 +1,7 @@
 QA output created by 120
 using backend plain store
 = create an ACL and the VDIs to guard with it
+{ "vdi_id": 9370536 }
 = ACLs and VDIs are listed apart
 [
   {

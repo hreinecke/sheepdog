@@ -272,6 +272,33 @@ int send_light_req(const struct node_id *nid, struct sd_req *hdr)
 	return 0;
 }
 
+/*
+ * An ACL is an ordinary VDI carrying the SD_VDI_FLAG_ACL marker, and the ACL id
+ * travelling on the wire is that VDI's id.  Look one up by name so that the
+ * user never has to deal with the id itself.
+ */
+int find_acl_name(const char *aclname, uint32_t *acl_vid)
+{
+	struct sd_inode_header header;
+	uint32_t vid;
+	int ret;
+
+	ret = find_vdi_name(aclname, 0, "", 0, &vid);
+	if (ret != SD_RES_SUCCESS)
+		return ret;
+
+	ret = dog_read_object(vid_to_vdi_oid(vid), &header, sizeof(header), 0,
+			      true);
+	if (ret != SD_RES_SUCCESS)
+		return ret;
+
+	if (!vdi_is_acl(&header))
+		return SD_RES_INVALID_PARMS;
+
+	*acl_vid = vid;
+	return SD_RES_SUCCESS;
+}
+
 int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
 		  uint32_t acl, uint32_t *vid)
 {

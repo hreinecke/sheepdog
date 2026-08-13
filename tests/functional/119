@@ -4,8 +4,8 @@
 
 . ./common
 
-ACL=3003819
-OTHER_ACL=4711
+ACL=acl
+OTHER_ACL=other_acl
 err=0
 
 for i in 0 1 2; do
@@ -14,9 +14,17 @@ done
 _wait_for_sheep 3
 _cluster_format -c 3 -l
 
+echo "= create the ACLs to guard the VDIs with"
+$DOG acl create $ACL || err=1
+$DOG acl create $OTHER_ACL || err=1
+
 echo "= create one VDI with an ACL and one without"
 $DOG vdi create acl_vdi 16M -A $ACL || err=1
 $DOG vdi create plain_vdi 16M || err=1
+
+echo "= the ACL has to exist and be an ACL"
+$DOG vdi create no_vdi 16M -A no_such_acl && err=1
+$DOG vdi create no_vdi 16M -A plain_vdi && err=1
 
 echo "= a VDI is only listed for its own ACL"
 _vdi_list
@@ -87,7 +95,7 @@ $DOG vdi read acl_vdi -A $OTHER_ACL 0 12 || err=1
 echo "= an ACL can be added to and removed from a VDI"
 $DOG vdi alter-acl plain_vdi $ACL || err=1
 _vdi_list
-$DOG vdi alter-acl plain_vdi 0 -A $ACL || err=1
+$DOG vdi alter-acl plain_vdi none -A $ACL || err=1
 $DOG vdi alter-acl acl_vdi $ACL -A $OTHER_ACL || err=1
 _vdi_list
 

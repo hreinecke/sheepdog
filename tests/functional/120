@@ -13,8 +13,7 @@ _wait_for_sheep 3
 _cluster_format -c 3
 
 echo "= create an ACL and the VDIs to guard with it"
-# the vid is needed to look at the ACL from the VDI side further down
-acl_one=$($DOG acl create acl_one -v -r) || err=1
+$DOG acl create acl_one -v -j || err=1
 $DOG vdi create vdi_one 16M || err=1
 $DOG vdi create vdi_two 16M || err=1
 $DOG vdi create vdi_three 16M || err=1
@@ -81,7 +80,7 @@ $DOG vdi snapshot vdi_free -s snap || err=1
 $DOG acl add vdi acl_one vdi_free -v || err=1
 # only the head is mapped by the ACL, so check the snapshot from the VDI side
 _acl_list_json acl_one
-_vdi_list_json -A $((0x$acl_one))
+_vdi_list_json -A acl_one
 $DOG acl remove vdi acl_one vdi_free -v || err=1
 _vdi_list_json
 
