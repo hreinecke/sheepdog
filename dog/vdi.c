@@ -57,6 +57,9 @@ static struct sd_option vdi_options[] = {
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
 	{'A', "acl", true, "specify the ACL for accessing the VDI"},
+	{'O', "owner", true, "specify the owner of the VDI lock as\n"
+	 "                          <address>[:<port>] instead of the node the\n"
+	 "                          request is sent to"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -85,6 +88,8 @@ static struct vdi_cmd_data {
 	int nr_max_reclaim;
 	uint32_t acl_id;
 	char acl_name[SD_MAX_VDI_LEN];
+	bool lock_owner_given;
+	struct node_id lock_owner;
 } vdi_cmd_data = { ~0, };
 
 /*
@@ -139,6 +144,77 @@ static const char *acl_option_name(void)
 		return vdi_cmd_data.acl_name;
 
 	return vdi_cmd_data.acl_id == ACL_ANY_ID ? "any" : "none";
+}
+
+/*
+ * Turn the '<address>[:<port>]' of '-O' into the node which is to own the VDI
+ * lock.  IPv6 addresses have to be bracketed to tell their colons apart from
+ * the one in front of the port, i.e. '[::1]:7000'.  The port defaults to the
+ * one the sheeps listen on.
+ */
+static int parse_lock_owner(const char *opt, struct node_id *owner)
+{
+	char addr[MAX_NODE_STR_LEN];
+	const char *portstr = NULL;
+	char *p;
+	long port = SD_LISTEN_PORT;
+
+	memset(owner, 0, sizeof(*owner));
+
+	if (*opt == '[') {
+		const char *end = strchr(opt, ']');
+
+		if (!end || (size_t)(end - opt) >= sizeof(addr)) {
+			sd_err("Invalid address %s", opt);
+			return -1;
+		}
+		pstrcpy(addr, end - opt, opt + 1);
+		if (end[1] == ':')
+			portstr = end + 2;
+		else if (end[1]) {
+			sd_err("Invalid address %s", opt);
+			return -1;
+		}
+	} else {
+		const char *colon = strrchr(opt, ':');
+
+		/* an unbracketed address with several colons is an IPv6 one */
+		if (colon && colon == strchr(opt, ':'))
+			portstr = colon + 1;
+		else
+			colon = NULL;
+
+		if (colon) {
+			if ((size_t)(colon - opt) >= sizeof(addr)) {
+				sd_err("Invalid address %s", opt);
+				return -1;
+			}
+			pstrcpy(addr, colon - opt + 1, opt);
+		} else
+			pstrcpy(addr, sizeof(addr), opt);
+	}
+
+	if (portstr) {
+		port = strtol(portstr, &p, 10);
+		if (portstr == p || *p || port < 1 || port > UINT16_MAX) {
+			sd_err("Invalid port number '%s'", portstr);
+			return -1;
+		}
+	}
+
+	if (!addr[0] || !str_to_addr(addr, owner->addr)) {
+		sd_err("Invalid ip address %s", addr);
+		return -1;
+	}
+	owner->port = port;
+
+	return 0;
+}
+
+/* The node the lock is to belong to, or NULL if '-O' was not given */
+static const struct node_id *lock_owner(void)
+{
+	return vdi_cmd_data.lock_owner_given ? &vdi_cmd_data.lock_owner : NULL;
 }
 
 struct get_vdi_info {
@@ -3629,9 +3705,10 @@ static int lock_lock(int argc, char **argv)
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
 	uint32_t vid = 0;
+	const struct node_id *owner = lock_owner();
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
+	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN + sizeof(*owner)];
 
 	if (!vdiname) {
 		sd_err("VDI name must be specified");
@@ -3657,6 +3734,12 @@ static int lock_lock(int argc, char **argv)
 	hdr.flags = SD_FLAG_CMD_WRITE;
 	hdr.vdi.snapid = snapid;
 	hdr.vdi.acl = acl_id;
+
+	/* the lock belongs to the node which is asked for it unless named */
+	if (owner) {
+		memcpy(buf + hdr.data_length, owner, sizeof(*owner));
+		hdr.data_length += sizeof(*owner);
+	}
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0) {
@@ -3745,11 +3828,19 @@ static int lock_unlock(int argc, char **argv)
 		goto out;
 	}
 
+	const struct node_id *owner = lock_owner();
 	struct sd_req hdr;
 	sd_init_req(&hdr, SD_OP_RELEASE_VDI);
 	hdr.vdi.base_vdi_id = vid;
 	hdr.vdi.acl = acl_id;
-	ret = dog_exec_req(&sd_nid, &hdr, NULL);
+
+	/* the lock of the node which is asked to drop it unless named */
+	if (owner) {
+		hdr.data_length = sizeof(*owner);
+		hdr.flags = SD_FLAG_CMD_WRITE;
+	}
+
+	ret = dog_exec_req(&sd_nid, &hdr, (void *)owner);
 	ret = ret ? EXIT_FAILURE : EXIT_SUCCESS;
 
 out:
@@ -3832,7 +3923,7 @@ static struct subcommand vdi_cmd[] = {
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
 	{"alter-acl", "<vdiname> <new acl>", "aphTA", "set the vdi's ACL",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_alter_acl, vdi_options},
-	{"lock", NULL, "sajphTA", "See 'dog vdi lock' for more information",
+	{"lock", NULL, "sajphTAO", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},
 	{NULL,},
 };
@@ -3996,6 +4087,11 @@ static int vdi_parser(int ch, const char *opt)
 		 * so record the name and resolve it in vdi_acl_id().
 		 */
 		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
+		break;
+	case 'O':
+		if (parse_lock_owner(opt, &vdi_cmd_data.lock_owner) < 0)
+			exit(EXIT_USAGE);
+		vdi_cmd_data.lock_owner_given = true;
 		break;
 	}
 

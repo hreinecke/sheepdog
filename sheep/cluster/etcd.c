@@ -1124,6 +1124,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	struct json_object *req_obj, *rsp_obj;
 	struct json_object *vdi_obj, *data_obj, *node_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
+	const struct node_id *owner;
 	struct sd_node *node;
 
 	req_obj = json_object_new_object();
@@ -1149,6 +1150,14 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		vdi_obj = json_object_new_object();
 		etcd_vdi_to_json(&msg->req, vdi_obj);
 		json_object_object_add(req_obj, "vdi", vdi_obj);
+		owner = vdi_lock_owner(req, data);
+		if (owner) {
+			data_obj = json_object_new_object();
+			json_object_object_add(data_obj, "lock_owner",
+				json_object_new_string(node_id_to_str(owner,
+								      false)));
+			json_object_object_add(obj, "data", data_obj);
+		}
 		break;
 	case SD_OP_GET_VDI_INFO:
 	case SD_OP_DEL_VDI:
@@ -1160,6 +1169,12 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 			data_obj = json_object_new_object();
 			json_object_object_add(data_obj, "vdi_name",
 					       json_object_new_string(data));
+			/* only SD_OP_LOCK_VDI ever names the lock owner */
+			owner = vdi_lock_owner(req, data);
+			if (owner)
+				json_object_object_add(data_obj, "lock_owner",
+					json_object_new_string(
+						node_id_to_str(owner, false)));
 			json_object_object_add(obj, "data", data_obj);
 		}
 		break;
@@ -1600,6 +1615,22 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 				data_len = data_length;
 			}
 			memcpy(data, val, data_len);
+		} else if (!strcmp(key, "lock_owner")) {
+			const char *val = json_object_get_string(val_obj);
+			struct sd_node node = {};
+
+			/* the owner is always the tail of the data */
+			if (data_length < sizeof(node.nid)) {
+				sd_warn("invalid lock owner size %lu",
+					data_length);
+				return;
+			}
+			if (!str_to_node(val, &node)) {
+				sd_warn("failed to parse '%s'", val);
+				return;
+			}
+			memcpy((char *)data + data_length - sizeof(node.nid),
+			       &node.nid, sizeof(node.nid));
 		} else if (!strcmp(key, "vdi_attr")) {
 			struct sheepdog_vdi_attr *vdi_attr =
 				(struct sheepdog_vdi_attr *)data;
