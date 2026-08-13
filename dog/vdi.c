@@ -188,7 +188,7 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	if (info) {
 		if (info->name && strcmp(name, info->name) != 0)
 			return;
-		if (info->acl != i->header.acl_id)
+		if (info->acl != ACL_ANY_ID && info->acl != i->header.acl_id)
 			return;
 	}
 
@@ -3155,6 +3155,12 @@ static int vdi_object_dump_inode(int argc, char **argv)
 			     hdr->parent_vdi_id);
 		JSON_ADD_INT(out_obj, "btree_counter",
 			     hdr->btree_counter);
+		if (hdr->vdi_flags & SD_VDI_FLAG_ACL) {
+			JSON_ADD_BOOL(out_obj, "is_acl_vdi", true);
+			JSON_ADD_INT(out_obj, "max_acl_vdi_id",
+				     hdr->max_data_id_nr);
+		} else if (hdr->acl_id)
+			JSON_ADD_INT(out_obj, "acl_id", hdr->acl_id);
 		data_obj = json_object_new_array();
 	} else {
 		printf("copy_policy: %d\n", hdr->copy_policy);
@@ -3166,7 +3172,10 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		printf("vdi_id: %"PRIx32"\n", hdr->vdi_id);
 		printf("parent_vdi_id: %"PRIx32"\n", hdr->parent_vdi_id);
 		printf("btree_counter: %"PRIu32"\n", hdr->btree_counter);
-		printf("data_vdi_id:\n");
+		if (hdr->vdi_flags & SD_VDI_FLAG_ACL)
+			printf("acl_vdi_id:\n");
+		else
+			printf("data_vdi_id:\n");
 	}
 	for (int i = 0; i < SD_INODE_DATA_INDEX; i++) {
 		if (!inode->data_vdi_id[i])
@@ -3174,17 +3183,26 @@ static int vdi_object_dump_inode(int argc, char **argv)
 		if (json_output) {
 			struct json_object *data_vdi_obj =
 				json_object_new_object();
-			struct json_object *gref_obj =
-				json_object_new_object();
-			JSON_ADD_INT(data_vdi_obj, "data_vdi_id",
-				     inode->data_vdi_id[i]);
-			JSON_ADD_INT(gref_obj, "generation",
-				     inode->gref[i].generation);
-			JSON_ADD_INT(gref_obj, "count",
-				     inode->gref[i].count);
-			json_object_object_add(data_vdi_obj, "gref",
-					       gref_obj);
-			json_object_array_add(data_obj, data_vdi_obj);
+			if (hdr->vdi_flags & SD_VDI_FLAG_ACL) {
+				JSON_ADD_INT(data_vdi_obj, "acl_vdi_id",
+					     inode->data_vdi_id[i]);
+			} else {
+				struct json_object *gref_obj =
+					json_object_new_object();
+				JSON_ADD_INT(data_vdi_obj, "data_vdi_id",
+					     inode->data_vdi_id[i]);
+				JSON_ADD_INT(gref_obj, "generation",
+					     inode->gref[i].generation);
+				JSON_ADD_INT(gref_obj, "count",
+					     inode->gref[i].count);
+				json_object_object_add(data_vdi_obj, "gref",
+						       gref_obj);
+			}
+			if ((hdr->vdi_flags & SD_VDI_FLAG_ACL) &&
+			    i < hdr->max_data_id_nr)
+				json_object_array_add(data_obj, data_vdi_obj);
+			else
+				json_object_put(data_vdi_obj);
 		} else
 			printf("%d: %"PRIx32"\n", i, inode->data_vdi_id[i]);
 	}
@@ -3211,7 +3229,10 @@ static int vdi_object_dump_inode(int argc, char **argv)
 	if (json_output) {
 		const char *o;
 
-		json_object_object_add(out_obj, "data_vdi", data_obj);
+		if (hdr->vdi_flags & SD_VDI_FLAG_ACL)
+			json_object_object_add(out_obj, "acl_vdi", data_obj);
+		else
+			json_object_object_add(out_obj, "data_vdi", data_obj);
 		o = json_object_to_json_string(out_obj);
 		printf("%s\n", o);
 		json_object_put(out_obj);
@@ -3927,14 +3948,18 @@ static int vdi_parser(int ch, const char *opt)
 		}
 		break;
 	case 'A':
+		if (!strcmp(opt, "any")) {
+			vdi_cmd_data.acl_id = ACL_ANY_ID;
+			break;
+		}
 		vdi_cmd_data.acl_id = strtol(opt, &p, 10);
 		if (opt == p) {
 			sd_err("The ACL ID is invalid: %s", opt);
 			exit(EXIT_FAILURE);
 		}
 		if (vdi_cmd_data.acl_id == 0 ||
-		    vdi_cmd_data.acl_id >= UINT32_MAX) {
-			sd_err("The ACL ID is out of range, must be between 1 and %ul", UINT32_MAX - 1);
+		    vdi_cmd_data.acl_id >= ACL_ANY_ID) {
+			sd_err("The ACL ID is out of range, must be between 1 and %ul", ACL_ANY_ID - 1);
 			exit(EXIT_FAILURE);
 		}
 		break;
