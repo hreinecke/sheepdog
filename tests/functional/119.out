@@ -5,12 +5,20 @@ using backend plain store
 = the ACL has to exist and be an ACL
 Failed to open ACL no_such_acl: No VDI found
 plain_vdi is not an ACL
+'any' cannot be the ACL of a new VDI
 = a VDI is only listed for its own ACL
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   plain_vdi     0   16 MB  0.0 MB  0.0 MB DATE   1859e9      3                22
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   acl_vdi      0   16 MB  0.0 MB  0.0 MB DATE   b33bdd      3                22
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+= the 'any' ACL matches every VDI
+  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+  plain_vdi     0   16 MB  0.0 MB  0.0 MB DATE   1859e9      3                22
+  acl_vdi      0   16 MB  0.0 MB  0.0 MB DATE   b33bdd      3                22
+= an ACL cannot be named after a keyword
+'any' is reserved and cannot name an ACL
+'none' is reserved and cannot name an ACL
 = reusing the name of an ACL protected VDI must fail
 Failed to create VDI acl_vdi: Permission denied accessing VDI
 Failed to create VDI acl_vdi: Permission denied accessing VDI
@@ -20,13 +28,19 @@ Failed to open VDI acl_vdi (snapshot id: 0 snapshot tag:  acl: 0): Permission de
 Failed to open VDI acl_vdi (snapshot id: 0 snapshot tag:  acl: 78ad2): Permission denied accessing VDI
 Failed to open VDI acl_vdi (snapshot id: 0 snapshot tag:  acl: 0): Permission denied accessing VDI
 acl payload
+any payload
 = attributes need the right ACL
 Failed to set attribute: Permission denied accessing VDI
 Failed to find attribute oid: Permission denied accessing VDI
 value
+value
 = snapshot and clone need the right ACL
 Failed to create snapshot for acl_vdi: Permission denied accessing VDI
 Failed to open VDI acl_vdi (snapshot id: 0 snapshot tag: snap acl: 0): Permission denied accessing VDI
+= a new VDI cannot be created in the 'any' ACL
+'any' cannot be the ACL of a new VDI
+'any' cannot be the ACL of a new VDI
+'any' cannot be the ACL of a new VDI
 = a VDI cannot be cloned into another ACL
 Failed to open VDI plain_vdi (snapshot id: 0 snapshot tag: psnap acl: 456e03): Permission denied accessing VDI
 = a clone belongs to the ACL it was created with
@@ -41,6 +55,7 @@ s acl_vdi      1   16 MB  4.0 MB  0.0 MB DATE   b33bdd      3          snap  22
 = an ACL protected VDI cannot be locked exclusively
 Failed to find VDI acl_vdi: Permission denied accessing VDI
 Failed to find VDI acl_vdi: Permission denied accessing VDI
+Failed to lock VDI acl_vdi (vid=b33bde): Permission denied accessing VDI
 = a VDI without an ACL is still locked exclusively
 Failed to lock VDI plain_vdi (vid=1859ea): VDI is already locked
 = changing the ACL needs the right current ACL
@@ -56,7 +71,7 @@ c acl_clone     0   16 MB  0.0 MB  4.0 MB DATE   950169      3                22
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
 s acl_vdi      1   16 MB  4.0 MB  0.0 MB DATE   b33bdd      3          snap  22
   acl_vdi      0   16 MB  0.0 MB  4.0 MB DATE   b33bde      3                22
-acl payload
+any payload
 = an ACL can be added to and removed from a VDI
 plain_vdi's ACL is set to acl, the old one was none
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
@@ -67,6 +82,12 @@ acl_vdi's ACL is set to acl, the old one was other_acl
 s plain_vdi     1   16 MB  0.0 MB  0.0 MB DATE   1859e9      3         psnap  22
   plain_vdi     0   16 MB  0.0 MB  0.0 MB DATE   1859ea      3                22
 c plain_clone     0   16 MB  0.0 MB  0.0 MB DATE   3aa945      3                22
+= the master key opens a VDI but cannot re-file it
+Failed to find acl_vdi in ACL 4294967295.
+  Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
+c acl_clone     0   16 MB  0.0 MB  4.0 MB DATE   950169      3                22
+s acl_vdi      1   16 MB  4.0 MB  0.0 MB DATE   b33bdd      3          snap  22
+  acl_vdi      0   16 MB  0.0 MB  4.0 MB DATE   b33bde      3                22
 = delete needs the right ACL
 Failed to open VDI acl_clone (snapshot id: 0 snapshot tag: ): Permission denied accessing VDI
 Failed to open VDI acl_clone (snapshot id: 0 snapshot tag: ): Permission denied accessing VDI

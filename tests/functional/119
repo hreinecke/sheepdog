@@ -25,11 +25,20 @@ $DOG vdi create plain_vdi 16M || err=1
 echo "= the ACL has to exist and be an ACL"
 $DOG vdi create no_vdi 16M -A no_such_acl && err=1
 $DOG vdi create no_vdi 16M -A plain_vdi && err=1
+# 'any' opens a VDI whichever ACL it belongs to, it cannot create one
+$DOG vdi create no_vdi 16M -A any && err=1
 
 echo "= a VDI is only listed for its own ACL"
 _vdi_list
 _vdi_list -A $ACL
 _vdi_list -A $OTHER_ACL
+
+echo "= the 'any' ACL matches every VDI"
+_vdi_list -A any
+
+echo "= an ACL cannot be named after a keyword"
+$DOG acl create any && err=1
+$DOG acl create none && err=1
 
 echo "= reusing the name of an ACL protected VDI must fail"
 $DOG vdi create acl_vdi 16M && err=1
@@ -42,6 +51,8 @@ echo "acl payload" | $DOG vdi write acl_vdi -A $OTHER_ACL 0 12 && err=1
 echo "acl payload" | $DOG vdi write acl_vdi -A $ACL 0 12 || err=1
 $DOG vdi read acl_vdi 0 12 && err=1
 $DOG vdi read acl_vdi -A $ACL 0 12 || err=1
+echo "any payload" | $DOG vdi write acl_vdi -A any 0 12 || err=1
+$DOG vdi read acl_vdi -A any 0 12 || err=1
 
 echo "= attributes need the right ACL"
 $DOG vdi setattr acl_vdi key value && err=1
@@ -49,12 +60,19 @@ $DOG vdi setattr acl_vdi key value -A $ACL || err=1
 $DOG vdi getattr acl_vdi key && err=1
 $DOG vdi getattr acl_vdi key -A $ACL || err=1
 echo
+$DOG vdi getattr acl_vdi key -A any || err=1
+echo
 
 echo "= snapshot and clone need the right ACL"
 $DOG vdi snapshot acl_vdi -s snap && err=1
 $DOG vdi snapshot acl_vdi -s snap -A $ACL || err=1
 $DOG vdi clone -s snap acl_vdi acl_clone && err=1
 $DOG vdi clone -s snap acl_vdi acl_clone -A $ACL || err=1
+
+echo "= a new VDI cannot be created in the 'any' ACL"
+$DOG vdi snapshot acl_vdi -s any_snap -A any && err=1
+$DOG vdi clone -s snap acl_vdi any_clone -A any && err=1
+$DOG vdi rollback acl_vdi -s snap -A any && err=1
 
 echo "= a VDI cannot be cloned into another ACL"
 $DOG vdi snapshot plain_vdi -s psnap || err=1
@@ -70,6 +88,8 @@ $DOG vdi lock lock acl_vdi && err=1
 $DOG vdi lock lock acl_vdi -A $OTHER_ACL && err=1
 $DOG vdi lock lock acl_vdi -A $ACL || err=1
 $DOG vdi lock unlock acl_vdi -A $ACL || err=1
+# a lock is shared by the ACL holding it, so the master key cannot take one
+$DOG vdi lock lock acl_vdi -A any && err=1
 
 echo "= a VDI without an ACL is still locked exclusively"
 $DOG vdi lock lock plain_vdi || err=1
@@ -98,6 +118,11 @@ _vdi_list
 $DOG vdi alter-acl plain_vdi none -A $ACL || err=1
 $DOG vdi alter-acl acl_vdi $ACL -A $OTHER_ACL || err=1
 _vdi_list
+
+echo "= the master key opens a VDI but cannot re-file it"
+# the VDI has to be taken out of the ACL it really belongs to
+$DOG vdi alter-acl acl_vdi $OTHER_ACL -A any && err=1
+_vdi_list -A $ACL
 
 echo "= delete needs the right ACL"
 $DOG vdi delete acl_clone && err=1

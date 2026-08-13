@@ -119,6 +119,19 @@ static uint32_t vdi_acl_id(void)
 	return vdi_cmd_data.acl_id;
 }
 
+/*
+ * 'any' matches whichever ACL a VDI belongs to.  That opens an existing VDI,
+ * but it does not name the ACL a new one is to be created in.
+ */
+static bool acl_is_any(void)
+{
+	if (vdi_cmd_data.acl_id != ACL_ANY_ID)
+		return false;
+
+	sd_err("'any' cannot be the ACL of a new VDI");
+	return true;
+}
+
 /* The ACL '-A' was given as, for the messages which name it back */
 static const char *acl_option_name(void)
 {
@@ -792,6 +805,8 @@ static int vdi_create(int argc, char **argv)
 		sd_err("Please specify the VDI size");
 		return EXIT_USAGE;
 	}
+	if (acl_is_any())
+		return EXIT_FAILURE;
 	ret = option_parse_size(argv[optind], &size);
 	if (ret < 0)
 		return EXIT_USAGE;
@@ -988,6 +1003,9 @@ static int vdi_snapshot(int argc, char **argv)
 		       "a snapshot tag name");
 		return EXIT_USAGE;
 	}
+	/* the snapshot joins the ACL of the VDI it is taken from */
+	if (acl_is_any())
+		return EXIT_FAILURE;
 
 	ret = find_vdi_name(vdiname, vdi_cmd_data.snapshot_id,
 			    vdi_cmd_data.snapshot_tag, acl_id,
@@ -1113,6 +1131,11 @@ static int vdi_clone(int argc, char **argv)
 		sd_err("Only snapshot VDIs can be cloned");
 		sd_err("Please specify the '-s' option");
 		ret = EXIT_USAGE;
+		goto out;
+	}
+	/* the clone joins the ACL of the VDI it is cloned from */
+	if (acl_is_any()) {
+		ret = EXIT_FAILURE;
 		goto out;
 	}
 
@@ -1405,6 +1428,9 @@ static int vdi_rollback(int argc, char **argv)
 		sd_err("Please specify the '-s' option");
 		return EXIT_USAGE;
 	}
+	/* the working VDI is recreated, so it needs an ACL to be created in */
+	if (acl_is_any())
+		return EXIT_FAILURE;
 
 	ret = read_vdi_obj(vdiname, snap_id, vdi_cmd_data.snapshot_tag,
 			   acl_id, &base_vid, &inode, sizeof(inode));

@@ -98,6 +98,15 @@ static int acl_create(int argc, char **argv)
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 
+	/*
+	 * 'dog vdi -A any' means every ACL and 'dog vdi alter-acl <vdi> none'
+	 * means no ACL at all, so neither word may name one.
+	 */
+	if (!strcmp(aclname, "any") || !strcmp(aclname, "none")) {
+		sd_err("'%s' is reserved and cannot name an ACL", aclname);
+		return EXIT_FAILURE;
+	}
+
 	sd_init_req(&hdr, SD_OP_CLUSTER_STATUS);
 	ret = dog_exec_req(&sd_nid, &hdr, NULL);
 	if (ret < 0) {
