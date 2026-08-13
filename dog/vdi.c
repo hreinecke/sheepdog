@@ -3608,7 +3608,8 @@ static int lock_list(int argc, char **argv)
 	const size_t nmemb = (size_t)count;
 	qsort(vs, nmemb, sizeof(struct vdi_state), compare_vdi_state_by_vid);
 
-	printf("  Name         Id  VDI id  Tag            Owner node(s)\n");
+	if (!json_output)
+		printf("  Name         Id  VDI id  Tag            Owner node(s)\n");
 
 	struct lock_list_data data = { .sorted = vs, .nmemb = nmemb };
 	ret = parse_vdi(print_lock_list, SD_INODE_SIZE, &data, true, false);
@@ -3831,7 +3832,7 @@ static struct subcommand vdi_cmd[] = {
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
 	{"alter-acl", "<vdiname> <new acl>", "aphTA", "set the vdi's ACL",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_alter_acl, vdi_options},
-	{"lock", NULL, "saphTA", "See 'dog vdi lock' for more information",
+	{"lock", NULL, "sajphTA", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},
 	{NULL,},
 };
