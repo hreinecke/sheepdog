@@ -10,8 +10,11 @@ using backend plain store
   Name        Id    Size    Used  Shared    Creation time   ACL id  Copies  Tag   Block Size Shift
   acl_one      0   12 MB DATE   8efba8                22
 = add VDIs to the ACL
-VDI 5c0b0d added to ACL 8efba8
-VDI 8cc667 added to ACL 8efba8
+ACL 8efba8 contains:
+VDI 5c0b0d
+ACL 8efba8 contains:
+VDI 5c0b0d
+VDI 8cc667
 [ { "vdi_id": 6032141 }, { "vdi_id": 9225831 }, { "vdi_id": 6464925 } ]
 = the members carry the ACL in their inode now
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
@@ -39,7 +42,9 @@ Please specify the VDI to add
 = the removal is persistent, so the VDI is appended when added again
 [ { "vdi_id": 6032141 }, { "vdi_id": 6464925 }, { "vdi_id": 9225831 } ]
 = a VDI can only be removed once
-VDI 8cc667 removed from ACL 8efba8
+ACL 8efba8 contains:
+VDI 5c0b0d
+VDI 62a59d
 ACL 8efba8 does not contain VDI 8cc667
 = remove needs an ACL and a VDI which both exist
 Failed to open VDI no_such_vdi: No VDI found
@@ -58,18 +63,19 @@ Failed to open VDI vdi_one: Permission denied accessing VDI
 [ ]
 ACL 8efba8 does not contain VDI 62a59d
 = a VDI is added and removed together with its snapshots
-VDI 8b29de added to ACL 8efba8
+ACL 8efba8 contains:
+VDI 8b29de
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
 s vdi_free     1   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3          snap  22
   vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29de      3                22
-VDI 8b29de removed from ACL 8efba8
+ACL 8efba8 contains:
   Name        Id    Size    Used  Shared    Creation time   VDI id  Copies  Tag   Block Size Shift
   vdi_three     0   16 MB  0.0 MB  0.0 MB DATE   62a59d      3                22
 s vdi_free     1   16 MB  0.0 MB  0.0 MB DATE   8b29dd      3          snap  22
   vdi_free     0   16 MB  0.0 MB  0.0 MB DATE   8b29de      3                22
   vdi_two      0   16 MB  0.0 MB  0.0 MB DATE   8cc667      3                22
 = an ACL still holding VDIs cannot be deleted
-ACL 793c4e is not empty, remove its 1 VDI first
+ACL 793c4e is not empty, 1 VDI ACLs still in use
 = the VDIs outlive the ACL holding them
 [ ]
   Name        Id    Size    Used  Shared    Creation time   ACL id  Copies  Tag   Block Size Shift

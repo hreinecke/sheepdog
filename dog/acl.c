@@ -236,7 +236,6 @@ struct get_acl_info {
 	struct json_object *obj;
 	const char *name;
 	const char *tag;
-	uint32_t vid;
 	uint32_t snapid;
 	uint32_t acl;
 	uint8_t nr_copies;
@@ -254,39 +253,57 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 	struct get_acl_info *info = data;
 	struct json_object *acl_vdi_obj = NULL;
 	struct json_object *acl_member_obj = NULL;
-	int j;
+	bool is_acl = i->header.vdi_flags & SD_VDI_FLAG_ACL;
+	uint32_t j;
 
 	if (info) {
 		if (info->name && strcmp(name, info->name) != 0)
 			return;
-		if (info->vid && vid != info->vid)
-			return;
 	}
 
-	if (json_output) {
+	/*
+	 * The VDIs an ACL guards are ordinary VDIs printed as records of their
+	 * own, so only JSON output has a place to put them; in text mode they
+	 * would show up as bogus rows of the ACL table.
+	 */
+	if (is_acl && json_output) {
 		acl_vdi_obj = json_object_new_array();
 		acl_member_obj = json_object_new_array();
-	}
-	if (i->header.vdi_flags & SD_VDI_FLAG_ACL) {
+
 		for (j = 0; j < i->header.max_data_id_nr; j++) {
-			struct get_acl_info vdi_info = {};
+			struct get_acl_info vdi_info = { .obj = acl_vdi_obj };
+			struct sd_inode *member_inode;
+			uint32_t member_vid = i->data_vdi_id[j];
+			uint32_t member_snapid;
 
-			vdi_info.vid = i->data_vdi_id[j];
-			if (json_output)
-				vdi_info.obj = acl_vdi_obj;
+			/* 'acl remove vdi' leaves holes behind */
+			if (!member_vid)
+				continue;
 
-			parse_vdi(print_acl_list, SD_INODE_SIZE, &vdi_info,
-				  true, false);
+			member_inode = xzalloc(SD_INODE_HEADER_SIZE);
+			if (dog_read_object(vid_to_vdi_oid(member_vid),
+					    member_inode, SD_INODE_HEADER_SIZE,
+					    0, true) == SD_RES_SUCCESS) {
+				member_snapid =
+					vdi_is_snapshot(&member_inode->header) ?
+					member_inode->header.snap_id : 0;
+				print_acl_list(member_vid,
+					       member_inode->header.name,
+					       member_inode->header.tag,
+					       member_snapid, 0, member_inode,
+					       &vdi_info);
+			} else
+				sd_err("Failed to read inode of VDI %"PRIx32,
+				       member_vid);
+			free(member_inode);
 		}
 		for (j = 0; j < sizeof(i->header.metadata);
 		     j += SD_MAX_VDI_LEN) {
 			char *member = (char *)&i->header.metadata[j];
 
-			if (strlen(member)) {
-				if (json_output)
-					json_object_array_add(acl_member_obj,
-						json_object_new_string(member));
-			}
+			if (strlen(member))
+				json_object_array_add(acl_member_obj,
+					json_object_new_string(member));
 		}
 	}
 	ti = i->header.create_time >> 32;
@@ -326,7 +343,7 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 		if (strlen(i->header.tag))
 			JSON_ADD_STRING(vdi_obj, "tag",
 					i->header.tag);
-		if (i->header.vdi_flags & SD_VDI_FLAG_ACL) {
+		if (is_acl) {
 			json_object_object_add(vdi_obj, "vdi", acl_vdi_obj);
 			json_object_object_add(vdi_obj, "member",
 					       acl_member_obj);
@@ -398,22 +415,76 @@ static int acl_list(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-static void print_acl_obj_list(uint32_t vid, const char *name, const char *tag,
-			       uint32_t snapid, uint32_t flags,
-			       const struct sd_inode *i, void *data)
+/*
+ * Print the VDIs guarded by an ACL, straight out of its own mapping table.
+ * 'acl remove vdi' leaves holes behind, so walk the table up to max_data_id_nr
+ * rather than stopping at the first empty slot.  Requires a full inode.
+ */
+static void print_acl_vdi_list(const struct sd_inode *inode, uint32_t acl_vid)
 {
-	struct json_object *obj = data;
+	if (json_output)
+		out_obj = json_object_new_array();
+	else if (!raw_output)
+		printf("ACL %"PRIx32" contains:\n", acl_vid);
+
+	for (uint32_t i = 0; i < inode->header.max_data_id_nr; i++) {
+		uint32_t vid = inode->data_vdi_id[i];
+
+		if (!vid)
+			continue;
+
+		if (json_output) {
+			struct json_object *vdi_obj = json_object_new_object();
+
+			JSON_ADD_INT(vdi_obj, "vdi_id", vid);
+			json_object_array_add(out_obj, vdi_obj);
+		} else if (raw_output)
+			printf("%08"PRIx32" ", vid);
+		else
+			printf("VDI %"PRIx32"\n", vid);
+	}
 
 	if (json_output) {
-		struct json_object *vdi_obj =
-			json_object_new_object();
+		const char *o = json_object_to_json_string(out_obj);
 
-		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
-		json_object_array_add(obj, vdi_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
 	} else if (raw_output)
-		printf("%08"PRIx32" ", vid);
-	else
-		printf("VDI %x\n", vid);
+		printf("\n");
+}
+
+/* Print the members of an ACL; the header alone is enough for these. */
+static void print_acl_member_list(const struct sd_inode *inode,
+				  uint32_t acl_vid)
+{
+	if (json_output)
+		out_obj = json_object_new_array();
+	else if (!raw_output)
+		printf("ACL %"PRIx32" contains:\n", acl_vid);
+
+	for (uint32_t i = 0; i < sizeof(inode->header.metadata);
+	     i += SD_MAX_VDI_LEN) {
+		const char *member = (const char *)&inode->header.metadata[i];
+
+		if (!strlen(member))
+			continue;
+
+		if (json_output)
+			json_object_array_add(out_obj,
+					      json_object_new_string(member));
+		else if (raw_output)
+			printf("%s ", member);
+		else
+			printf("member %s\n", member);
+	}
+
+	if (json_output) {
+		const char *o = json_object_to_json_string(out_obj);
+
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	} else if (raw_output)
+		printf("\n");
 }
 
 static int acl_add_vdi(int argc, char **argv)
@@ -440,8 +511,18 @@ static int acl_add_vdi(int argc, char **argv)
 	/* only a VDI which is not part of an ACL can be added */
 	ret = find_vdi_name(vdiname, 0, "", 0, &vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("ACL entry %s cannot be added, duplicate VDI name",
-		       vdiname);
+		/*
+		 * A VDI already guarded by an ACL is invisible without it, so
+		 * the lookup above cannot tell 'no such VDI' from 'already in
+		 * this ACL'.  Retry through the ACL to pick the right message.
+		 */
+		if (find_vdi_name(vdiname, 0, "", acl_vid, &vid) ==
+		    SD_RES_SUCCESS)
+			sd_err("ACL %"PRIx32" already contains VDI %"PRIx32,
+			       acl_vid, vid);
+		else
+			sd_err("Failed to open VDI %s: %s",
+			       vdiname, sd_strerror(ret));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -498,26 +579,8 @@ static int acl_add_vdi(int argc, char **argv)
 		goto out;
 	}
 
-	if (verbose) {
-		if (json_output)
-			out_obj = json_object_new_array();
-		else if (!raw_output)
-			printf("ACL %"PRIx32" contains:\n", acl_vid);
-
-		if (parse_vdi(print_acl_obj_list, SD_INODE_HEADER_SIZE,
-			      out_obj, true, false) < 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-		if (json_output) {
-			const char *o;
-
-			o = json_object_to_json_string(out_obj);
-			printf("%s\n", o);
-			json_object_put(out_obj);
-		} else if (raw_output)
-			printf("\n");
-	}
+	if (verbose)
+		print_acl_vdi_list(inode, acl_vid);
 out:
 	free(inode);
 	return ret;
@@ -582,26 +645,8 @@ static int acl_add_member(int argc, char **argv)
 		goto out;
 	}
 
-	if (verbose) {
-		if (json_output)
-			out_obj = json_object_new_array();
-		else if (!raw_output)
-			printf("ACL %"PRIx32" contains:\n", acl_vid);
-
-		if (parse_vdi(print_acl_obj_list, SD_INODE_HEADER_SIZE,
-			      out_obj, true, false) < 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-		if (json_output) {
-			const char *o;
-
-			o = json_object_to_json_string(out_obj);
-			printf("%s\n", o);
-			json_object_put(out_obj);
-		} else if (raw_output)
-			printf("\n");
-	}
+	if (verbose)
+		print_acl_member_list(inode, acl_vid);
 out:
 	free(inode);
 	return ret;
@@ -625,9 +670,9 @@ static int acl_remove_vdi(int argc, char **argv)
 	const char *aclname = argv[optind++];
 	const char *vdiname = NULL;
 	uint32_t acl_vid, vid;
-	uint32_t old_idx = UINT32_MAX, limit;
+	uint32_t old_idx = UINT32_MAX, limit, i;
 	struct sd_inode *inode = NULL;
-	int ret, i;
+	int ret;
 
 	if (!argv[optind]) {
 		sd_err("Please specify the VDI to remove");
@@ -635,8 +680,9 @@ static int acl_remove_vdi(int argc, char **argv)
 	}
 	vdiname = argv[optind];
 
-	inode = xmalloc(SD_INODE_HEADER_SIZE);
-	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
+	/* data_vdi_id[] is searched and updated below, so read the full inode */
+	inode = xzalloc(sizeof(*inode));
+	ret = read_acl_inode(aclname, &acl_vid, inode, sizeof(*inode));
 	if (ret != SD_RES_SUCCESS) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -713,36 +759,8 @@ static int acl_remove_vdi(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode for object: %016" PRIx64,
-		       vid_to_vdi_oid(acl_vid));
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-	if (verbose) {
-		if (json_output) {
-			const char *o;
-
-			out_obj = json_object_new_array();
-
-			for (i = 0; i < SD_INODE_DATA_INDEX; i++) {
-				struct json_object *vdi_obj;
-
-				if (!inode->data_vdi_id[i])
-					break;
-				vdi_obj = json_object_new_object();
-				JSON_ADD_INT(vdi_obj, "vdi_id",
-					     inode->data_vdi_id[i]);
-				json_object_array_add(out_obj, vdi_obj);
-			}
-			o = json_object_to_json_string(out_obj);
-			printf("%s\n", o);
-			json_object_put(out_obj);
-		} else if (raw_output)
-			printf("%x\n", vid);
-		else
-			printf("VDI %x removed from ACL %x\n", vid, acl_vid);
-	}
+	if (verbose)
+		print_acl_vdi_list(inode, acl_vid);
 out:
 	free(inode);
 	return ret;
@@ -802,26 +820,8 @@ static int acl_remove_member(int argc, char **argv)
 		goto out;
 	}
 
-	if (verbose) {
-		if (json_output)
-			out_obj = json_object_new_array();
-		else if (!raw_output)
-			printf("ACL %"PRIx32" contains:\n", acl_vid);
-
-		if (parse_vdi(print_acl_obj_list, SD_INODE_HEADER_SIZE,
-			      out_obj, true, false) < 0) {
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-		if (json_output) {
-			const char *o;
-
-			o = json_object_to_json_string(out_obj);
-			printf("%s\n", o);
-			json_object_put(out_obj);
-		} else if (raw_output)
-			printf("\n");
-	}
+	if (verbose)
+		print_acl_member_list(inode, acl_vid);
 out:
 	free(inode);
 	return ret;
