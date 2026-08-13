@@ -28,6 +28,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "  sheep${node}:"
     echo "    image: sheepdog"
     echo "    hostname: \${SHEEP${node}_NAME}"
+    echo "    mac_address: \${SHEEP${node}_MAC}"
     echo "    init: true"
     echo "    networks:"
     echo "      etcd-br:"

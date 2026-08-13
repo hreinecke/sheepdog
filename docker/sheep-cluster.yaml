@@ -9,6 +9,7 @@ services:
   sheep0:
     image: sheepdog
     hostname: ${SHEEP0_NAME}
+    mac_address: ${SHEEP0_MAC}
     init: true
     networks:
       etcd-br:
@@ -31,6 +32,7 @@ services:
   sheep1:
     image: sheepdog
     hostname: ${SHEEP1_NAME}
+    mac_address: ${SHEEP1_MAC}
     init: true
     networks:
       etcd-br:
@@ -53,6 +55,7 @@ services:
   sheep2:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
+    mac_address: ${SHEEP2_MAC}
     init: true
     networks:
       etcd-br:
@@ -75,6 +78,7 @@ services:
   sheep3:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
+    mac_address: ${SHEEP3_MAC}
     init: true
     networks:
       etcd-br:
@@ -97,6 +101,7 @@ services:
   sheep4:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
+    mac_address: ${SHEEP4_MAC}
     init: true
     networks:
       etcd-br:
@@ -119,6 +124,7 @@ services:
   sheep5:
     image: sheepdog
     hostname: ${SHEEP5_NAME}
+    mac_address: ${SHEEP5_MAC}
     init: true
     networks:
       etcd-br:
@@ -141,6 +147,7 @@ services:
   sheep6:
     image: sheepdog
     hostname: ${SHEEP6_NAME}
+    mac_address: ${SHEEP6_MAC}
     init: true
     networks:
       etcd-br:
@@ -163,6 +170,7 @@ services:
   sheep7:
     image: sheepdog
     hostname: ${SHEEP7_NAME}
+    mac_address: ${SHEEP7_MAC}
     init: true
     networks:
       etcd-br:
@@ -185,6 +193,7 @@ services:
   sheep8:
     image: sheepdog
     hostname: ${SHEEP8_NAME}
+    mac_address: ${SHEEP8_MAC}
     init: true
     networks:
       etcd-br:
@@ -207,6 +216,7 @@ services:
   sheep9:
     image: sheepdog
     hostname: ${SHEEP9_NAME}
+    mac_address: ${SHEEP9_MAC}
     init: true
     networks:
       etcd-br:
@@ -229,6 +239,7 @@ services:
   sheep10:
     image: sheepdog
     hostname: ${SHEEP10_NAME}
+    mac_address: ${SHEEP10_MAC}
     init: true
     networks:
       etcd-br:
@@ -251,6 +262,7 @@ services:
   sheep11:
     image: sheepdog
     hostname: ${SHEEP11_NAME}
+    mac_address: ${SHEEP11_MAC}
     init: true
     networks:
       etcd-br:
@@ -273,6 +285,7 @@ services:
   sheep12:
     image: sheepdog
     hostname: ${SHEEP12_NAME}
+    mac_address: ${SHEEP12_MAC}
     init: true
     networks:
       etcd-br:
@@ -295,6 +308,7 @@ services:
   sheep13:
     image: sheepdog
     hostname: ${SHEEP13_NAME}
+    mac_address: ${SHEEP13_MAC}
     init: true
     networks:
       etcd-br:
@@ -317,6 +331,7 @@ services:
   sheep14:
     image: sheepdog
     hostname: ${SHEEP14_NAME}
+    mac_address: ${SHEEP14_MAC}
     init: true
     networks:
       etcd-br:
@@ -339,6 +354,7 @@ services:
   sheep15:
     image: sheepdog
     hostname: ${SHEEP15_NAME}
+    mac_address: ${SHEEP15_MAC}
     init: true
     networks:
       etcd-br:
@@ -361,6 +377,7 @@ services:
   sheep16:
     image: sheepdog
     hostname: ${SHEEP16_NAME}
+    mac_address: ${SHEEP16_MAC}
     init: true
     networks:
       etcd-br:
@@ -383,6 +400,7 @@ services:
   sheep17:
     image: sheepdog
     hostname: ${SHEEP17_NAME}
+    mac_address: ${SHEEP17_MAC}
     init: true
     networks:
       etcd-br:
@@ -405,6 +423,7 @@ services:
   sheep18:
     image: sheepdog
     hostname: ${SHEEP18_NAME}
+    mac_address: ${SHEEP18_MAC}
     init: true
     networks:
       etcd-br:
@@ -427,6 +446,7 @@ services:
   sheep19:
     image: sheepdog
     hostname: ${SHEEP19_NAME}
+    mac_address: ${SHEEP19_MAC}
     init: true
     networks:
       etcd-br:
@@ -449,6 +469,7 @@ services:
   sheep20:
     image: sheepdog
     hostname: ${SHEEP20_NAME}
+    mac_address: ${SHEEP20_MAC}
     init: true
     networks:
       etcd-br:
@@ -471,6 +492,7 @@ services:
   sheep21:
     image: sheepdog
     hostname: ${SHEEP21_NAME}
+    mac_address: ${SHEEP21_MAC}
     init: true
     networks:
       etcd-br:
@@ -493,6 +515,7 @@ services:
   sheep22:
     image: sheepdog
     hostname: ${SHEEP22_NAME}
+    mac_address: ${SHEEP22_MAC}
     init: true
     networks:
       etcd-br:
@@ -515,6 +538,7 @@ services:
   sheep23:
     image: sheepdog
     hostname: ${SHEEP23_NAME}
+    mac_address: ${SHEEP23_MAC}
     init: true
     networks:
       etcd-br:

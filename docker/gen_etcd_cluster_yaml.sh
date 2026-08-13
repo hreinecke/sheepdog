@@ -19,6 +19,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "  etcd${node}:"
     echo "    image: gcr.io/etcd-development/etcd:v3.6.0"
     echo "    hostname: \${NODE${node}_NAME}"
+    echo "    mac_address: \${NODE${node}_MAC}"
     echo "    networks:"
     echo "      etcd-br:"
     echo "        ipv4_address: \${NODE${node}_IP}"

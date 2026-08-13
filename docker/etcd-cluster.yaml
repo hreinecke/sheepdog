@@ -3,6 +3,7 @@ services:
   etcd0:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE0_NAME}
+    mac_address: ${NODE0_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE0_IP}
@@ -24,6 +25,7 @@ services:
   etcd1:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE1_NAME}
+    mac_address: ${NODE1_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE1_IP}
@@ -45,6 +47,7 @@ services:
   etcd2:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE2_NAME}
+    mac_address: ${NODE2_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE2_IP}
@@ -66,6 +69,7 @@ services:
   etcd3:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE3_NAME}
+    mac_address: ${NODE3_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE3_IP}
@@ -87,6 +91,7 @@ services:
   etcd4:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE4_NAME}
+    mac_address: ${NODE4_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE4_IP}
@@ -108,6 +113,7 @@ services:
   etcd5:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE5_NAME}
+    mac_address: ${NODE5_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE5_IP}
@@ -129,6 +135,7 @@ services:
   etcd6:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE6_NAME}
+    mac_address: ${NODE6_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE6_IP}
@@ -150,6 +157,7 @@ services:
   etcd7:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE7_NAME}
+    mac_address: ${NODE7_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE7_IP}
@@ -171,6 +179,7 @@ services:
   etcd8:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE8_NAME}
+    mac_address: ${NODE8_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE8_IP}
@@ -192,6 +201,7 @@ services:
   etcd9:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE9_NAME}
+    mac_address: ${NODE9_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE9_IP}
@@ -213,6 +223,7 @@ services:
   etcd10:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE10_NAME}
+    mac_address: ${NODE10_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE10_IP}
@@ -234,6 +245,7 @@ services:
   etcd11:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE11_NAME}
+    mac_address: ${NODE11_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE11_IP}
@@ -255,6 +267,7 @@ services:
   etcd12:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE12_NAME}
+    mac_address: ${NODE12_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE12_IP}
@@ -276,6 +289,7 @@ services:
   etcd13:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE13_NAME}
+    mac_address: ${NODE13_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE13_IP}
@@ -297,6 +311,7 @@ services:
   etcd14:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE14_NAME}
+    mac_address: ${NODE14_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE14_IP}
@@ -318,6 +333,7 @@ services:
   etcd15:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE15_NAME}
+    mac_address: ${NODE15_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE15_IP}
@@ -339,6 +355,7 @@ services:
   etcd16:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE16_NAME}
+    mac_address: ${NODE16_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE16_IP}
@@ -360,6 +377,7 @@ services:
   etcd17:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE17_NAME}
+    mac_address: ${NODE17_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE17_IP}
@@ -381,6 +399,7 @@ services:
   etcd18:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE18_NAME}
+    mac_address: ${NODE18_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE18_IP}
@@ -402,6 +421,7 @@ services:
   etcd19:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE19_NAME}
+    mac_address: ${NODE19_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE19_IP}
@@ -423,6 +443,7 @@ services:
   etcd20:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE20_NAME}
+    mac_address: ${NODE20_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE20_IP}
@@ -444,6 +465,7 @@ services:
   etcd21:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE21_NAME}
+    mac_address: ${NODE21_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE21_IP}
@@ -465,6 +487,7 @@ services:
   etcd22:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE22_NAME}
+    mac_address: ${NODE22_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE22_IP}
@@ -486,6 +509,7 @@ services:
   etcd23:
     image: gcr.io/etcd-development/etcd:v3.6.0
     hostname: ${NODE23_NAME}
+    mac_address: ${NODE23_MAC}
     networks:
       etcd-br:
         ipv4_address: ${NODE23_IP}

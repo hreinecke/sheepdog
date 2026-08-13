@@ -1,5 +1,18 @@
 #!/bin/bash
 
+gen_mac_address() {
+    ipaddr=$1
+
+    OUI=0x0cfd37
+    p1=$(( ($OUI >> 16) & 0xff ))
+    p2=$(( ($OUI >>  8) & 0xff ))
+    p3=$(( $OUI & 0xff ))
+    p4=$(echo $ipaddr | cut -f 2 -d .)
+    p5=$(echo $ipaddr | cut -f 3 -d .)
+    p6=$(echo $ipaddr | cut -f 4 -d .)
+    printf "%02x:%02X:%02X:%02X:%02X:%02X" $p1 $p2 $p3 $p4 $p5 $p6
+}
+
 NUM_NODES=$1
 NETWORK="192.168.122"
 ETCD_IP_OFFSET=10
@@ -18,13 +31,17 @@ echo "SHEEP_BASE_DIR=/var/lib/sheep"
 for i in $(seq ${NUM_NODES}); do
     node=$(( $i - 1 ))
     IP=$(( $node + $ETCD_IP_OFFSET ))
+    MAC=$(gen_mac_address ${NETWORK}.${IP})
     echo "NODE${node}_NAME=etcd${node}"
     echo "NODE${node}_IP=${NETWORK}.${IP}"
+    echo "NODE${node}_MAC=${MAC}"
 done
 
 for i in $(seq ${NUM_NODES}); do
     node=$(( $i - 1 ))
     IP=$(( $node + $SHEEP_IP_OFFSET ))
+    MAC=$(gen_mac_address ${NETWORK}.${IP})
     echo "SHEEP${node}_NAME=sheep${node}"
     echo "SHEEP${node}_IP=${NETWORK}.${IP}"
+    echo "SHEEP${node}_MAC=${MAC}"
 done
