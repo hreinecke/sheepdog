@@ -276,9 +276,13 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 			uint32_t member_vid = i->data_vdi_id[j];
 			uint32_t member_snapid;
 
-			/* 'acl remove vdi' leaves holes behind */
-			if (!member_vid)
+			/* Print empty entries, too */
+			if (!member_vid) {
+				struct json_object *vdi_obj =
+					json_object_new_object();
+				json_object_array_add(vdi_info.obj, vdi_obj);
 				continue;
+			}
 
 			member_inode = xzalloc(SD_INODE_HEADER_SIZE);
 			if (dog_read_object(vid_to_vdi_oid(member_vid),
