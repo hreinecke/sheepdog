@@ -213,10 +213,11 @@ static int post_cluster_del_vdi(const struct sd_req *req, struct sd_rsp *rsp,
  * avoid this problem, SD_OP_GET_INFO must be ordered with
  * SD_OP_NEW_VDI.
  */
-static int do_get_vdi_info(struct request *req, uint32_t data_len)
+static int cluster_get_vdi_info(struct request *req)
 {
 	const struct sd_req *hdr = &req->rq;
 	struct sd_rsp *rsp = &req->rp;
+	uint32_t data_len = hdr->data_length;
 	int ret;
 	struct vdi_info info = {};
 	struct vdi_iocb iocb = {
@@ -238,11 +239,6 @@ static int do_get_vdi_info(struct request *req, uint32_t data_len)
 	rsp->vdi.block_size_shift = get_vdi_block_size_shift(info.vid);
 
 	return ret;
-}
-
-static int cluster_get_vdi_info(struct request *req)
-{
-	return do_get_vdi_info(req, req->rq.data_length);
 }
 
 static int remove_epoch(uint32_t epoch)
@@ -1323,28 +1319,11 @@ static int local_repair_replica(struct request *req)
 	return ret;
 }
 
-/*
- * The node which is to own the lock: the one the request names, and the one
- * which sent the request to the cluster if it names none.
- */
-static const struct node_id *lock_owner(const struct sd_req *req,
-					const void *data,
-					const struct sd_node *sender)
-{
-	const struct node_id *owner = vdi_lock_owner(req, data);
-
-	return owner ? owner : &sender->nid;
-}
-
 static int cluster_lock_vdi_work(struct request *req)
 {
-	int off = vdi_lock_owner_offset(&req->rq);
-	/* the trailing owner is not part of the name the VDI is looked up by */
-	uint32_t data_len = off < 0 ? req->rq.data_length : (uint32_t)off;
-
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
-		return do_get_vdi_info(req, data_len);
+		return cluster_get_vdi_info(req);
 	}
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
@@ -1356,14 +1335,13 @@ static int cluster_lock_vdi_work(struct request *req)
 		return SD_RES_COLLECTING_CINFO;
 	}
 
-	return do_get_vdi_info(req, data_len);
+	return cluster_get_vdi_info(req);
 }
 
 static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 				 void *data, const struct sd_node *sender)
 {
 	uint32_t vid = rsp->vdi.vdi_id;
-	const struct node_id *owner = lock_owner(req, data, sender);
 	int ret;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
@@ -1372,16 +1350,16 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 	}
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
-		sd_debug("logging vdi unlock information for later replay");
-		log_vdi_op_lock(vid, owner, req->vdi.acl);
+		sd_debug("logging vdi lock information for later replay");
+		log_vdi_op_lock(vid, &sender->nid, req->vdi.acl);
 		return SD_RES_SUCCESS;
 	}
 
 	sd_info("node: %s is locking VDI (type: %s): %"PRIx32,
-		node_id_to_str(owner, false),
+		node_to_str(sender),
 		req->vdi.acl == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
 
-	ret = vdi_lock(vid, owner, req->vdi.acl);
+	ret = vdi_lock(vid, &sender->nid, req->vdi.acl);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("locking %"PRIx32" failed: %s", vid, sd_strerror(ret));
 		return ret;
@@ -1395,7 +1373,6 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 				    const struct sd_node *sender)
 {
 	uint32_t vid = req->vdi.base_vdi_id;
-	const struct node_id *owner = lock_owner(req, data, sender);
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
@@ -1403,16 +1380,123 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 	}
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
-		sd_debug("logging vdi lock information for later replay");
-		log_vdi_op_unlock(vid, owner, req->vdi.acl);
+		sd_debug("logging vdi unlock information for later replay");
+		log_vdi_op_unlock(vid, &sender->nid, req->vdi.acl);
 		return SD_RES_SUCCESS;
 	}
 
 	sd_info("node: %s is unlocking VDI (type: %s): %"PRIx32,
-		node_id_to_str(owner, false),
+		node_to_str(sender),
 		req->vdi.acl == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
 
-	vdi_unlock(vid, owner, req->vdi.acl);
+	vdi_unlock(vid, &sender->nid, req->vdi.acl);
+
+	return SD_RES_SUCCESS;
+}
+
+static int cluster_register_vdi_work(struct request *req)
+{
+	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+		sd_debug("vdi lock is disabled");
+		return cluster_get_vdi_info(req);
+	}
+
+	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
+		/*
+		 * this node is collecting vdi locking status, not ready for
+		 * allowing lock by itself
+		 */
+		sd_err("This node is not ready for vdi register, try later");
+		return SD_RES_COLLECTING_CINFO;
+	}
+
+	return cluster_get_vdi_info(req);
+}
+
+static int cluster_register_vdi_main(const struct sd_req *req,
+				     struct sd_rsp *rsp,
+				     void *data, const struct sd_node *sender)
+{
+	uint32_t vid = rsp->vdi.vdi_id;
+	struct node_id owner;
+	const char *lock_type;
+	int ret;
+
+	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+		sd_debug("vdi lock is disabled");
+		return SD_RES_SUCCESS;
+	}
+
+	memcpy(owner.addr, req->reg.addr, sizeof(owner.addr));
+	owner.port = req->reg.port;
+
+	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
+		sd_debug("logging vdi register information for later replay");
+		log_vdi_op_lock(vid, &owner, req->reg.acl);
+		return SD_RES_SUCCESS;
+	}
+
+	switch (req->reg.acl) {
+	case  LOCK_TYPE_NORMAL:
+		lock_type = "normal";
+		break;
+	case LOCK_TYPE_SHARED:
+		lock_type = "shared";
+		break;
+	default:
+		lock_type = "ACL";
+		break;
+	}
+	sd_info("node: %s registering for VDI (type: %s): %"PRIx32,
+		node_id_to_str(&owner, false), lock_type, vid);
+
+	ret = vdi_lock(vid, &owner, req->vdi.acl);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("registering %"PRIx32" failed: %s",
+		       vid, sd_strerror(ret));
+		return ret;
+	}
+
+	return SD_RES_SUCCESS;
+}
+
+static int cluster_unregister_vdi_main(const struct sd_req *req,
+				       struct sd_rsp *rsp, void *data,
+				       const struct sd_node *sender)
+{
+	uint32_t vid = req->reg.vid;
+	struct node_id owner;
+	const char *lock_type;
+
+	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
+		sd_debug("vdi lock is disabled");
+		return SD_RES_SUCCESS;
+	}
+
+	memcpy(owner.addr, req->reg.addr, sizeof(owner.addr));
+	owner.port = req->reg.port;
+
+	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
+		sd_debug("logging vdi unregister information for later replay");
+		log_vdi_op_unlock(vid, &owner, req->reg.acl);
+		return SD_RES_SUCCESS;
+	}
+
+	switch (req->reg.acl) {
+	case  LOCK_TYPE_NORMAL:
+		lock_type = "normal";
+		break;
+	case LOCK_TYPE_SHARED:
+		lock_type = "shared";
+		break;
+	default:
+		lock_type = "ACL";
+		break;
+	}
+	sd_info("node: %s is unregistering for VDI (type: %s): %"PRIx32,
+		node_id_to_str(&owner, false), lock_type, vid);
+
+	vdi_unlock(vid, &owner, req->reg.acl);
 
 	return SD_RES_SUCCESS;
 }
@@ -1696,6 +1780,20 @@ static struct sd_op_template sd_ops[] = {
 		.type = SD_OP_TYPE_CLUSTER,
 		.process_work = local_release_vdi,
 		.process_main = cluster_release_vdi_main,
+	},
+
+	[SD_OP_REGISTER_VDI] = {
+		.name = "REGISTER_VDI",
+		.type = SD_OP_TYPE_CLUSTER,
+		.process_work = cluster_register_vdi_work,
+		.process_main = cluster_register_vdi_main,
+	},
+
+	[SD_OP_UNREGISTER_VDI] = {
+		.name = "UNREGISTER_VDI",
+		.type = SD_OP_TYPE_CLUSTER,
+		.process_work = local_release_vdi,
+		.process_main = cluster_unregister_vdi_main,
 	},
 
 	[SD_OP_REWEIGHT] = {

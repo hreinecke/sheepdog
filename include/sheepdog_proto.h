@@ -45,6 +45,8 @@
 #define SD_OP_FLUSH_VDI      0x16 /* obsolete */
 #define SD_OP_DEL_VDI        0x17
 #define SD_OP_GET_CLUSTER_DEFAULT   0x18
+#define SD_OP_REGISTER_VDI   0x19
+#define SD_OP_UNREGISTER_VDI 0x1A
 
 /* macros in the SD_FLAG_CMD_XXX group are mutually exclusive */
 #define SD_FLAG_CMD_WRITE    0x01
@@ -167,6 +169,14 @@ struct sd_req {
 			uint32_t        acl;
 			uint32_t        vdi_flags;
 		} vdi;
+		struct {
+			uint32_t        vid;
+			uint32_t	snapid;
+			uint8_t		addr[16];
+			uint16_t	port;
+			uint16_t	tag;
+			uint32_t        acl;
+		} reg;
 
 		/* sheepdog-internal */
 		struct {

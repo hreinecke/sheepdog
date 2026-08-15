@@ -88,8 +88,7 @@ static struct vdi_cmd_data {
 	int nr_max_reclaim;
 	uint32_t acl_id;
 	char acl_name[SD_MAX_VDI_LEN];
-	bool lock_owner_given;
-	struct node_id lock_owner;
+	struct node_id owner;
 } vdi_cmd_data = { ~0, };
 
 /*
@@ -146,75 +145,29 @@ static const char *acl_option_name(void)
 	return vdi_cmd_data.acl_id == ACL_ANY_ID ? "any" : "none";
 }
 
-/*
- * Turn the '<address>[:<port>]' of '-O' into the node which is to own the VDI
- * lock.  IPv6 addresses have to be bracketed to tell their colons apart from
- * the one in front of the port, i.e. '[::1]:7000'.  The port defaults to the
- * one the sheeps listen on.
- */
-static int parse_lock_owner(const char *opt, struct node_id *owner)
+static int parse_vdi_address(const char *opt, struct node_id *owner)
 {
+	int port;
 	char addr[MAX_NODE_STR_LEN];
-	const char *portstr = NULL;
-	char *p;
-	long port = SD_LISTEN_PORT;
 
-	memset(owner, 0, sizeof(*owner));
-
-	if (*opt == '[') {
-		const char *end = strchr(opt, ']');
-
-		if (!end || (size_t)(end - opt) >= sizeof(addr)) {
-			sd_err("Invalid address %s", opt);
-			return -1;
-		}
-		pstrcpy(addr, end - opt, opt + 1);
-		if (end[1] == ':')
-			portstr = end + 2;
-		else if (end[1]) {
-			sd_err("Invalid address %s", opt);
-			return -1;
-		}
-	} else {
-		const char *colon = strrchr(opt, ':');
-
-		/* an unbracketed address with several colons is an IPv6 one */
-		if (colon && colon == strchr(opt, ':'))
-			portstr = colon + 1;
-		else
-			colon = NULL;
-
-		if (colon) {
-			if ((size_t)(colon - opt) >= sizeof(addr)) {
-				sd_err("Invalid address %s", opt);
-				return -1;
-			}
-			pstrcpy(addr, colon - opt + 1, opt);
-		} else
-			pstrcpy(addr, sizeof(addr), opt);
+	if (sscanf(opt, "[%s}:%d", addr, &port) == 2)
+		goto found;
+	if (sscanf(opt, "[%s]", addr) == 1) {
+		port = SD_LISTEN_PORT;
+		goto found;
 	}
-
-	if (portstr) {
-		port = strtol(portstr, &p, 10);
-		if (portstr == p || *p || port < 1 || port > UINT16_MAX) {
-			sd_err("Invalid port number '%s'", portstr);
-			return -1;
-		}
+	if (sscanf(opt, "%s:%d", addr, &port) != 2) {
+		strcpy(addr, opt);
+		port = SD_LISTEN_PORT;
 	}
-
-	if (!addr[0] || !str_to_addr(addr, owner->addr)) {
+found:
+	if (!str_to_addr(addr, owner->addr)) {
 		sd_err("Invalid ip address %s", addr);
 		return -1;
 	}
 	owner->port = port;
 
 	return 0;
-}
-
-/* The node the lock is to belong to, or NULL if '-O' was not given */
-static const struct node_id *lock_owner(void)
-{
-	return vdi_cmd_data.lock_owner_given ? &vdi_cmd_data.lock_owner : NULL;
 }
 
 struct get_vdi_info {
@@ -3705,10 +3658,10 @@ static int lock_lock(int argc, char **argv)
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
 	uint32_t vid = 0;
-	const struct node_id *owner = lock_owner();
+	const struct node_id *owner = &vdi_cmd_data.owner;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN + sizeof(*owner)];
+	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
 
 	if (!vdiname) {
 		sd_err("VDI name must be specified");
@@ -3729,17 +3682,19 @@ static int lock_lock(int argc, char **argv)
 	if (tag)
 		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
 
-	sd_init_req(&hdr, SD_OP_LOCK_VDI);
+	if (!node_id_is_null(owner)) {
+		sd_init_req(&hdr, SD_OP_REGISTER_VDI);
+		hdr.reg.snapid = snapid;
+		hdr.reg.acl = acl_id;
+		memcpy(hdr.reg.addr, owner->addr, sizeof(owner->addr));
+		hdr.reg.port = owner->port;
+	} else {
+		sd_init_req(&hdr, SD_OP_LOCK_VDI);
+		hdr.vdi.snapid = snapid;
+		hdr.vdi.acl = acl_id;
+	}
 	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
 	hdr.flags = SD_FLAG_CMD_WRITE;
-	hdr.vdi.snapid = snapid;
-	hdr.vdi.acl = acl_id;
-
-	/* the lock belongs to the node which is asked for it unless named */
-	if (owner) {
-		memcpy(buf + hdr.data_length, owner, sizeof(*owner));
-		hdr.data_length += sizeof(*owner);
-	}
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0) {
@@ -3828,19 +3783,22 @@ static int lock_unlock(int argc, char **argv)
 		goto out;
 	}
 
-	const struct node_id *owner = lock_owner();
+	const struct node_id *owner = &vdi_cmd_data.owner;
 	struct sd_req hdr;
-	sd_init_req(&hdr, SD_OP_RELEASE_VDI);
-	hdr.vdi.base_vdi_id = vid;
-	hdr.vdi.acl = acl_id;
 
-	/* the lock of the node which is asked to drop it unless named */
-	if (owner) {
-		hdr.data_length = sizeof(*owner);
-		hdr.flags = SD_FLAG_CMD_WRITE;
+	if (!node_id_is_null(owner)) {
+		sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
+		hdr.reg.vid = vid;
+		hdr.reg.acl = acl_id;
+		memcpy(hdr.reg.addr, owner->addr, sizeof(owner->addr));
+		hdr.reg.port = owner->port;
+	} else {
+		sd_init_req(&hdr, SD_OP_RELEASE_VDI);
+		hdr.vdi.base_vdi_id = vid;
+		hdr.vdi.acl = acl_id;
 	}
 
-	ret = dog_exec_req(&sd_nid, &hdr, (void *)owner);
+	ret = dog_exec_req(&sd_nid, &hdr, NULL);
 	ret = ret ? EXIT_FAILURE : EXIT_SUCCESS;
 
 out:
@@ -4089,9 +4047,8 @@ static int vdi_parser(int ch, const char *opt)
 		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
 		break;
 	case 'O':
-		if (parse_lock_owner(opt, &vdi_cmd_data.lock_owner) < 0)
+		if (parse_vdi_address(opt, &vdi_cmd_data.owner) < 0)
 			exit(EXIT_USAGE);
-		vdi_cmd_data.lock_owner_given = true;
 		break;
 	}
 

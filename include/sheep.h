@@ -42,47 +42,6 @@ static inline void sd_init_req(struct sd_req *req, uint8_t opcode)
 	req->proto_ver = opcode < 0x80 ? SD_PROTO_VER : SD_SHEEP_PROTO_VER;
 }
 
-/*
- * SD_OP_LOCK_VDI and SD_OP_RELEASE_VDI can name the node the lock is to belong
- * to by appending its node_id to the data of the request.  Without it the lock
- * belongs to the node which received the request.
- *
- * Return the offset of that node_id within the data, or -1 if the request does
- * not carry one.
- */
-static inline int vdi_lock_owner_offset(const struct sd_req *req)
-{
-	switch (req->opcode) {
-	case SD_OP_LOCK_VDI:
-		/* the tag is optional, so both layouts have to be recognised */
-		if (req->data_length ==
-		    SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN + sizeof(struct node_id))
-			return SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
-		if (req->data_length == SD_MAX_VDI_LEN + sizeof(struct node_id))
-			return SD_MAX_VDI_LEN;
-		return -1;
-	case SD_OP_RELEASE_VDI:
-		/* the owner is the only thing this request ever carries */
-		if (req->data_length == sizeof(struct node_id))
-			return 0;
-		return -1;
-	default:
-		return -1;
-	}
-}
-
-/* The node named by the request, or NULL if it leaves the owner to the sheep */
-static inline const struct node_id *vdi_lock_owner(const struct sd_req *req,
-						   const void *data)
-{
-	int off = vdi_lock_owner_offset(req);
-
-	if (off < 0 || !data)
-		return NULL;
-
-	return (const struct node_id *)((const char *)data + off);
-}
-
 static inline int same_zone(const struct sd_vnode *v1,
 			    const struct sd_vnode *v2)
 {
@@ -364,6 +323,13 @@ static inline const char *node_id_to_str(const struct node_id *id, bool io)
 		 io ? id->io_port : id->port);
 
 	return str;
+}
+
+static inline bool node_id_is_null(const struct node_id *id)
+{
+	const struct node_id null_id = {};
+
+	return memcmp(id, &null_id, sizeof(null_id)) == 0 ? true : false;
 }
 
 static inline const char *node_to_str(const struct sd_node *id)
