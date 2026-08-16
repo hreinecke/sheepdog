@@ -824,9 +824,15 @@ int vdi_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 			ret = SD_RES_INVALID_PARMS;
 			break;
 		case LOCK_STATE_LOCKED:
-			entry->lock_state = LOCK_STATE_UNLOCKED;
-			memset(&entry->owner, 0, sizeof(entry->owner));
-			ret = SD_RES_SUCCESS;
+			if (memcmp(&entry->owner, owner, sizeof(*owner))) {
+				sd_err("permission denied "
+				       "unlocking VDI: %"PRIx32, vid);
+				ret = SD_RES_VDI_DENIED;
+			} else {
+				entry->lock_state = LOCK_STATE_UNLOCKED;
+				memset(&entry->owner, 0, sizeof(entry->owner));
+				ret = SD_RES_SUCCESS;
+			}
 			break;
 		default:
 			sd_alert("lock state of VDI (%"PRIx32") is unknown: %d",
