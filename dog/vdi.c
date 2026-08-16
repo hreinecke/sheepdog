@@ -129,7 +129,7 @@ static uint32_t vdi_acl_id(void)
  */
 static bool acl_is_any(void)
 {
-	if (vdi_cmd_data.acl_id != ACL_ANY_ID)
+	if (vdi_cmd_data.acl_id != LOCK_TYPE_ANY)
 		return false;
 
 	sd_err("'any' cannot be the ACL of a new VDI");
@@ -142,7 +142,7 @@ static const char *acl_option_name(void)
 	if (vdi_cmd_data.acl_name[0])
 		return vdi_cmd_data.acl_name;
 
-	return vdi_cmd_data.acl_id == ACL_ANY_ID ? "any" : "none";
+	return vdi_cmd_data.acl_id == LOCK_TYPE_ANY ? "any" : "none";
 }
 
 static int parse_vdi_address(const char *opt, struct node_id *owner)
@@ -272,7 +272,7 @@ static void print_vdi_list(uint32_t vid, const char *name, const char *tag,
 	if (info) {
 		if (info->name && strcmp(name, info->name) != 0)
 			return;
-		if (info->acl != ACL_ANY_ID && info->acl != i->header.acl_id)
+		if (info->acl != LOCK_TYPE_ANY && info->acl != i->header.acl_id)
 			return;
 	}
 
@@ -4042,7 +4042,7 @@ static int vdi_parser(int ch, const char *opt)
 		break;
 	case 'A':
 		if (!strcmp(opt, "any")) {
-			vdi_cmd_data.acl_id = ACL_ANY_ID;
+			vdi_cmd_data.acl_id = LOCK_TYPE_ANY;
 			break;
 		}
 		if (!strcmp(opt, "shared")) {

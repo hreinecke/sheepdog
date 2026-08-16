@@ -1610,11 +1610,21 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 			sd_debug("%s = %s, %u = %u", iocb->tag,
 				 inode.tag, iocb->snapid, inode.snap_id);
 			/*
-			 * A VDI is only visible to the ACL it was created
-			 * with; remember that we skipped one so that we can
-			 * tell the caller why nothing matched.
+			 * Only VDIs with no ACLs can be shared.
 			 */
-			if (iocb->acl != ACL_ANY_ID &&
+			if (iocb->acl == LOCK_TYPE_SHARED && inode.acl_id) {
+				sd_debug("VDI %" PRIx32 " belongs to ACL %"
+					 PRIx32 ", cannot be shared",
+					 inode.vdi_id, inode.acl_id);
+				acl_denied = true;
+				continue;
+			}
+			/*
+			 * VDIs are only visible to the ACL specified in the
+			 * inode. LOCK_TYPE_ANY serves as a wildcard to allow
+			 * access to all VDIs.
+			 */
+			if (iocb->acl != LOCK_TYPE_ANY &&
 			    inode.acl_id != iocb->acl) {
 				sd_debug("VDI %" PRIx32 " belongs to ACL %"
 					 PRIx32 ", not %" PRIx32, inode.vdi_id,
