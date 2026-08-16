@@ -86,7 +86,6 @@ static struct vdi_cmd_data {
 	int nr_batched_reclamation;
 	int reclamation_interval;
 	int nr_max_reclaim;
-	uint32_t acl_id;
 	char acl_name[SD_MAX_VDI_LEN];
 	struct node_id owner;
 } vdi_cmd_data = { ~0, };
@@ -107,42 +106,20 @@ static int lookup_acl_name(const char *aclname, uint32_t *acl_id)
 	return ret;
 }
 
-/*
- * The ACL name given with '-A' can only be turned into an id once the cluster
- * can be reached, which is not the case while the options are parsed.  Resolve
- * it on first use and remember the outcome; no ACL ever gets the id 0.
- */
 static uint32_t vdi_acl_id(void)
 {
-	if (vdi_cmd_data.acl_name[0] && !vdi_cmd_data.acl_id) {
-		if (lookup_acl_name(vdi_cmd_data.acl_name,
-				    &vdi_cmd_data.acl_id) != SD_RES_SUCCESS)
-			exit(EXIT_FAILURE);
-	}
+	uint32_t acl_id;
 
-	return vdi_cmd_data.acl_id;
-}
+	if (!strlen(vdi_cmd_data.acl_name))
+		return LOCK_TYPE_NORMAL;
+	if (!strcmp(vdi_cmd_data.acl_name, "shared"))
+		return LOCK_TYPE_SHARED;
+	if (!strcmp(vdi_cmd_data.acl_name, "any"))
+		return LOCK_TYPE_ANY;
 
-/*
- * 'any' matches whichever ACL a VDI belongs to.  That opens an existing VDI,
- * but it does not name the ACL a new one is to be created in.
- */
-static bool acl_is_any(void)
-{
-	if (vdi_cmd_data.acl_id != LOCK_TYPE_ANY)
-		return false;
-
-	sd_err("'any' cannot be the ACL of a new VDI");
-	return true;
-}
-
-/* The ACL '-A' was given as, for the messages which name it back */
-static const char *acl_option_name(void)
-{
-	if (vdi_cmd_data.acl_name[0])
-		return vdi_cmd_data.acl_name;
-
-	return vdi_cmd_data.acl_id == LOCK_TYPE_ANY ? "any" : "none";
+	if (lookup_acl_name(vdi_cmd_data.acl_name, &acl_id) != SD_RES_SUCCESS)
+		exit(EXIT_FAILURE);
+	return acl_id;
 }
 
 static int parse_vdi_address(const char *opt, struct node_id *owner)
@@ -821,6 +798,7 @@ static int vdi_create(int argc, char **argv)
 	const char *vdiname = argv[optind++];
 	uint64_t size;
 	uint32_t vid;
+	uint32_t acl_id;
 	uint64_t oid;
 	uint64_t idx;
 	uint32_t max_idx;
@@ -833,7 +811,9 @@ static int vdi_create(int argc, char **argv)
 		sd_err("Please specify the VDI size");
 		return EXIT_USAGE;
 	}
-	if (acl_is_any())
+	acl_id = vdi_acl_id();
+	/* One cannot create a VDI with ACL 'any' */
+	if (acl_id == LOCK_TYPE_ANY)
 		return EXIT_FAILURE;
 	ret = option_parse_size(argv[optind], &size);
 	if (ret < 0)
@@ -888,7 +868,7 @@ static int vdi_create(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 
-	ret = do_vdi_create(vdiname, size, 0, vdi_acl_id(), &vid, false,
+	ret = do_vdi_create(vdiname, size, 0, acl_id, &vid, false,
 			    vdi_cmd_data.nr_copies, vdi_cmd_data.copy_policy,
 			    vdi_cmd_data.store_policy,
 			    vdi_cmd_data.block_size_shift);
@@ -1032,7 +1012,7 @@ static int vdi_snapshot(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	/* the snapshot joins the ACL of the VDI it is taken from */
-	if (acl_is_any())
+	if (acl_id == LOCK_TYPE_ANY)
 		return EXIT_FAILURE;
 
 	ret = find_vdi_name(vdiname, vdi_cmd_data.snapshot_id,
@@ -1141,6 +1121,7 @@ static int vdi_clone(int argc, char **argv)
 {
 	const char *src_vdi = argv[optind++], *dst_vdi;
 	uint32_t base_vid, new_vid, vdi_id;
+	uint32_t acl_id = vdi_acl_id();
 	uint64_t oid;
 	uint64_t idx;
 	uint32_t max_idx, ret;
@@ -1162,7 +1143,7 @@ static int vdi_clone(int argc, char **argv)
 		goto out;
 	}
 	/* the clone joins the ACL of the VDI it is cloned from */
-	if (acl_is_any()) {
+	if (acl_id != LOCK_TYPE_ANY) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -1170,7 +1151,7 @@ static int vdi_clone(int argc, char **argv)
 	inode = xmalloc(sizeof(*inode));
 
 	ret = read_vdi_obj(src_vdi, vdi_cmd_data.snapshot_id,
-			   vdi_cmd_data.snapshot_tag, vdi_acl_id(),
+			   vdi_cmd_data.snapshot_tag, acl_id,
 			   &base_vid, inode, SD_INODE_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
@@ -1180,7 +1161,7 @@ static int vdi_clone(int argc, char **argv)
 
 	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	ret = do_vdi_create(dst_vdi, inode->header.vdi_size,
-			    base_vid, vdi_acl_id(), &new_vid, false,
+			    base_vid, acl_id, &new_vid, false,
 			    inode->header.nr_copies,
 			    inode->header.copy_policy,
 			    inode->header.store_policy,
@@ -1190,7 +1171,7 @@ static int vdi_clone(int argc, char **argv)
 		goto out;
 
 	new_inode = xmalloc(sizeof(*inode));
-	ret = read_vdi_obj(dst_vdi, 0, "", vdi_acl_id(),
+	ret = read_vdi_obj(dst_vdi, 0, "", acl_id,
 			   NULL, new_inode, SD_INODE_HEADER_SIZE);
 	if (ret != EXIT_SUCCESS)
 		goto out;
@@ -1457,7 +1438,7 @@ static int vdi_rollback(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	/* the working VDI is recreated, so it needs an ACL to be created in */
-	if (acl_is_any())
+	if (acl_id == LOCK_TYPE_ANY)
 		return EXIT_FAILURE;
 
 	ret = read_vdi_obj(vdiname, snap_id, vdi_cmd_data.snapshot_tag,
@@ -3593,7 +3574,7 @@ static int vdi_alter_acl(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	const uint32_t old_acl = vdi_acl_id();
-	const char *old_name = acl_option_name();
+	const char *old_name = vdi_cmd_data.acl_name;
 	const char *new_name = argv[optind];
 	uint32_t new_acl = 0;
 	int ret;
@@ -4041,22 +4022,6 @@ static int vdi_parser(int ch, const char *opt)
 		}
 		break;
 	case 'A':
-		if (!strcmp(opt, "any")) {
-			vdi_cmd_data.acl_id = LOCK_TYPE_ANY;
-			break;
-		}
-		if (!strcmp(opt, "shared")) {
-			vdi_cmd_data.acl_id = LOCK_TYPE_SHARED;
-			break;
-		}
-		if (strlen(opt) >= SD_MAX_VDI_LEN) {
-			sd_err("The ACL name is too long: %s", opt);
-			exit(EXIT_FAILURE);
-		}
-		/*
-		 * The cluster cannot be reached while the options are parsed,
-		 * so record the name and resolve it in vdi_acl_id().
-		 */
 		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
 		break;
 	case 'O':
