@@ -3703,7 +3703,7 @@ static int lock_lock(int argc, char **argv)
 static int lock_unlock(int argc, char **argv)
 {
 	struct vdi_state *vs = NULL;
-	int ret = 0;
+	int ret = EXIT_SUCCESS;
 	char vdidesc[VDI_DESC_MAX] = { 0 };
 
 	const char *vdiname = argv[optind];
@@ -3717,6 +3717,7 @@ static int lock_unlock(int argc, char **argv)
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
 	uint32_t vid = 0;
+
 	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
 	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
 	if (ret != SD_RES_SUCCESS) {
@@ -3775,6 +3776,7 @@ static int lock_unlock(int argc, char **argv)
 
 	const struct node_id *owner = &vdi_cmd_data.owner;
 	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 
 	if (!node_id_is_null(owner)) {
 		sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
@@ -3789,7 +3791,14 @@ static int lock_unlock(int argc, char **argv)
 	}
 
 	ret = dog_exec_req(&sd_nid, &hdr, NULL);
-	ret = ret ? EXIT_FAILURE : EXIT_SUCCESS;
+	if (ret < 0)
+		ret = EXIT_FAILURE;
+	else if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to unlock VDI %s: %s", vdiname,
+		       sd_strerror(rsp->result));
+		ret = EXIT_FAILURE;
+	} else
+		ret = EXIT_SUCCESS;
 
 out:
 	free(vs);

@@ -1378,12 +1378,11 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 		node_to_str(sender), lock_type, vid);
 
 	ret = vdi_lock(vid, &sender->nid, req->vdi.acl);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("locking %"PRIx32" failed: %s", vid, sd_strerror(ret));
-		return ret;
-	}
+	if (ret != SD_RES_SUCCESS)
+		sd_err("locking VDI %"PRIx32" failed: %s",
+		       vid, sd_strerror(ret));
 
-	return SD_RES_SUCCESS;
+	return ret;
 }
 
 static int cluster_release_vdi_main(const struct sd_req *req,
@@ -1392,6 +1391,7 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 {
 	uint32_t vid = req->vdi.base_vdi_id;
 	const char *lock_type = acl_lock_type(req->vdi.acl);
+	int ret = SD_RES_SUCCESS;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
@@ -1407,9 +1407,11 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 	sd_info("node: %s is unlocking VDI (type: %s): %"PRIx32,
 		node_to_str(sender), lock_type, vid);
 
-	vdi_unlock(vid, &sender->nid, req->vdi.acl);
-
-	return SD_RES_SUCCESS;
+	ret = vdi_unlock(vid, &sender->nid, req->vdi.acl);
+	if (ret != SD_RES_SUCCESS)
+		sd_err("unlocking VDI %"PRIx32" failed: %s",
+		       vid, sd_strerror(ret));
+	return ret;
 }
 
 static int cluster_register_vdi_work(struct request *req)
@@ -1438,11 +1440,11 @@ static int cluster_register_vdi_main(const struct sd_req *req,
 	uint32_t vid = rsp->vdi.vdi_id;
 	struct node_id owner;
 	const char *lock_type = acl_lock_type(req->reg.acl);
-	int ret;
+	int ret = SD_RES_SUCCESS;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
-		return SD_RES_SUCCESS;
+		return ret;
 	}
 
 	memcpy(owner.addr, req->reg.addr, sizeof(owner.addr));
@@ -1451,20 +1453,17 @@ static int cluster_register_vdi_main(const struct sd_req *req,
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
 		sd_debug("logging vdi register information for later replay");
 		log_vdi_op_lock(vid, &owner, req->reg.acl);
-		return SD_RES_SUCCESS;
-	}
-
-	sd_info("node: %s registering for VDI (type: %s): %"PRIx32,
-		node_id_to_str(&owner, false), lock_type, vid);
-
-	ret = vdi_lock(vid, &owner, req->vdi.acl);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("registering %"PRIx32" failed: %s",
-		       vid, sd_strerror(ret));
 		return ret;
 	}
 
-	return SD_RES_SUCCESS;
+	sd_info("registering node %s for VDI (type: %s): %"PRIx32,
+		node_id_to_str(&owner, false), lock_type, vid);
+
+	ret = vdi_lock(vid, &owner, req->vdi.acl);
+	if (ret != SD_RES_SUCCESS)
+		sd_err("registering node %s for VDI %"PRIx32" failed: %s",
+		       node_id_to_str(&owner, false), vid, sd_strerror(ret));
+	return ret;
 }
 
 static int cluster_unregister_vdi_main(const struct sd_req *req,
@@ -1474,10 +1473,11 @@ static int cluster_unregister_vdi_main(const struct sd_req *req,
 	uint32_t vid = req->reg.vid;
 	struct node_id owner;
 	const char *lock_type = acl_lock_type(req->reg.acl);
+	int ret = SD_RES_SUCCESS;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
-		return SD_RES_SUCCESS;
+		return ret;
 	}
 
 	memcpy(owner.addr, req->reg.addr, sizeof(owner.addr));
@@ -1486,15 +1486,17 @@ static int cluster_unregister_vdi_main(const struct sd_req *req,
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
 		sd_debug("logging vdi unregister information for later replay");
 		log_vdi_op_unlock(vid, &owner, req->reg.acl);
-		return SD_RES_SUCCESS;
+		return ret;
 	}
 
-	sd_info("node: %s is unregistering for VDI (type: %s): %"PRIx32,
+	sd_info("unregistering node %s for VDI (type: %s): %"PRIx32,
 		node_id_to_str(&owner, false), lock_type, vid);
 
-	vdi_unlock(vid, &owner, req->reg.acl);
-
-	return SD_RES_SUCCESS;
+	ret = vdi_unlock(vid, &owner, req->reg.acl);
+	if (ret != SD_RES_SUCCESS)
+		sd_err("unregistering node %s for VDI %"PRIx32" failed: %s",
+		       node_id_to_str(&owner, false), vid, sd_strerror(ret));
+	return ret;
 }
 
 /*
