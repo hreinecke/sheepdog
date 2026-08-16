@@ -767,7 +767,7 @@ int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 		case LOCK_STATE_SHARED:
 			sd_info("VDI %"PRIx32" is already locked by %"PRIx32,
 				vid, entry->acl);
-			ret = SD_RES_VDI_DENIED;
+			ret = SD_RES_VDI_LOCKED;
 			break;
 		default:
 			sd_alert("lock state of VDI (%"PRIx32") is unknown: %d",
@@ -778,7 +778,7 @@ int vdi_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 		case LOCK_STATE_SHARED:
-			if (entry->acl != acl) {
+			if (entry->acl && entry->acl != acl) {
 				sd_info("VDI %"PRIx32" is already locked by %"PRIx32,
 					vid, entry->acl);
 				ret = SD_RES_VDI_DENIED;
@@ -843,11 +843,11 @@ int vdi_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 	} else {		/* LOCK_TYPE_SHARED */
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
-			sd_alert("leaving from unlocked VDI: %"PRIx32, vid);
+			sd_info("unlocking unlocked VDI: %"PRIx32, vid);
 			ret = SD_RES_SUCCESS;
 			break;
 		case LOCK_STATE_SHARED:
-			if (acl != entry->acl) {
+			if (entry->acl && acl != entry->acl) {
 				sd_info("VDI %"PRIx32" is locked by %"PRIx32,
 					vid, entry->acl);
 				ret = SD_RES_VDI_DENIED;
@@ -1613,30 +1613,34 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 			goto out;
 
 		if (!strncmp(inode.name, name, sizeof(inode.name))) {
-			sd_debug("%s = %s, %u = %u", iocb->tag,
+			sd_debug("tag %s = %s, snap %u = %u", iocb->tag,
 				 inode.tag, iocb->snapid, inode.snap_id);
-			/*
-			 * Only VDIs with no ACLs can be shared.
-			 */
-			if (iocb->acl == LOCK_TYPE_SHARED && inode.acl_id) {
-				sd_debug("VDI %" PRIx32 " belongs to ACL %"
-					 PRIx32 ", cannot be shared",
-					 inode.vdi_id, inode.acl_id);
-				acl_denied = true;
-				continue;
-			}
-			/*
-			 * VDIs are only visible to the ACL specified in the
-			 * inode. LOCK_TYPE_ANY serves as a wildcard to allow
-			 * access to all VDIs.
-			 */
-			if (iocb->acl != LOCK_TYPE_ANY &&
-			    inode.acl_id != iocb->acl) {
-				sd_debug("VDI %" PRIx32 " belongs to ACL %"
-					 PRIx32 ", not %" PRIx32, inode.vdi_id,
-					 inode.acl_id, iocb->acl);
-				acl_denied = true;
-				continue;
+			if (iocb->acl == LOCK_TYPE_SHARED) {
+				/*
+				 * Only VDIs with no ACLs can be shared.
+				 */
+				if (inode.acl_id) {
+					sd_debug("VDI %" PRIx32 " belongs to "
+						 "ACL %" PRIx32 " and cannot "
+						 "be shared",
+						 inode.vdi_id, inode.acl_id);
+					acl_denied = true;
+					continue;
+				}
+			} else if (iocb->acl != LOCK_TYPE_ANY) {
+				/*
+				 * VDIs are only visible to the ACL specified
+				 * in the inode. LOCK_TYPE_ANY serves as a
+				 * wildcard allowing access to all VDIs.
+				 */
+				if (inode.acl_id != iocb->acl) {
+					sd_debug("VDI %" PRIx32 " belongs to "
+						 "ACL %" PRIx32 ", not %"
+						 PRIx32, inode.vdi_id,
+						 inode.acl_id, iocb->acl);
+					acl_denied = true;
+					continue;
+				}
 			}
 			if (vdi_has_tag(iocb)) {
 				/* Read, delete, clone on snapshots */
