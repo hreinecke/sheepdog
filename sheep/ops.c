@@ -1319,6 +1319,24 @@ static int local_repair_replica(struct request *req)
 	return ret;
 }
 
+static const char *acl_lock_type(uint32_t acl_id)
+{
+	const char *lock_type;
+
+	switch (acl_id) {
+	case  LOCK_TYPE_NORMAL:
+		lock_type = "normal";
+		break;
+	case LOCK_TYPE_SHARED:
+		lock_type = "shared";
+		break;
+	default:
+		lock_type = "ACL";
+		break;
+	}
+	return lock_type;
+}
+
 static int cluster_lock_vdi_work(struct request *req)
 {
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
@@ -1342,6 +1360,7 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 				 void *data, const struct sd_node *sender)
 {
 	uint32_t vid = rsp->vdi.vdi_id;
+	const char *lock_type = acl_lock_type(req->vdi.acl);
 	int ret;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
@@ -1356,8 +1375,7 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 	}
 
 	sd_info("node: %s is locking VDI (type: %s): %"PRIx32,
-		node_to_str(sender),
-		req->vdi.acl == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
+		node_to_str(sender), lock_type, vid);
 
 	ret = vdi_lock(vid, &sender->nid, req->vdi.acl);
 	if (ret != SD_RES_SUCCESS) {
@@ -1373,6 +1391,7 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 				    const struct sd_node *sender)
 {
 	uint32_t vid = req->vdi.base_vdi_id;
+	const char *lock_type = acl_lock_type(req->vdi.acl);
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
@@ -1386,8 +1405,7 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 	}
 
 	sd_info("node: %s is unlocking VDI (type: %s): %"PRIx32,
-		node_to_str(sender),
-		req->vdi.acl == LOCK_TYPE_NORMAL ? "normal" : "shared", vid);
+		node_to_str(sender), lock_type, vid);
 
 	vdi_unlock(vid, &sender->nid, req->vdi.acl);
 
@@ -1419,7 +1437,7 @@ static int cluster_register_vdi_main(const struct sd_req *req,
 {
 	uint32_t vid = rsp->vdi.vdi_id;
 	struct node_id owner;
-	const char *lock_type;
+	const char *lock_type = acl_lock_type(req->reg.acl);
 	int ret;
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
@@ -1436,17 +1454,6 @@ static int cluster_register_vdi_main(const struct sd_req *req,
 		return SD_RES_SUCCESS;
 	}
 
-	switch (req->reg.acl) {
-	case  LOCK_TYPE_NORMAL:
-		lock_type = "normal";
-		break;
-	case LOCK_TYPE_SHARED:
-		lock_type = "shared";
-		break;
-	default:
-		lock_type = "ACL";
-		break;
-	}
 	sd_info("node: %s registering for VDI (type: %s): %"PRIx32,
 		node_id_to_str(&owner, false), lock_type, vid);
 
@@ -1466,7 +1473,7 @@ static int cluster_unregister_vdi_main(const struct sd_req *req,
 {
 	uint32_t vid = req->reg.vid;
 	struct node_id owner;
-	const char *lock_type;
+	const char *lock_type = acl_lock_type(req->reg.acl);
 
 	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
 		sd_debug("vdi lock is disabled");
@@ -1482,17 +1489,6 @@ static int cluster_unregister_vdi_main(const struct sd_req *req,
 		return SD_RES_SUCCESS;
 	}
 
-	switch (req->reg.acl) {
-	case  LOCK_TYPE_NORMAL:
-		lock_type = "normal";
-		break;
-	case LOCK_TYPE_SHARED:
-		lock_type = "shared";
-		break;
-	default:
-		lock_type = "ACL";
-		break;
-	}
 	sd_info("node: %s is unregistering for VDI (type: %s): %"PRIx32,
 		node_id_to_str(&owner, false), lock_type, vid);
 
