@@ -563,7 +563,7 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 	const struct vdi_state *found = bsearch(&key, u->sorted, u->nmemb,
 						sizeof(struct vdi_state),
 						compare_vdi_state_by_vid);
-	struct json_object *lock_obj = NULL;
+	struct json_object *lock_obj = NULL, *vdi_obj = NULL;
 
 	if (!found || found->lock_state == LOCK_STATE_UNLOCKED)
 		return;
@@ -571,15 +571,15 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 	const bool is_clone = (h->snap_id == 1 && h->parent_vdi_id != 0);
 
 	if (json_output) {
-		out_obj = json_object_new_object();
-		JSON_ADD_STRING(out_obj, "name", name);
-		JSON_ADD_INT(out_obj, "vdi_id", vid);
+		vdi_obj = json_object_new_object();
+		JSON_ADD_STRING(vdi_obj, "name", name);
+		JSON_ADD_INT(vdi_obj, "vdi_id", vid);
 		if (found->acl != 0)
-			JSON_ADD_INT(out_obj, "acl_id", found->acl);
+			JSON_ADD_INT(vdi_obj, "acl_id", found->acl);
 		if (vdi_is_snapshot(h))
-			JSON_ADD_INT(out_obj, "snap_id", snapid);
+			JSON_ADD_INT(vdi_obj, "snap_id", snapid);
 		if (strlen(tag))
-			JSON_ADD_STRING(out_obj, "tag", tag);
+			JSON_ADD_STRING(vdi_obj, "tag", tag);
 	} else
 		printf("%c %-8s  %5" PRIu32 "  %6" PRIx32 " %6" PRIx32 "  %-13s ",
 		       vdi_is_snapshot(h) ? 's' : (is_clone ? 'c' : ' '),
@@ -591,7 +591,8 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 			JSON_ADD_STRING(lock_obj, "holder",
 					node_id_to_str(&found->lock_owner,
 						       false));
-			json_object_object_add(out_obj, "lock_state", lock_obj);
+			json_object_object_add(vdi_obj, "lock_state", lock_obj);
+			json_object_array_add(out_obj, vdi_obj);
 		} else
 			printf(" %s\n", node_id_to_str(&found->lock_owner,
 						       false));
@@ -601,6 +602,7 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 	/* LOCK_STATE_SHARED */
 	if (json_output)
 		lock_obj = json_object_new_array();
+
 	for (uint32_t j = 0; j < found->nr_participants; j++) {
 		const struct node_id *nid = &found->participants[j];
 		const uint32_t state = found->participants_state[j];
@@ -636,12 +638,9 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 		}
 	}
 	if (json_output) {
-		const char *o;
-		json_object_object_add(out_obj, "lock_state", lock_obj);
+		json_object_object_add(vdi_obj, "lock_state", lock_obj);
 
-		o = json_object_to_json_string(out_obj);
-		printf("%s\n", o);
-		json_object_put(out_obj);
+		json_object_array_add(out_obj, vdi_obj);
 	} else
 		printf("\n");
 }
@@ -3639,9 +3638,19 @@ static int lock_list(int argc, char **argv)
 
 	if (!json_output)
 		printf("  Name         Id  VDI id  Tag            Owner node(s)\n");
+	else
+		out_obj = json_object_new_array();
 
 	struct lock_list_data data = { .sorted = vs, .nmemb = nmemb };
 	ret = parse_vdi(print_lock_list, SD_INODE_SIZE, &data, true, false);
+
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	ret = ret ? EXIT_SYSFAIL : EXIT_SUCCESS;
 
 out:
@@ -4034,6 +4043,10 @@ static int vdi_parser(int ch, const char *opt)
 	case 'A':
 		if (!strcmp(opt, "any")) {
 			vdi_cmd_data.acl_id = ACL_ANY_ID;
+			break;
+		}
+		if (!strcmp(opt, "shared")) {
+			vdi_cmd_data.acl_id = LOCK_TYPE_SHARED;
 			break;
 		}
 		if (strlen(opt) >= SD_MAX_VDI_LEN) {
