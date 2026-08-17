@@ -1,0 +1,157 @@
+QA output created by 121
+using backend plain store
+Create ACLs and VDIs
+{ "vdi_id": 9370536 }
+{ "vdi_id": 7945294 }
+[
+  {
+    "name": "vdi_one",
+    "vdi_id": 6032141,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_three",
+    "vdi_id": 6464925,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_four",
+    "vdi_id": 7182075,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  },
+  {
+    "name": "vdi_two",
+    "vdi_id": 9225831,
+    "vdi_size": 16777216,
+    "object_size": 0,
+    "is_snapshot": false,
+    "is_clone": false,
+    "nr_copies": 3,
+    "block_size_shift": 22
+  }
+]
+add VDIs to the ACL
+[
+  {
+    "name": "acl_two",
+    "vdi_id": 7945294,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [],
+    "member": []
+  },
+  {
+    "name": "acl_one",
+    "vdi_id": 9370536,
+    "vdi_size": 12587576,
+    "is_snapshot": false,
+    "is_clone": false,
+    "vdi": [
+      {
+        "name": "vdi_one",
+        "vdi_id": 6032141,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      },
+      {
+        "name": "vdi_two",
+        "vdi_id": 9225831,
+        "acl_id": 9370536,
+        "vdi_size": 16777216,
+        "is_snapshot": false,
+        "is_clone": false
+      }
+    ],
+    "member": []
+  }
+]
+Lock VDI with exclusive lock (expect 2 errors)
+[
+  {
+    "name": "vdi_three",
+    "vdi_id": 6464925,
+    "lock_state": {
+      "holder": "IPv4 ip:192.168.122.100 port:7000"
+    }
+  }
+]
+Failed to lock VDI vdi_three (vid=62a59d): VDI is already locked
+Failed to unlock VDI vdi_three: Permission denied accessing VDI
+[]
+Lock VDI with shared lock (expect 2 errors)
+Failed to lock VDI vdi_three (vid=62a59d): VDI is already locked
+Failed to find VDI vdi_three: Permission denied accessing VDI
+[
+  {
+    "name": "vdi_three",
+    "vdi_id": 6464925,
+    "lock_state": [
+      {
+        "holder": "IPv4 ip:192.168.122.100 port:7000",
+        "state": "modified"
+      },
+      {
+        "holder": "IPv4 ip:192.168.122.101 port:7000",
+        "state": "invalidated"
+      }
+    ]
+  }
+]
+[]
+Lock VDI with ACL lock (expect 3 errors)
+Failed to find VDI vdi_one: Permission denied accessing VDI
+Failed to find VDI vdi_one: Permission denied accessing VDI
+Failed to find VDI vdi_one: Permission denied accessing VDI
+[
+  {
+    "name": "vdi_one",
+    "vdi_id": 6032141,
+    "acl_id": 9370536,
+    "lock_state": [
+      {
+        "holder": "IPv4 ip:192.168.122.100 port:7000",
+        "state": "modified"
+      },
+      {
+        "holder": "IPv4 ip:192.168.122.101 port:7000",
+        "state": "invalidated"
+      }
+    ]
+  },
+  {
+    "name": "vdi_two",
+    "vdi_id": 9225831,
+    "acl_id": 9370536,
+    "lock_state": [
+      {
+        "holder": "IPv4 ip:192.168.122.100 port:7000",
+        "state": "modified"
+      },
+      {
+        "holder": "IPv4 ip:192.168.122.101 port:7000",
+        "state": "invalidated"
+      }
+    ]
+  }
+]
+Unlocking VDI with ACL lock (expect 1 error)
+Failed to unlock VDI vdi_two: VDI is not locked
+[]

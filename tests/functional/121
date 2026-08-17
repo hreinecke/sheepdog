@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Test 'dog vdi lock' and 'dog vdi unlock'
+
+. ./common
+
+for i in 0 1 2 3 4; do
+    _start_sheep $i
+done
+
+err=0
+
+_wait_for_sheep 5
+_cluster_format -c 3 -l
+
+echo "Create ACLs and VDIs"
+$DOG acl create acl_one -v -j
+$DOG acl create acl_two -v -j
+$DOG vdi create vdi_one 16M
+$DOG vdi create vdi_two 16M
+$DOG vdi create vdi_three 16M
+$DOG vdi create vdi_four 16M
+
+_vdi_list_json
+
+echo "add VDIs to the ACL"
+$DOG acl add vdi acl_one vdi_one
+$DOG acl add vdi acl_one vdi_two
+
+_acl_list_json
+
+echo "Lock VDI with exclusive lock (expect 2 errors)"
+$DOG vdi lock lock vdi_three || err=1
+$DOG vdi lock list -j | jq
+$DOG vdi lock lock -p 7001 vdi_three && err=1
+$DOG vdi lock unlock -p 7001 vdi_three && err=1
+$DOG vdi lock unlock vdi_three || err=1
+
+$DOG vdi lock list -j | jq
+
+echo "Lock VDI with shared lock (expect 2 errors)"
+$DOG vdi lock lock vdi_three -A shared || err=1
+$DOG vdi lock lock -p 7001 vdi_three -A shared || err=1
+$DOG vdi lock lock -p 7002 vdi_three && err=1
+$DOG vdi lock lock -p 7003 vdi_three -A acl_one && err=1
+$DOG vdi lock list -A any -j | jq
+$DOG vdi lock unlock -p 7001 vdi_three -A shared || err=1
+$DOG vdi lock unlock vdi_three -A shared || err=1
+
+$DOG vdi lock list -j | jq
+
+echo "Lock VDI with ACL lock (expect 3 errors)"
+$DOG vdi lock lock vdi_one -A acl_one || err=1
+$DOG vdi lock lock vdi_one -p 7001 -A acl_one || err=1
+$DOG vdi lock lock vdi_one -p 7001 -A acl_one || err=1
+$DOG vdi lock lock vdi_two -A acl_one || err=1
+$DOG vdi lock lock vdi_two -p 7001 -A acl_one || err=1
+$DOG vdi lock lock vdi_one -p 7002 && err=1
+$DOG vdi lock lock vdi_one -p 7002 -A shared && err=1
+$DOG vdi lock lock vdi_one -A acl_two && err=1
+$DOG vdi lock list -j | jq
+
+echo "Unlocking VDI with ACL lock (expect 1 error)"
+$DOG vdi lock unlock vdi_two -A acl_one || err=1
+$DOG vdi lock unlock vdi_two -A acl_one && err=1
+$DOG vdi lock unlock vdi_two -p 7001 -A acl_one || err=1
+$DOG vdi lock unlock vdi_one -p 7001 -A acl_one || err=1
+$DOG vdi lock unlock vdi_one -p 7001 -A acl_one || err=1
+$DOG vdi lock unlock vdi_one -A acl_one || err=1
+
+$DOG vdi lock list -j | jq
+exit $err
