@@ -759,8 +759,10 @@ static int del_participant(struct vdi_state_entry *entry,
 		memcpy(&entry->participants[i], &entry->participants[i + 1],
 		       sizeof(entry->participants[i]));
 		entry->participants_state[i] = entry->participants_state[i + 1];
+		entry->participants_count[i] = entry->participants_count[i + 1];
 	}
 	entry->nr_participants--;
+	entry->participants_count[entry->nr_participants] = 0;
 	ls->index = 0;
 	ls->count = 0;
 
