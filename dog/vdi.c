@@ -122,6 +122,15 @@ static uint32_t vdi_acl_id(void)
 	return acl_id;
 }
 
+/* The ACL '-A' was given as, for the messages which name it back */
+static const char *acl_option_name(void)
+{
+	if (strlen(vdi_cmd_data.acl_name))
+		return vdi_cmd_data.acl_name;
+
+	return "none";
+}
+
 static int parse_vdi_address(const char *opt, struct node_id *owner)
 {
 	int port;
@@ -813,8 +822,10 @@ static int vdi_create(int argc, char **argv)
 	}
 	acl_id = vdi_acl_id();
 	/* One cannot create a VDI with ACL 'any' */
-	if (acl_id == LOCK_TYPE_ANY)
+	if (acl_id == LOCK_TYPE_ANY) {
+		sd_err("'any' cannot be the ACL of a new VDI");
 		return EXIT_FAILURE;
+	}
 	ret = option_parse_size(argv[optind], &size);
 	if (ret < 0)
 		return EXIT_USAGE;
@@ -1012,8 +1023,10 @@ static int vdi_snapshot(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	/* the snapshot joins the ACL of the VDI it is taken from */
-	if (acl_id == LOCK_TYPE_ANY)
+	if (acl_id == LOCK_TYPE_ANY) {
+		sd_err("'any' cannot be the ACL of a new VDI");
 		return EXIT_FAILURE;
+	}
 
 	ret = find_vdi_name(vdiname, vdi_cmd_data.snapshot_id,
 			    vdi_cmd_data.snapshot_tag, acl_id,
@@ -1143,7 +1156,8 @@ static int vdi_clone(int argc, char **argv)
 		goto out;
 	}
 	/* the clone joins the ACL of the VDI it is cloned from */
-	if (acl_id != LOCK_TYPE_ANY) {
+	if (acl_id == LOCK_TYPE_ANY) {
+		sd_err("'any' cannot be the ACL of a new VDI");
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -1438,8 +1452,10 @@ static int vdi_rollback(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	/* the working VDI is recreated, so it needs an ACL to be created in */
-	if (acl_id == LOCK_TYPE_ANY)
+	if (acl_id == LOCK_TYPE_ANY) {
+		sd_err("'any' cannot be the ACL of a new VDI");
 		return EXIT_FAILURE;
+	}
 
 	ret = read_vdi_obj(vdiname, snap_id, vdi_cmd_data.snapshot_tag,
 			   acl_id, &base_vid, &inode, sizeof(inode));
@@ -3574,7 +3590,7 @@ static int vdi_alter_acl(int argc, char **argv)
 {
 	const char *vdiname = argv[optind++];
 	const uint32_t old_acl = vdi_acl_id();
-	const char *old_name = vdi_cmd_data.acl_name;
+	const char *old_name = acl_option_name();
 	const char *new_name = argv[optind];
 	uint32_t new_acl = 0;
 	int ret;
