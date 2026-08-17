@@ -437,7 +437,7 @@ struct vdi_state {
 	/* for iSCSI multipath */
 	uint32_t nr_participants;
 	/*
-	 * XXX: participants should be able to have arbital length
+	 * XXX: participants should be able to have arbitrary lengths
 	 *
 	 * But if a number of tgtd can be equal to SD_MAX_COPIES, sheepdog can
 	 * tolerate enough hardware faults.
