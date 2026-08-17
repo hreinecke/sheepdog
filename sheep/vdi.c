@@ -380,6 +380,29 @@ uint8_t get_vdi_block_size_shift(uint32_t vid)
 	return entry->block_size_shift;
 }
 
+/*
+ * The ACL a VDI is already registered with.  Re-registering an existing VDI
+ * must not re-file it, so a caller which only means to update some other part
+ * of its state passes the recorded ACL back in.
+ */
+uint32_t get_vdi_acl(uint32_t vid, uint32_t default_acl)
+{
+	struct vdi_state_entry *entry;
+	uint32_t acl = default_acl;
+
+	sd_read_lock(&vdi_state_lock);
+	entry = vdi_state_search(&vdi_state_root, vid);
+	if (entry)
+		acl = entry->acl;
+	sd_rw_unlock(&vdi_state_lock);
+
+	if (!entry)
+		sd_alert("ACL for %" PRIx32 " not found, set %" PRIx32,
+			 vid, default_acl);
+
+	return acl;
+}
+
 int get_obj_copy_number(uint64_t oid, int nr_zones)
 {
 	return min(get_vdi_copy_number(oid_to_vid(oid)), nr_zones);

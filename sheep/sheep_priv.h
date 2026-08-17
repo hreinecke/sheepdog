@@ -374,6 +374,7 @@ int get_vdi_copy_number(uint32_t vid);
 int get_vdi_copy_policy(uint32_t vid);
 uint32_t get_vdi_object_size(uint32_t vid);
 uint8_t get_vdi_block_size_shift(uint32_t vid);
+uint32_t get_vdi_acl(uint32_t vid, uint32_t default_acl);
 int get_obj_copy_number(uint64_t oid, int nr_zones);
 int get_req_copy_number(struct request *req);
 int add_vdi_state(uint32_t vid, uint32_t acl, int nr_copies, bool snapshot,

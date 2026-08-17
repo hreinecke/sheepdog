@@ -681,8 +681,15 @@ static int cluster_notify_vdi_add(const struct sd_req *req, struct sd_rsp *rsp,
 				  void *data, const struct sd_node *sender)
 {
 	if (req->vdi_state.old_vid)
-		/* make the previous working vdi a snapshot */
-		add_vdi_state(req->vdi_state.old_vid, req->vdi_state.acl,
+		/*
+		 * Make the previous working vdi a snapshot.  It keeps the ACL
+		 * it was created in: for a clone the old vid is the source
+		 * snapshot, which belongs to a different family than the VDI
+		 * being added and must not be re-filed along with it.
+		 */
+		add_vdi_state(req->vdi_state.old_vid,
+			      get_vdi_acl(req->vdi_state.old_vid,
+					  req->vdi_state.acl),
 			      get_vdi_copy_number(req->vdi_state.old_vid),
 			      true, req->vdi_state.copy_policy,
 			      get_vdi_block_size_shift(req->vdi_state.old_vid),
