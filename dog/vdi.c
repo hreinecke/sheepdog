@@ -591,7 +591,8 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 
 	for (uint32_t j = 0; j < found->nr_participants; j++) {
 		const struct node_id *nid = &found->participants[j];
-		const uint32_t state = found->participants_state[j];
+		const uint32_t state = found->participants_state[j] & 0xF;
+		const uint32_t count = found->participants_state[j] >> 8;
 		const char *state_str = NULL;
 
 		switch(state) {
@@ -617,6 +618,7 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 			JSON_ADD_STRING(holder_obj, "holder",
 					node_id_to_str(nid, false));
 			JSON_ADD_STRING(holder_obj, "state", state_str);
+			JSON_ADD_INT(holder_obj, "count", count);
 			json_object_array_add(lock_obj, holder_obj);
 		} else {
 			printf(" %s(%s)", node_id_to_str(nid, false),

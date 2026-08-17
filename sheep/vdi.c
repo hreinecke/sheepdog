@@ -537,8 +537,10 @@ int fill_vdi_state_list(const struct sd_req *hdr,
 		vs[last].nr_participants = entry->nr_participants;
 		vs[last].parent_vid = entry->parent_vid;
 		for (int i = 0; i < vs[last].nr_participants; i++) {
-			vs[last].participants_state[i] =
-				entry->participants_state[i];
+			uint32_t state = entry->participants_state[i];
+
+			state |= (entry->participants_count[i] << 8);
+			vs[last].participants_state[i] = state;
 			vs[last].participants[i] = entry->participants[i];
 		}
 
@@ -730,7 +732,7 @@ static int add_participant(struct vdi_state_entry *entry,
 }
 
 static int del_participant(struct vdi_state_entry *entry,
-			   struct vdi_lock_state *ls, bool remove_all)
+			   struct vdi_lock_state *ls)
 {
 	int idx = -1;
 
@@ -747,13 +749,11 @@ static int del_participant(struct vdi_state_entry *entry,
 	if (idx == -1)
 		return SD_RES_VDI_NOT_LOCKED;
 
-	if (!remove_all) {
-		entry->participants_count[idx]--;
-		if (entry->participants_count[idx]) {
-			ls->index = idx;
-			ls->count = entry->participants_count[idx];
-			return SD_RES_SUCCESS;
-		}
+	entry->participants_count[idx]--;
+	if (entry->participants_count[idx]) {
+		ls->index = idx;
+		ls->count = entry->participants_count[idx];
+		return SD_RES_SUCCESS;
 	}
 	for (int i = idx; i < entry->nr_participants - 1; i++) {
 		memcpy(&entry->participants[i], &entry->participants[i + 1],
@@ -900,7 +900,7 @@ int vdi_unlock(struct vdi_lock_state *ls)
 					ls->vid, entry->acl);
 				ret = SD_RES_VDI_DENIED;
 			} else {
-				ret = del_participant(entry, ls, false);
+				ret = del_participant(entry, ls);
 				if (ret != SD_RES_SUCCESS)
 					sd_err("failed to unlock VDI: "
 					       "%"PRIx32", error %s",
@@ -1044,7 +1044,7 @@ static void apply_vdi_lock_state_shared(struct vdi_lock_state *vs, bool lock)
 	if (lock)
 		ret = add_participant(entry, vs);
 	else {
-		ret = del_participant(entry, vs, false);
+		ret = del_participant(entry, vs);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("VDI %"PRIx32" failed to unlock, error %s",
 			       vs->vid, sd_strerror(ret));
@@ -1311,7 +1311,7 @@ main_fn void remove_node_from_participants(const struct node_id *left)
 		struct vdi_lock_state vs = {};
 
 		memcpy(&vs.owner, left, sizeof(*left));
-		del_participant(entry, &vs, true);
+		del_participant(entry, &vs);
 	}
 	sd_rw_unlock(&vdi_state_lock);
 
