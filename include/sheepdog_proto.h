@@ -174,9 +174,9 @@ struct sd_req {
 			uint32_t	snapid;
 			uint8_t		addr[16];
 			uint16_t	port;
-			uint16_t	tag;
-			uint32_t        acl;
-		} reg;
+			uint16_t	index;
+			uint32_t	acl;
+		} vdi_lock;
 
 		/* sheepdog-internal */
 		struct {
@@ -256,6 +256,14 @@ struct sd_rsp {
 			uint8_t		block_size_shift;
 			uint8_t		reserved[2];
 		} vdi;
+		struct {
+			uint32_t        vid;
+			uint32_t	snapid;
+			uint8_t		addr[16];
+			uint16_t	port;
+			uint16_t	count;
+			uint32_t	acl;
+		} vdi_lock;
 
 		/* sheepdog-internal */
 		struct {

@@ -3674,10 +3674,10 @@ static int lock_lock(int argc, char **argv)
 
 	if (!node_id_is_null(owner)) {
 		sd_init_req(&hdr, SD_OP_REGISTER_VDI);
-		hdr.reg.snapid = snapid;
-		hdr.reg.acl = acl_id;
-		memcpy(hdr.reg.addr, owner->addr, sizeof(owner->addr));
-		hdr.reg.port = owner->port;
+		hdr.vdi_lock.snapid = snapid;
+		hdr.vdi_lock.acl = acl_id;
+		memcpy(hdr.vdi_lock.addr, owner->addr, sizeof(owner->addr));
+		hdr.vdi_lock.port = owner->port;
 	} else {
 		sd_init_req(&hdr, SD_OP_LOCK_VDI);
 		hdr.vdi.snapid = snapid;
@@ -3780,10 +3780,10 @@ static int lock_unlock(int argc, char **argv)
 
 	if (!node_id_is_null(owner)) {
 		sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
-		hdr.reg.vid = vid;
-		hdr.reg.acl = acl_id;
-		memcpy(hdr.reg.addr, owner->addr, sizeof(owner->addr));
-		hdr.reg.port = owner->port;
+		hdr.vdi_lock.vid = vid;
+		hdr.vdi_lock.acl = acl_id;
+		memcpy(hdr.vdi_lock.addr, owner->addr, sizeof(owner->addr));
+		hdr.vdi_lock.port = owner->port;
 	} else {
 		sd_init_req(&hdr, SD_OP_RELEASE_VDI);
 		hdr.vdi.base_vdi_id = vid;

@@ -446,4 +446,13 @@ struct vdi_state {
 	struct node_id participants[SD_MAX_COPIES];
 };
 
+struct vdi_lock_state {
+	uint32_t vid;
+	uint32_t acl;
+	uint32_t count;
+	uint32_t index;
+	struct node_id owner;
+	uint32_t state;
+};
+
 #endif /* __INTERNAL_PROTO_H__ */
