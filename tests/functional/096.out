@@ -141,7 +141,7 @@ Options:
   -h, --help              display this help and exit
   -T, --time              show elapsed time
   -f, --force             do operation forcibly
-  -A, --acl               specify the ACL id for accessing the VDI
+  -A, --acl               specify the ACL for accessing the VDI
 
 -----
 
