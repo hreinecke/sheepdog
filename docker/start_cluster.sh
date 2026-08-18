@@ -1,8 +1,17 @@
 #!/bin/bash -x
 
 ENV="etcd-cluster.env"
-ETCD="etcd-cluster.yaml"
 SHEEP="sheep-cluster.yaml"
+DOG=../dog/dog
 
-docker compose --env-file ${ENV} -f ${ETCD} up -d
-docker compose --env-file ${ENV} -f ${SHEEP} up -d
+for node in $(seq 0 4); do
+    SHEEP_ZONE=${node} docker compose --env-file ${ENV} -f ${SHEEP} up -d sheep${node}
+done
+
+$DOG cluster format -l
+$DOG acl create nqn.subsys-1
+$DOG vdi create nqn.ns-1 64M
+$DOG vdi create nqn.ns-2 64M
+$DOG acl add vdi nqn.subsys-1 nqn.ns-1
+$DOG acl add vdi nqn.subsys-1 nqn.ns-2
+$DOG acl list -j | jq
