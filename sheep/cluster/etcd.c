@@ -1612,7 +1612,6 @@ static void etcd_json_to_rsp_vdi_lock(struct json_object *obj,
 		if (!strcmp(key, "vid"))
 			rsp->vdi_lock.vid =
 				json_object_get_int(val_obj);
-		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, snapid, key);
 		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, count, key);
 		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, acl, key);
 		else if (!strcmp(key, "nid")) {

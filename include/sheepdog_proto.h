@@ -257,8 +257,8 @@ struct sd_rsp {
 			uint8_t		reserved[2];
 		} vdi;
 		struct {
+			uint32_t	__pad;
 			uint32_t        vid;
-			uint32_t	snapid;
 			uint8_t		addr[16];
 			uint16_t	port;
 			uint16_t	count;
