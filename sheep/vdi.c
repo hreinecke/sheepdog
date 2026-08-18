@@ -670,7 +670,7 @@ static bool is_modified(struct vdi_state_entry *entry)
 static int add_participant(struct vdi_state_entry *entry,
 			   struct vdi_lock_state *ls)
 {
-	int idx;
+	int idx, free_idx = -1;
 
 	if (entry->lock_state == LOCK_STATE_UNLOCKED) {
 		sd_assert(!entry->nr_participants);
@@ -699,6 +699,10 @@ static int add_participant(struct vdi_state_entry *entry,
 	}
 
 	for (idx = 0; idx < entry->nr_participants; idx++) {
+		if (!entry->participants_count[idx]) {
+			free_idx = idx;
+			continue;
+		}
 		if (node_id_cmp(&entry->participants[idx], &ls->owner))
 			continue;
 
@@ -712,15 +716,16 @@ static int add_participant(struct vdi_state_entry *entry,
 			 entry->participants_count[idx]);
 		return SD_RES_SUCCESS;
 	}
-
-	idx = entry->nr_participants;
-	memcpy(&entry->participants[idx], &ls->owner, sizeof(ls->owner));
-	entry->participants_state[idx] =
+	if (free_idx == -1) {
+		free_idx = entry->nr_participants;
+		entry->nr_participants++;
+	}
+	memcpy(&entry->participants[free_idx], &ls->owner, sizeof(ls->owner));
+	entry->participants_state[free_idx] =
 		is_modified(entry) ?
 		SHARED_LOCK_STATE_INVALIDATED : SHARED_LOCK_STATE_SHARED;
-	entry->participants_count[idx] = 1;
-	entry->nr_participants++;
-	ls->index = idx;
+	entry->participants_count[free_idx] = 1;
+	ls->index = free_idx;
 	ls->count = entry->participants_count[ls->index];
 
 	sd_debug("new participant %s (%d) joined to VID: %"PRIx32
@@ -755,23 +760,26 @@ static int del_participant(struct vdi_state_entry *entry,
 		ls->count = entry->participants_count[idx];
 		return SD_RES_SUCCESS;
 	}
-	for (int i = idx; i < entry->nr_participants - 1; i++) {
-		memcpy(&entry->participants[i], &entry->participants[i + 1],
-		       sizeof(entry->participants[i]));
-		entry->participants_state[i] = entry->participants_state[i + 1];
-		entry->participants_count[i] = entry->participants_count[i + 1];
-	}
-	entry->nr_participants--;
-	entry->participants_count[entry->nr_participants] = 0;
+	memset(&entry->participants[idx], 0, sizeof(entry->participants[idx]));
+	entry->participants_count[idx] = 0;
+	entry->participants_state[idx] = 0;
+
+	if (idx == entry->nr_participants - 1)
+		entry->nr_participants--;
 	ls->index = 0;
 	ls->count = 0;
 
 	sd_debug("participant: %s is deleted, current participants are below:",
 		 node_id_to_str(&ls->owner, false));
-	for (int i = 0; i < entry->nr_participants; i++)
-		sd_debug("%d: %s count %d", i,
-			 node_id_to_str(&entry->participants[i], false),
-			 entry->participants_count[i]);
+	for (int i = 0; i < entry->nr_participants; i++) {
+		if (entry->participants_count[i]) {
+			sd_debug("%d: %s count %d", i,
+				 node_id_to_str(&entry->participants[i], false),
+				 entry->participants_count[i]);
+		} else {
+			sd_debug("%d: <empty>", i);
+		}
+	}
 
 	if (!entry->nr_participants)
 		entry->lock_state = LOCK_STATE_UNLOCKED;

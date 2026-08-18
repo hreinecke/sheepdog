@@ -609,6 +609,14 @@ static void print_lock_list(uint32_t vid, const char *name, const char *tag,
 		const uint32_t count = found->participants_state[j] >> 8;
 		const char *state_str = NULL;
 
+		if (!count) {
+			if (json_output) {
+				struct json_object *holder_obj =
+					json_object_new_object();
+				json_object_array_add(lock_obj, holder_obj);
+			}
+			continue;
+		}
 		switch(state) {
 		case SHARED_LOCK_STATE_MODIFIED:
 			state_str = "modified";
