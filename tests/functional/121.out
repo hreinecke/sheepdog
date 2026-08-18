@@ -146,12 +146,12 @@ Failed to find VDI vdi_one: Permission denied accessing VDI
     "acl_id": 9370536,
     "lock_state": [
       {
-        "holder": "IPv4 ip:192.168.122.100 port:7000",
+        "holder": "IPv4 ip:127.0.0.1 port:7000",
         "state": "modified",
         "count": 1
       },
       {
-        "holder": "IPv4 ip:192.168.122.101 port:7000",
+        "holder": "IPv4 ip:127.0.0.1 port:7001",
         "state": "invalidated",
         "count": 1
       }

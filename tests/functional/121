@@ -53,17 +53,17 @@ echo "Lock VDI with ACL lock (expect 3 errors)"
 $DOG vdi lock lock vdi_one -A acl_one || err=1
 $DOG vdi lock lock vdi_one -p 7001 -A acl_one || err=1
 $DOG vdi lock lock vdi_one -p 7001 -A acl_one || err=1
-$DOG vdi lock lock vdi_two -A acl_one || err=1
-$DOG vdi lock lock vdi_two -p 7001 -A acl_one || err=1
+$DOG vdi lock lock vdi_two -A acl_one -O 127.0.0.1:7000 || err=1
+$DOG vdi lock lock vdi_two -p 7001 -A acl_one -O 127.0.0.1:7001 || err=1
 $DOG vdi lock lock vdi_one -p 7002 && err=1
 $DOG vdi lock lock vdi_one -p 7002 -A shared && err=1
 $DOG vdi lock lock vdi_one -A acl_two && err=1
 $DOG vdi lock list -j | jq
 
 echo "Unlocking VDI with ACL lock (expect 1 error)"
-$DOG vdi lock unlock vdi_two -A acl_one || err=1
+$DOG vdi lock unlock vdi_two -A acl_one -O 127.0.0.1:7000 || err=1
 $DOG vdi lock unlock vdi_two -A acl_one && err=1
-$DOG vdi lock unlock vdi_two -p 7001 -A acl_one || err=1
+$DOG vdi lock unlock vdi_two -p 7001 -A acl_one -O 127.0.0.1:7001 || err=1
 $DOG vdi lock unlock vdi_one -p 7001 -A acl_one || err=1
 $DOG vdi lock unlock vdi_one -p 7001 -A acl_one || err=1
 $DOG vdi lock unlock vdi_one -A acl_one || err=1
