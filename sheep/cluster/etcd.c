@@ -1140,6 +1140,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	struct json_object *vdi_obj, *data_obj, *node_obj, *lock_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
 	struct sd_node *node;
+	struct node_id nid;
 
 	req_obj = json_object_new_object();
 	UPDATE_JSON_INT(req_obj, req, proto_ver);
@@ -1311,6 +1312,18 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, copies);
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, block_size_shift);
 		json_object_object_add(rsp_obj, "vdi", vdi_obj);
+		break;
+	case SD_OP_REGISTER_VDI:
+	case SD_OP_UNREGISTER_VDI:
+		memcpy(nid.addr, rsp->vdi_lock.addr, sizeof(nid.addr));
+		nid.port = rsp->vdi_lock.port;
+		vdi_obj = json_object_new_object();
+		json_object_object_add(vdi_obj, "nid",
+			json_object_new_string(node_id_to_str(&nid, false)));
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, vid);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, count);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, acl);
+		json_object_object_add(rsp_obj, "vdi_lock", vdi_obj);
 		break;
 	default:
 		break;
