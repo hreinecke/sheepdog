@@ -133,27 +133,41 @@ static const char *acl_option_name(void)
 
 static int parse_vdi_address(const char *opt, struct node_id *owner)
 {
-	int port;
-	char addr[MAX_NODE_STR_LEN];
+	int port = SD_LISTEN_PORT;
+	char addr[MAX_NODE_STR_LEN], *p, *e = NULL;
 
-	if (sscanf(opt, "[%s}:%d", addr, &port) == 2)
-		goto found;
-	if (sscanf(opt, "[%s]", addr) == 1) {
-		port = SD_LISTEN_PORT;
-		goto found;
-	}
-	if (sscanf(opt, "%s:%d", addr, &port) != 2) {
+	if (!opt)
+		goto invalid;
+	if (strlen(opt) >= MAX_NODE_STR_LEN)
+		goto invalid;
+	if (opt[0] == '[') {
+		strcpy(addr, opt + 1);
+		p = strchr(addr, ']');
+		if (!p)
+			goto invalid;
+		*p = '\0';
+		p++;
+		p = strchr(p, ':');
+	} else {
 		strcpy(addr, opt);
-		port = SD_LISTEN_PORT;
+		p = strchr(addr, ':');
 	}
-found:
-	if (!str_to_addr(addr, owner->addr)) {
-		sd_err("Invalid ip address %s", addr);
-		return -1;
+	if (p) {
+		*p = '\0';
+		p++;
+		port = strtoul(p, &e, 10);
+		if (p == e)
+			goto invalid;
 	}
+
+	if (!str_to_addr(addr, owner->addr))
+		goto invalid;
 	owner->port = port;
 
 	return 0;
+invalid:
+	sd_err("Invalid ip address %s", addr);
+	return -1;
 }
 
 struct get_vdi_info {
