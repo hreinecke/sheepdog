@@ -537,6 +537,11 @@ void queue_request(struct request *req)
 		rsp->result = SD_RES_INVALID_PARMS;
 		goto done;
 	}
+	if (unlikely(uatomic_read(&sys->nr_drain_waiters) > 0)) {
+		sd_debug("%s aborting due to reset", op_name(req->op));
+		rsp->result = SD_RES_RESET;
+		goto done;
+	}
 
 	sd_debug("%s, %d", op_name(req->op), sys_get_status());
 
@@ -762,7 +767,6 @@ struct request *alloc_request(struct client_info *ci, uint32_t data_length)
 	INIT_LIST_NODE(&req->request_list);
 	INIT_LIST_NODE(&req->pending_list);
 	uatomic_inc(&sys->nr_outstanding_reqs);
-
 	return req;
 }
 
