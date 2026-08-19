@@ -93,12 +93,11 @@ static int node_info(int argc, char **argv)
 			struct json_object *node_obj =
 				json_object_new_object();
 
-			json_object_object_add(node_obj, "size",
-				json_object_new_int(rsp->node.store_size));
-			json_object_object_add(node_obj, "used",
-				json_object_new_int(used));
-			json_object_object_add(node_obj, "free",
-				json_object_new_int(rsp->node.store_free));
+			JSON_ADD_UINT64(node_obj, "size",
+					rsp->node.store_size);
+			JSON_ADD_UINT64(node_obj, "used", used);
+			JSON_ADD_UINT64(node_obj, "free",
+					rsp->node.store_free);
 			json_object_object_add(node_obj, "ratio",
 				json_object_new_double(rsp->node.store_size ?
 						       ratio : 0));
@@ -135,17 +134,13 @@ static int node_info(int argc, char **argv)
 		const char *o;
 
 		json_object_object_add(out_obj, "nodes", nodes_obj);
-		json_object_object_add(tot_obj, "size",
-				       json_object_new_int(total_size));
-		json_object_object_add(tot_obj, "used",
-				       json_object_new_int(used));
-		json_object_object_add(tot_obj, "free",
-				       json_object_new_int(total_avail));
+		JSON_ADD_UINT64(tot_obj, "size", total_size);
+		JSON_ADD_UINT64(tot_obj, "used", used);
+		JSON_ADD_UINT64(tot_obj, "free", total_avail);
 		json_object_object_add(tot_obj, "ratio",
 				       json_object_new_double(ratio));
 		json_object_object_add(out_obj, "total", tot_obj);
-		json_object_object_add(out_obj, "vdi_size",
-				       json_object_new_int(total_vdi_size));
+		JSON_ADD_UINT64(out_obj, "vdi_size", total_vdi_size);
 		o = json_object_to_json_string(out_obj);
 		printf("%s\n", o);
 		json_object_put(out_obj);
