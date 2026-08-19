@@ -51,6 +51,7 @@ add VDIs to the ACL
     "name": "acl_two",
     "vdi_id": 7945294,
     "vdi_size": 12587576,
+    "vdi_epoch": 0,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [],
@@ -60,6 +61,7 @@ add VDIs to the ACL
     "name": "acl_one",
     "vdi_id": 9370536,
     "vdi_size": 12587576,
+    "vdi_epoch": 2,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [
@@ -68,6 +70,7 @@ add VDIs to the ACL
         "vdi_id": 6032141,
         "acl_id": 9370536,
         "vdi_size": 16777216,
+        "vdi_epoch": 0,
         "is_snapshot": false,
         "is_clone": false
       },
@@ -76,6 +79,7 @@ add VDIs to the ACL
         "vdi_id": 9225831,
         "acl_id": 9370536,
         "vdi_size": 16777216,
+        "vdi_epoch": 0,
         "is_snapshot": false,
         "is_clone": false
       }

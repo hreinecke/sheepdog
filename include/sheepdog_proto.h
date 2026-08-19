@@ -392,7 +392,7 @@ struct sd_inode_header {
 	uint32_t max_data_id_nr;
 	uint32_t __unused0;
 	uint64_t vdi_size;
-	uint64_t vm_state_size;
+	uint64_t vdi_epoch;
 	uint8_t  copy_policy;
 	uint8_t  store_policy;
 	uint8_t  nr_copies;

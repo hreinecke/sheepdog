@@ -622,10 +622,9 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 			     uint32_t snapid, uint32_t flags,
 			     const struct sd_inode *i, void *data)
 {
-	uint64_t vdi_oid = vid_to_vdi_oid(vid), vmstate_oid;
+	uint64_t vdi_oid = vid_to_vdi_oid(vid);
 	uint32_t vdi_id;
-	uint32_t nr_objs, nr_vmstate_object;
-	uint32_t object_size = (UINT32_C(1) << i->header.block_size_shift);
+	uint32_t nr_objs;
 	struct vdi_option *opt = (struct vdi_option *)data;
 	bool matched;
 
@@ -667,14 +666,6 @@ static void fill_object_tree(uint32_t vid, const char *name, const char *tag,
 	} else
 		sd_inode_index_walk(i, fill_cb, &i);
 
-	/* fill vmstate object id */
-	nr_vmstate_object = DIV_ROUND_UP(i->header.vm_state_size, object_size);
-	for (uint32_t idx = 0; idx < nr_vmstate_object; idx++) {
-		vmstate_oid = vid_to_vmstate_oid(vid, idx);
-		object_tree_insert(vmstate_oid, i->header.nr_copies,
-				   i->header.copy_policy,
-				   i->header.block_size_shift);
-	}
 }
 
 static int save_snapshot(int argc, char **argv)

@@ -1324,6 +1324,7 @@ static int vdi_resize(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 	inode.vdi_size = new_size;
+	inode.vdi_epoch++;
 
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
 			       &inode, SD_INODE_HEADER_SIZE, 0,
@@ -3241,6 +3242,8 @@ static int vdi_object_dump_inode(int argc, char **argv)
 			     hdr->vdi_id);
 		JSON_ADD_INT(out_obj, "parent_vdi_id",
 			     hdr->parent_vdi_id);
+		JSON_ADD_UINT64(out_obj, "vdi_epoch",
+				hdr->vdi_epoch);
 		JSON_ADD_INT(out_obj, "btree_counter",
 			     hdr->btree_counter);
 		if (hdr->vdi_flags & SD_VDI_FLAG_ACL) {

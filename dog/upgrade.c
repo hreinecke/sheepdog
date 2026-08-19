@@ -388,7 +388,6 @@ static int upgrade_inode_convert(int argc, char **argv)
 		memcpy(dst->header.tag, orig_0_7->tag, SD_MAX_VDI_TAG_LEN);
 		dst->header.create_time = orig_0_7->create_time;
 		dst->header.vdi_size = orig_0_7->vdi_size;
-		dst->header.vm_state_size = orig_0_7->vm_state_size;
 		dst->header.copy_policy = orig_0_7->copy_policy;
 		dst->header.nr_copies = orig_0_7->nr_copies;
 		dst->header.block_size_shift = orig_0_7->block_size_shift;
@@ -414,7 +413,6 @@ static int upgrade_inode_convert(int argc, char **argv)
 		memcpy(dst->header.tag, orig_0_8->tag, SD_MAX_VDI_TAG_LEN);
 		dst->header.create_time = orig_0_8->create_time;
 		dst->header.vdi_size = orig_0_8->vdi_size;
-		dst->header.vm_state_size = orig_0_8->vm_state_size;
 		dst->header.copy_policy = orig_0_8->copy_policy;
 		dst->header.nr_copies = orig_0_8->nr_copies;
 		dst->header.block_size_shift = orig_0_8->block_size_shift;

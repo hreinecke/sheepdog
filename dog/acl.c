@@ -350,6 +350,8 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 		if (vdi_is_snapshot(&i->header))
 			JSON_ADD_INT(vdi_obj, "snapid", snapid);
 		JSON_ADD_STRING(vdi_obj, "create_time", dbuf);
+		JSON_ADD_UINT64(vdi_obj, "vdi_epoch",
+				i->header.vdi_epoch);
 		JSON_ADD_BOOL(vdi_obj, "is_snapshot",
 				 vdi_is_snapshot(&i->header));
 		JSON_ADD_BOOL(vdi_obj, "is_clone", is_clone);
@@ -572,13 +574,11 @@ static int acl_add_vdi(int argc, char **argv)
 		goto out;
 	}
 
-	/* And finally the upper limit of the mapping table */
+	/* And finally update the header */
 	inode->header.max_data_id_nr++;
+	inode->header.vdi_epoch++;
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-			       &inode->header.max_data_id_nr,
-			       sizeof(uint32_t),
-			       offsetof(struct sd_inode_header,
-					max_data_id_nr),
+			       inode, sizeof(*inode), 0,
 			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
@@ -727,25 +727,25 @@ static int acl_remove_vdi(int argc, char **argv)
 	}
 	inode->data_vdi_id[old_idx] = 0;
 	limit = inode->header.max_data_id_nr;
+	inode->header.vdi_epoch++;
+
 	if (old_idx == limit - 1) {
 		while (limit > 0 && inode->data_vdi_id[limit - 1] == 0)
 			limit--;
 
-		/* Modify the upper limit of the VDI mapping first */
 		inode->header.max_data_id_nr = limit;
-		ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-				       &limit, sizeof(uint32_t),
-				       offsetof(struct sd_inode_header,
-						max_data_id_nr),
-				       SD_FLAG_CMD_DIRECT,
-				       inode->header.nr_copies,
-				       inode->header.copy_policy, false);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("failed to update ACL inode %"PRIx64" header: %s",
-			       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
-			ret = EXIT_FAILURE;
-			goto out;
-		}
+	}
+	/* Modify the inode header first */
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+			       inode, sizeof(*inode), 0,
+			       SD_FLAG_CMD_DIRECT,
+			       inode->header.nr_copies,
+			       inode->header.copy_policy, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode %"PRIx64" header: %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		ret = EXIT_FAILURE;
+		goto out;
 	}
 
 	/* Now update the VDI ACL */
