@@ -89,6 +89,7 @@
 /* inode object in client is invalidated, refreshing is required */
 #define SD_RES_INODE_INVALIDATED 0x1D
 #define SD_RES_VDI_DENIED    0x1E /* Permission denied accessing VDI */
+#define SD_RES_TIMEOUT       0x1F /* Request timeout */
 
 /* errors above 0x80 are sheepdog-internal */
 

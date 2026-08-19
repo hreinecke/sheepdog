@@ -159,6 +159,12 @@ struct system_info {
 	struct list_head req_wait_queue;
 	int nr_outstanding_reqs;
 
+	/* used by SD_OP_RESET to wait for the outstanding requests */
+	struct sd_mutex drain_lock;
+	struct sd_cond drain_cond;
+	int nr_drain_waiters;	/* # of requests waiting for the drain */
+	int nr_drain_reqs;	/* # of SD_OP_RESET in nr_outstanding_reqs */
+
 	bool gateway_only;
 	bool nosync;
 
@@ -440,6 +446,7 @@ int get_nr_copies(struct vnode_info *vnode_info);
 void wakeup_requests_on_epoch(void);
 void wakeup_requests_on_oid(uint64_t oid);
 void wakeup_all_requests(void);
+int wait_for_requests_drain(const struct request *req, int timeout);
 void resume_suspended_recovery(void);
 
 int create_cluster(int port, int64_t zone, int nr_vnodes,

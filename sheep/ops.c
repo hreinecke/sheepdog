@@ -948,6 +948,19 @@ static int local_flush_and_del(struct request *req)
 	return SD_RES_SUCCESS;
 }
 
+/* How long SD_OP_RESET waits for the node to become idle */
+#define RESET_DRAIN_TIMEOUT 30 /* seconds */
+
+/*
+ * Wait for all the requests this node is working on to complete.  The reply is
+ * sent only once the node is drained, so a client can use it as a barrier
+ * against every request it, or anybody else, has already sent to this node.
+ */
+static int local_reset(struct request *req)
+{
+	return wait_for_requests_drain(req, RESET_DRAIN_TIMEOUT);
+}
+
 static int local_trace_enable(const struct sd_req *req, struct sd_rsp *rsp,
 			      void *data, const struct sd_node *sender)
 {
@@ -1979,6 +1992,14 @@ static struct sd_op_template sd_ops[] = {
 		.process_work = local_flush_and_del,
 	},
 
+	[SD_OP_RESET] = {
+		.name = "RESET",
+		.type = SD_OP_TYPE_LOCAL,
+		.force = true,
+		.is_admin_op = true,
+		.process_work = local_reset,
+	},
+
 	[SD_OP_TRACE_ENABLE] = {
 		.name = "TRACE_ENABLE",
 		.type = SD_OP_TYPE_LOCAL,
@@ -2221,7 +2242,7 @@ static struct sd_op_template sd_ops[] = {
 
 const struct sd_op_template *get_sd_op(uint8_t opcode)
 {
-	if (sd_ops[opcode].type == 0)
+	if (opcode >= ARRAY_SIZE(sd_ops) || sd_ops[opcode].type == 0)
 		return NULL;
 
 	return sd_ops + opcode;

@@ -484,6 +484,75 @@ static int node_kill(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+static int do_node_reset(const struct node_id *nid)
+{
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	int ret;
+
+	sd_init_req(&hdr, SD_OP_RESET);
+
+	ret = dog_exec_req(nid, &hdr, NULL);
+	if (ret < 0)
+		return EXIT_SYSFAIL;
+
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("failed to reset %s: %s",
+		       addr_to_str(nid->addr, nid->port),
+		       sd_strerror(rsp->result));
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
+/*
+ * Wait for the requests a node is working on to complete.  Without an
+ * argument, the node dog is talking to is reset.
+ */
+static int node_reset(int argc, char **argv)
+{
+	struct sd_node *n;
+	const char *p;
+	int node_id, ret;
+
+	if (node_cmd_data.all_nodes) {
+		if (optind < argc) {
+			sd_err("don't use -A option and specify node id at the"
+			       " same time");
+			exit(EXIT_USAGE);
+		}
+
+		rb_for_each_entry(n, &sd_nroot, rb) {
+			ret = do_node_reset(&n->nid);
+			if (ret != EXIT_SUCCESS)
+				return ret;
+		}
+
+		return EXIT_SUCCESS;
+	}
+
+	if (optind < argc) {
+		p = argv[optind++];
+
+		if (!is_numeric(p)) {
+			sd_err("Invalid node id '%s', please specify a numeric"
+			       " value", p);
+			exit(EXIT_USAGE);
+		}
+
+		node_id = strtol(p, NULL, 10);
+		if (node_id < 0 || node_id >= sd_nodes_nr) {
+			sd_err("Invalid node id '%d'", node_id);
+			exit(EXIT_USAGE);
+		}
+
+		return do_node_reset(&idx_to_node(&sd_nroot, node_id)->nid);
+	}
+
+	return do_node_reset(&sd_nid);
+}
+
 static int node_stat(int argc, char **argv)
 {
 	struct sd_req hdr;
@@ -745,7 +814,7 @@ static int node_parser(int ch, const char *opt)
 }
 
 static struct sd_option node_options[] = {
-	{'A', "all", false, "show md information of all the nodes"},
+	{'A', "all", false, "operate on all the nodes"},
 	{'P', "progress", false, "show progress of recovery in the node"},
 	{'w', "watch", false, "watch the stat every second"},
 	{'l', "local", false, "issue request to local node"},
@@ -1004,6 +1073,9 @@ static struct subcommand node_cmd[] = {
 	 node_md_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, node_md, node_options},
 	{"stat", NULL, "aprwhT", "show stat information about the node", NULL,
 	 0, node_stat, node_options},
+	{"reset", "[node id]", "aprAhT",
+	 "wait for the outstanding requests of the node to complete", NULL,
+	 CMD_NEED_NODELIST, node_reset, node_options},
 	{"log", NULL, "aphT", "show or set log level of the node", node_log_cmd,
 	 CMD_NEED_ROOT|CMD_NEED_ARG, node_log},
 	{"vnodes", "<num of vnodes>", "aph", "set new vnodes", node_vnodes_cmd,

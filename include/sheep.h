@@ -157,6 +157,7 @@ static inline const char *sd_strerror(int err)
 			"Invalid cluster vnodes strategy",
 		[SD_RES_GATEWAY_MODE] = "Targeted node is gateway mode",
 		[SD_RES_VDI_DENIED] = "Permission denied accessing VDI",
+		[SD_RES_TIMEOUT] = "Timeout executing request",
 
 		/* from internal_proto.h */
 		[SD_RES_OLD_NODE_VER] = "Request has an old epoch",

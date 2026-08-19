@@ -276,6 +276,71 @@ void wakeup_requests_on_oid(uint64_t oid)
 	sd_mutex_unlock(&sys->req_wait_lock);
 }
 
+/*
+ * Wake up the requests sleeping in wait_for_requests_drain().
+ *
+ * This is called from the main thread every time a request is freed, so the
+ * lock is taken only when someone is actually waiting for the drain.
+ */
+static main_fn void wakeup_drain_waiters(void)
+{
+	sd_mutex_lock(&sys->drain_lock);
+	sd_cond_broadcast(&sys->drain_cond);
+	sd_mutex_unlock(&sys->drain_lock);
+}
+
+/*
+ * Wait until this node has no outstanding request left, that is until every
+ * request it has accepted has been processed and its reply has been sent back
+ * to the requester.
+ *
+ * 'req' is the request asking for the drain.  It is excluded from the
+ * accounting, as are the other drain requests running in parallel, otherwise
+ * two concurrent SD_OP_RESETs would wait for each other forever.
+ *
+ * Note that the drain doesn't stop the node from accepting new requests, so on
+ * a node which is kept busy by its clients this can time out.  Return
+ * SD_RES_SUCCESS when the node got drained, SD_RES_SYSTEM_ERROR when 'timeout'
+ * seconds elapsed before that happened.
+ */
+worker_fn int wait_for_requests_drain(const struct request *req, int timeout)
+{
+	/* local requests are not accounted in nr_outstanding_reqs */
+	bool accounted = !req->local;
+	time_t deadline = time(NULL) + timeout;
+	int ret = SD_RES_SUCCESS, nr;
+
+	if (accounted)
+		uatomic_inc(&sys->nr_drain_reqs);
+
+	sd_mutex_lock(&sys->drain_lock);
+	uatomic_inc(&sys->nr_drain_waiters);
+
+	while ((nr = uatomic_read(&sys->nr_outstanding_reqs)) >
+	       uatomic_read(&sys->nr_drain_reqs)) {
+		if (time(NULL) >= deadline) {
+			sd_err("timed out waiting for %d outstanding requests",
+			       nr);
+			ret = SD_RES_TIMEOUT;
+			break;
+		}
+		sd_debug("waiting for %d outstanding requests", nr);
+		/*
+		 * Waking up once a second lets us check the deadline and makes
+		 * the wait robust against a missed wake up.
+		 */
+		sd_cond_wait_timeout(&sys->drain_cond, &sys->drain_lock, 1);
+	}
+
+	uatomic_dec(&sys->nr_drain_waiters);
+	sd_mutex_unlock(&sys->drain_lock);
+
+	if (accounted)
+		uatomic_dec(&sys->nr_drain_reqs);
+
+	return ret;
+}
+
 void wakeup_all_requests(void)
 {
 	struct request *req, *tmp;
@@ -704,6 +769,8 @@ struct request *alloc_request(struct client_info *ci, uint32_t data_length)
 void free_request(struct request *req)
 {
 	uatomic_dec(&sys->nr_outstanding_reqs);
+	if (unlikely(uatomic_read(&sys->nr_drain_waiters) > 0))
+		wakeup_drain_waiters();
 
 	refcount_dec(&req->ci->refcnt);
 	put_vnode_info(req->vinfo);
@@ -1199,6 +1266,8 @@ void local_request_init(void)
 {
 	sd_init_mutex(&sys->local_req_lock);
 	sd_init_mutex(&sys->req_wait_lock);
+	sd_init_mutex(&sys->drain_lock);
+	sd_cond_init(&sys->drain_cond);
 	sys->local_req_efd = eventfd(0, EFD_NONBLOCK);
 	if (sys->local_req_efd < 0)
 		panic("failed to init local req efd");
