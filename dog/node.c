@@ -583,11 +583,29 @@ static int node_md_info(struct node_id *nid)
 		return EXIT_FAILURE;
 	}
 
+	if (json_output)
+		out_obj = json_object_new_array();
+
 	for (i = 0; i < info.nr; i++) {
 		uint64_t size = info.disk[i].free + info.disk[i].used;
 		int ratio = (int)(((double)info.disk[i].used / size) * 100);
 
-		if (raw_output)
+		if (json_output) {
+			struct json_object *disk_obj =
+				json_object_new_object();
+
+			JSON_ADD_STRING(disk_obj, "node",
+					addr_to_str(nid->addr, nid->port));
+			JSON_ADD_UINT64(disk_obj, "size", size);
+			JSON_ADD_UINT64(disk_obj, "used",
+					info.disk[i].used);
+			JSON_ADD_UINT64(disk_obj, "free",
+					info.disk[i].free);
+			JSON_ADD_DOUBLE(disk_obj, "ratio", ratio);
+			JSON_ADD_STRING(disk_obj, "path",
+					info.disk[i].path);
+			json_object_array_add(out_obj, disk_obj);
+		} else if (raw_output)
 			fprintf(stdout, "%s %d %s %s %s %d%% %s\n",
 				addr_to_str(nid->addr, nid->port),
 				info.disk[i].idx, strnumber(size),
@@ -601,6 +619,13 @@ static int node_md_info(struct node_id *nid)
 				strnumber(info.disk[i].free),
 				ratio, info.disk[i].path);
 	}
+
+	if (json_output) {
+		const char *o = json_object_to_json_string(out_obj);
+
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -609,7 +634,7 @@ static int md_info(int argc, char **argv)
 	struct sd_node *n;
 	int ret, i = 0;
 
-	if (!raw_output)
+	if (!raw_output && !json_output)
 		fprintf(stdout, "Id\tSize\tUsed\tAvail\tUse%%\tPath\n");
 
 	if (!node_cmd_data.all_nodes)
@@ -977,7 +1002,7 @@ static struct subcommand node_cmd[] = {
 	 node_recovery_cmd, 0, node_recovery, node_options},
 	{"md", "[disks]", "ajprAfhT", "See 'dog node md' for more information",
 	 node_md_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, node_md, node_options},
-	{"stat", NULL, "ajprwhT", "show stat information about the node", NULL,
+	{"stat", NULL, "aprwhT", "show stat information about the node", NULL,
 	 0, node_stat, node_options},
 	{"log", NULL, "aphT", "show or set log level of the node", node_log_cmd,
 	 CMD_NEED_ROOT|CMD_NEED_ARG, node_log},

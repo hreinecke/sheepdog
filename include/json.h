@@ -23,5 +23,7 @@ void json_to_nodes(struct json_object *obj, struct sd_node *nodes,
 	json_object_object_add((o),n,json_object_new_uint64((v)))
 #define JSON_ADD_BOOL(o,n,v) \
 	json_object_object_add((o),n,json_object_new_boolean((v)))
+#define JSON_ADD_DOUBLE(o,n,v) \
+	json_object_object_add((o),n,json_object_new_double((v)))
 
 #endif
