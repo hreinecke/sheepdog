@@ -764,8 +764,13 @@ static int del_participant(struct vdi_state_entry *entry,
 	entry->participants_count[idx] = 0;
 	entry->participants_state[idx] = 0;
 
-	if (idx == entry->nr_participants - 1)
-		entry->nr_participants--;
+	if (idx == entry->nr_participants - 1) {
+		while (idx >= 0 && entry->participants_count[idx] == 0) {
+			entry->nr_participants--;
+			idx--;
+		}
+	}
+
 	ls->index = 0;
 	ls->count = 0;
 
