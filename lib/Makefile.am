@@ -30,6 +30,8 @@ libsd_a_DEPENDENCIES =
 
 noinst_LIBRARIES	= libisa.a
 
+libisa_a_SOURCES	=
+
 noinst_LIBRARIES	+= libsd.a
 
 libsd_a_SOURCES		= event.c logger.c net.c util.c rbtree.c strbuf.c \
