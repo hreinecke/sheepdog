@@ -1,0 +1,5 @@
+QA output created by 122
+using backend plain store
+Invalid node id '2'
+Invalid node id 'foo', please specify a numeric value
+don't use -A option and specify node id at the same time

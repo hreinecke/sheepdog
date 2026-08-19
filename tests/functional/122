@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# Test dog node reset
+
+. ./common
+
+err=0
+
+_start_sheep 0
+_start_sheep 1
+_wait_for_sheep 2
+_cluster_format -c 1
+
+# an idle node is drained right away
+$DOG node reset || err=1
+
+# the reset waits for the requests which are in flight
+$DOG vdi create test 40M
+dd if=/dev/zero bs=1M count=40 2>/dev/null | $DOG vdi write test &
+$DOG node reset || err=1
+wait
+
+# drain every node of the cluster, then one node in particular
+$DOG node reset -A || err=1
+$DOG node reset 1 || err=1
+
+# invalid targets
+$DOG node reset 2 && err=1
+$DOG node reset foo && err=1
+$DOG node reset -A 0 && err=1
+
+exit $err
