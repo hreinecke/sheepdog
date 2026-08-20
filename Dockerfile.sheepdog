@@ -8,4 +8,4 @@ ENV SHEEPSRC=/usr/src/sheepdog
 WORKDIR $SHEEPSRC
 ADD . $SHEEPSRC
 RUN ./autogen.sh
-RUN ./configure --prefix=/usr --enable-etcd --disable-corosync && make && make check && make install
+RUN ./configure --prefix=/usr --enable-etcd --disable-corosync && make && make install

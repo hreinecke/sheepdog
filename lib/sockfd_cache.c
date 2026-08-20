@@ -361,6 +361,14 @@ alive:
 	return true;
 }
 
+/*
+ * Fill the empty fd slots of a cached node.
+ *
+ * Called with the write lock held.  Note that it is dropped while connecting,
+ * so 'entry' is looked up again after every connect and the caller must not
+ * hold on to any cache pointer -- in particular it must not be walking the
+ * tree across this call.
+ */
 static void prepare_conns(struct sockfd_cache_entry *entry, bool first_only)
 {
 	int idx;
@@ -373,9 +381,20 @@ static void prepare_conns(struct sockfd_cache_entry *entry, bool first_only)
 			 */
 			if (entry->fds_io[idx].fd != -1)
 				continue;
+			sd_rw_unlock(&sockfd_cache.lock);
 			int fd = connect_to_addr(nid->io_addr, nid->io_port);
+			sd_write_lock(&sockfd_cache.lock);
+			if (!sockfd_cache_search(nid)) {
+				/* the node left while we were connecting */
+				if (fd >= 0)
+					close(fd);
+				return;
+			}
 			if (fd >= 0) {
-				entry->fds_io[idx].fd = fd;
+				if (entry->fds_io[idx].fd != -1)
+					close(fd); /* someone got there first */
+				else
+					entry->fds_io[idx].fd = fd;
 				if (first_only) {
 					break;
 				}
@@ -409,9 +428,19 @@ static void prepare_conns(struct sockfd_cache_entry *entry, bool first_only)
 	for (idx = 0; idx < fds_count; idx++) {
 		if (entry->fds_nio[idx].fd != -1)
 			continue;
+		sd_rw_unlock(&sockfd_cache.lock);
 		int fd = connect_to_addr(nid->addr, nid->port);
+		sd_write_lock(&sockfd_cache.lock);
+		if (!sockfd_cache_search(nid)) {
+			if (fd >= 0)
+				close(fd);
+			return;
+		}
 		if (fd >= 0) {
-			entry->fds_nio[idx].fd = fd;
+			if (entry->fds_nio[idx].fd != -1)
+				close(fd);
+			else
+				entry->fds_nio[idx].fd = fd;
 			if (first_only) {
 				break;
 			}
@@ -654,7 +683,8 @@ void init_to_connect_list()
 
 static void *monitor_sd_node_connectivity(void *ignored)
 {
-	int err;
+	int err, nr, i;
+	struct node_id *nids;
 
 	sd_info("node connectivity monitor main loop");
 	init_to_connect_list();
@@ -698,12 +728,33 @@ static void *monitor_sd_node_connectivity(void *ignored)
 				sd_rw_unlock(&sockfd_cache.lock);
 			}
 		}
-		sd_write_lock(&sockfd_cache.lock);
+		/*
+		 * Take a copy of the node ids first.  prepare_conns() drops
+		 * the cache lock while it connects, so the tree must not be
+		 * walked across the call: entries can be freed underneath us.
+		 */
+		nr = 0;
+		sd_read_lock(&sockfd_cache.lock);
 		rb_for_each_entry(entry, &sockfd_cache.root, rb) {
 			if (entry->fds_io)
-				prepare_conns(entry, false);
+				nr++;
+		}
+		nids = xcalloc(nr ?: 1, sizeof(*nids));
+		nr = 0;
+		rb_for_each_entry(entry, &sockfd_cache.root, rb) {
+			if (entry->fds_io)
+				nids[nr++] = entry->nid;
 		}
 		sd_rw_unlock(&sockfd_cache.lock);
+
+		for (i = 0; i < nr; i++) {
+			sd_write_lock(&sockfd_cache.lock);
+			entry = sockfd_cache_search(&nids[i]);
+			if (entry)
+				prepare_conns(entry, false);
+			sd_rw_unlock(&sockfd_cache.lock);
+		}
+		free(nids);
 	}
 
 	err = pthread_detach(pthread_self());
