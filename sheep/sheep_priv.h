@@ -122,6 +122,7 @@ struct request {
 	struct client_info *ci;
 	struct list_node request_list;
 	struct list_node pending_list;
+	struct timer retry_timer;
 
 	refcnt_t refcnt;
 	bool local;
@@ -134,6 +135,7 @@ struct request {
 	struct work work;
 	enum REQUST_STATUS status;
 	bool stat; /* true if this request is during stat */
+	unsigned int retry_count; /* consecutive retries without progress */
 };
 
 struct system_info {
@@ -522,7 +524,7 @@ void objlist_cache_remove(uint64_t oid);
 
 void put_request(struct request *req);
 void get_request(struct request *req);
-void requeue_request(struct request *req);
+void requeue_request(struct request *req, unsigned int max_delay);
 
 int sheep_bnode_writer(uint64_t oid, void *mem, unsigned int len,
 		       uint64_t offset, uint32_t flags, int copies,

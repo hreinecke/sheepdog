@@ -24,10 +24,15 @@
 #define TRACEPOINT_DEFINE
 #include "request_tp.h"
 
+/* number of retries served at full speed before we start backing off */
+#define REQUEST_RETRY_FAST	4
+/* cap of the exponential backoff, in milliseconds */
+#define REQUEST_RETRY_MAX_DELAY	1000
+
 static void del_requeue_request(struct request *req)
 {
 	list_del(&req->request_list);
-	requeue_request(req);
+	requeue_request(req, 0);
 }
 
 static bool is_access_local(struct request *req, uint64_t oid)
@@ -143,7 +148,7 @@ static void gateway_op_done(struct work *work)
 	put_request(req);
 	return;
 retry:
-	requeue_request(req);
+	requeue_request(req, REQUEST_RETRY_MAX_DELAY);
 }
 
 static void local_op_done(struct work *work)
@@ -234,6 +239,8 @@ void wakeup_requests_on_epoch(void)
 			sd_assert(is_gateway_op(req->op));
 			sd_debug("gateway %016"PRIx64, req->rq.obj.oid);
 			req->rq.epoch = sys->cinfo.epoch;
+			/* the epoch moved, this is progress: retry eagerly */
+			req->retry_count = 0;
 			del_requeue_request(req);
 			break;
 		case SD_RES_NEW_NODE_VER:
@@ -589,14 +596,35 @@ done:
 	put_request(req);
 }
 
-void requeue_request(struct request *req)
+static void retry_request_timeout(void *arg)
 {
+	struct request *req = arg;
+
+	queue_request(req);
+}
+
+void requeue_request(struct request *req, unsigned int max_delay)
+{
+	unsigned int delay;
+
 	if (req->vinfo) {
 		put_vnode_info(req->vinfo);
 		req->vinfo = NULL;
 	}
 	stat_request_end(req);
-	queue_request(req);
+
+	/* Eagerly retry when no delay is given or until we need to back off */
+	if (!max_delay || req->retry_count++ < REQUEST_RETRY_FAST) {
+		queue_request(req);
+		return;
+	}
+	/* Delay with backoff to give the peer some time to recover */
+	delay = 1U << MIN(req->retry_count - REQUEST_RETRY_FAST, 10);
+	delay = MIN(delay, REQUEST_RETRY_MAX_DELAY);
+
+	req->retry_timer.callback = retry_request_timeout;
+	req->retry_timer.data = req;
+	add_timer(&req->retry_timer, delay);
 }
 
 static void clear_client_info(struct client_info *ci);
