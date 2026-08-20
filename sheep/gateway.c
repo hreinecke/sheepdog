@@ -403,6 +403,7 @@ static int wait_forward_request(struct forward_info *fi, struct request *req)
 	    repeat = MAX_RETRY_COUNT;
 	struct pfd_info pi;
 	struct sd_rsp *rsp = &req->rp;
+	uint32_t err_epoch = 0;
 again:
 	pfd_info_init(fi, &pi);
 	pollret = poll(pi.pfds, pi.nr, 1000 * POLL_TIMEOUT);
@@ -470,12 +471,23 @@ again:
 			sd_err("fail %016"PRIx64", %s", req->rq.obj.oid,
 			       sd_strerror(ret));
 			err_ret = ret;
+			err_epoch = rsp->epoch;
 		}
 		finish_one_entry(fi, i);
 	}
 out:
 	if (fi->nr_sent > 0)
 		goto again;
+
+	/*
+	 * Every reply lands in the same req->rp, so a peer answering after the
+	 * one that failed overwrites the epoch belonging to err_ret.  The
+	 * gateway needs that epoch to tell 'sleep until our epoch catches up'
+	 * from 'retry now'; without it a stale gateway spins on the request at
+	 * full speed and starves the main thread.  Put it back.
+	 */
+	if (err_ret == SD_RES_OLD_NODE_VER)
+		rsp->epoch = err_epoch;
 
 	return err_ret;
 }
