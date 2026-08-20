@@ -870,20 +870,6 @@ static int do_cinfo_collection_work(uint32_t epoch, uint32_t vid,
 	return sheep_exec_req(&n->nid, &hdr, (char *)result);
 }
 
-static bool check_inode_obj_exist(uint32_t vid, int epoch)
-{
-	struct siocb iocb;
-	char buf[1];		/* dummy */
-
-	memset(&iocb, 0, sizeof(iocb));
-	iocb.epoch = epoch;
-	iocb.buf = &buf;
-	iocb.length = 1;
-	iocb.offset = 0;
-	iocb.ec_index = -1;
-	return SD_RES_SUCCESS == sd_store->read(vid_to_vdi_oid(vid), &iocb);
-}
-
 /* how long to wait for the other nodes to prepare their checkpoints */
 #define CINFO_COLLECTION_RETRY 30
 
@@ -892,7 +878,7 @@ static void cinfo_collection_work(struct work *work)
 	struct cinfo_collection_work *w =
 		container_of(work, struct cinfo_collection_work, work);
 	struct sd_node *n;
-	int ret, nr_nodes_no_chkpt;
+	int ret, nr_nodes_no_chkpt, nr_nodes_not_ready;
 
 	sd_debug("start collection of cinfo, epoch: %d, vid: %"PRIx32,
 		 w->epoch, w->next_vid);
@@ -901,6 +887,7 @@ static void cinfo_collection_work(struct work *work)
 
 	for (int i = 0; i < CINFO_COLLECTION_RETRY; i++) {
 		nr_nodes_no_chkpt = 0;
+		nr_nodes_not_ready = 0;
 
 		rb_for_each_entry(n, &w->members->nroot, rb) {
 			if (node_is_local(n))
@@ -912,21 +899,22 @@ static void cinfo_collection_work(struct work *work)
 				return;
 			else if (ret == SD_RES_NO_CHECKPOINT_ENTRY)
 				nr_nodes_no_chkpt++;
+			else if (ret == SD_RES_AGAIN)
+				nr_nodes_not_ready++;
 		}
 
-		if (nr_nodes_no_chkpt + 1 == w->members->nr_nodes) {
-			sd_info("other nodes doesn't have a entry of checkpoint"
-				" for VID: %"PRIx32" at epoch %d", w->next_vid,
-				w->epoch);
-
-			if (check_inode_obj_exist(w->next_vid, w->epoch)) {
-				w->skip = true;
-				return;
-			}
-
-			panic("this node should have object of inode: %016"
-			      PRIx64 "but doesn't have",
-			      vid_to_vdi_oid(w->next_vid));
+		if (!nr_nodes_not_ready && nr_nodes_no_chkpt) {
+			/*
+			 * VDI is not part of a checkpoint on any node, so it
+			 * was created after the checkpoints were taken.
+			 * But a new VDI has no lock state to inherit, so
+			 * there is nothing to collect.
+			 */
+			sd_info("no node has a checkpoint entry for VID: %"
+				PRIx32 " at epoch %d, it was created after the"
+				" checkpoint was taken", w->next_vid, w->epoch);
+			w->skip = true;
+			return;
 		}
 
 		/*
