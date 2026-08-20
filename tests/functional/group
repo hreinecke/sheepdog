@@ -25,7 +25,7 @@
 007 auto quick cluster md
 008 auto store md
 009 auto quick store md
-010 auto quick store
+010 auto store
 011 auto quick store md
 012 auto quick store md
 #013 auto quick vdi md qemu
@@ -38,15 +38,15 @@
 023 auto quick cluster md
 #024 auto quick cluster md qemu
 #025 auto quick cluster md qemu
-026 auto quick vdi md
+026 auto vdi md
 027 auto quick store
-028 auto quick store md
+028 auto store md
 029 auto vdi md
-030 auto quick store md
+030 auto store md
 031 auto quick vdi md
 032 auto quick store
 033 auto quick store
-034 auto quick store md
+034 auto store md
 035 auto quick cluster md
 036 auto quick cluster md
 #039 auto quick vdi md qemu
@@ -80,7 +80,7 @@
 071 auto quick store md
 072 auto quick store
 #073 auto quick sheepfs
-074 auto quick cluster md
+074 auto cluster md
 #075 auto quick vdi md qemu
 076 auto vdi md
 077 auto quick vdi
@@ -117,7 +117,7 @@
 #108 auto quick bad, port number has been tested already
 109 auto quick
 110 auto quick
-111 auto quick dog
+111 auto dog
 113 auto dog
 114 auto quick dog md
 115 auto dog
