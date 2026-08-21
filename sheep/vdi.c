@@ -1354,6 +1354,7 @@ static struct sd_inode *alloc_inode(const struct vdi_iocb *iocb,
 	uuid_generate(uuid);
 	memcpy(new->header.uuid, (uint8_t *)uuid, sizeof(uuid));
 	new->header.parent_vdi_id = iocb->base_vid;
+	new->header.vdi_epoch = sys_epoch();
 	if (data_vdi_id)
 		sd_inode_copy_vdis(sheep_bnode_writer, sheep_bnode_reader,
 				   data_vdi_id, iocb->store_policy,

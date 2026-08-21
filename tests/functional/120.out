@@ -50,7 +50,7 @@ using backend plain store
     "name": "acl_one",
     "vdi_id": 9370536,
     "vdi_size": 12587576,
-    "vdi_epoch": 0,
+    "vdi_epoch": 1,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [],
@@ -84,7 +84,7 @@ VDI 8cc667
     "name": "acl_one",
     "vdi_id": 9370536,
     "vdi_size": 12587576,
-    "vdi_epoch": 3,
+    "vdi_epoch": 4,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [
@@ -93,7 +93,7 @@ VDI 8cc667
         "vdi_id": 6032141,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       },
@@ -102,7 +102,7 @@ VDI 8cc667
         "vdi_id": 9225831,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       },
@@ -111,7 +111,7 @@ VDI 8cc667
         "vdi_id": 6464925,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       }
@@ -156,7 +156,7 @@ Please specify the VDI to add
     "name": "acl_one",
     "vdi_id": 9370536,
     "vdi_size": 12587576,
-    "vdi_epoch": 4,
+    "vdi_epoch": 5,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [
@@ -165,7 +165,7 @@ Please specify the VDI to add
         "vdi_id": 6032141,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       },
@@ -175,7 +175,7 @@ Please specify the VDI to add
         "vdi_id": 6464925,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       }
@@ -205,7 +205,7 @@ Failed to open VDI vdi_one: Permission denied accessing VDI
     "name": "acl_one",
     "vdi_id": 9370536,
     "vdi_size": 12587576,
-    "vdi_epoch": 7,
+    "vdi_epoch": 8,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [
@@ -216,7 +216,7 @@ Failed to open VDI vdi_one: Permission denied accessing VDI
         "vdi_id": 6464925,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       }
@@ -229,7 +229,7 @@ Failed to open VDI vdi_one: Permission denied accessing VDI
     "name": "acl_two",
     "vdi_id": 7945294,
     "vdi_size": 12587576,
-    "vdi_epoch": 1,
+    "vdi_epoch": 2,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [
@@ -238,7 +238,7 @@ Failed to open VDI vdi_one: Permission denied accessing VDI
         "vdi_id": 6032141,
         "acl_id": 7945294,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       }
@@ -257,7 +257,7 @@ VDI 8b29de
     "name": "acl_one",
     "vdi_id": 9370536,
     "vdi_size": 12587576,
-    "vdi_epoch": 9,
+    "vdi_epoch": 10,
     "is_snapshot": false,
     "is_clone": false,
     "vdi": [
@@ -266,7 +266,7 @@ VDI 8b29de
         "vdi_id": 9120222,
         "acl_id": 9370536,
         "vdi_size": 16777216,
-        "vdi_epoch": 0,
+        "vdi_epoch": 1,
         "is_snapshot": false,
         "is_clone": false
       }
