@@ -19,16 +19,23 @@ services:
       - sheep0-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7000:7000"
+      - "127.0.0.1:8000:8000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE0_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP0_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-0}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target0:
+    image: ioutgt
+    network_mode: service:sheep0
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8000 --backend sheepdog:${SHEEP0_IP}:7000
   sheep1:
     image: sheepdog
     hostname: ${SHEEP1_NAME}
@@ -42,16 +49,23 @@ services:
       - sheep1-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7001:7000"
+      - "127.0.0.1:8001:8001"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP1_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-1}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target1:
+    image: ioutgt
+    network_mode: service:sheep1
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8001 --backend sheepdog:${SHEEP1_IP}:7000
   sheep2:
     image: sheepdog
     hostname: ${SHEEP2_NAME}
@@ -65,16 +79,23 @@ services:
       - sheep2-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7002:7000"
+      - "127.0.0.1:8002:8002"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP2_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-2}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target2:
+    image: ioutgt
+    network_mode: service:sheep2
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8002 --backend sheepdog:${SHEEP2_IP}:7000
   sheep3:
     image: sheepdog
     hostname: ${SHEEP3_NAME}
@@ -88,16 +109,23 @@ services:
       - sheep3-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7003:7000"
+      - "127.0.0.1:8003:8003"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP3_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-3}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target3:
+    image: ioutgt
+    network_mode: service:sheep3
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8003 --backend sheepdog:${SHEEP3_IP}:7000
   sheep4:
     image: sheepdog
     hostname: ${SHEEP4_NAME}
@@ -111,16 +139,23 @@ services:
       - sheep4-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7004:7000"
+      - "127.0.0.1:8004:8004"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP4_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-4}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target4:
+    image: ioutgt
+    network_mode: service:sheep4
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8004 --backend sheepdog:${SHEEP4_IP}:7000
   sheep5:
     image: sheepdog
     hostname: ${SHEEP5_NAME}
@@ -134,16 +169,23 @@ services:
       - sheep5-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7005:7000"
+      - "127.0.0.1:8005:8005"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE5_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP5_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-5}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target5:
+    image: ioutgt
+    network_mode: service:sheep5
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8005 --backend sheepdog:${SHEEP5_IP}:7000
   sheep6:
     image: sheepdog
     hostname: ${SHEEP6_NAME}
@@ -157,16 +199,23 @@ services:
       - sheep6-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7006:7000"
+      - "127.0.0.1:8006:8006"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE6_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP6_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-6}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target6:
+    image: ioutgt
+    network_mode: service:sheep6
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8006 --backend sheepdog:${SHEEP6_IP}:7000
   sheep7:
     image: sheepdog
     hostname: ${SHEEP7_NAME}
@@ -180,16 +229,23 @@ services:
       - sheep7-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7007:7000"
+      - "127.0.0.1:8007:8007"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE7_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP7_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-7}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target7:
+    image: ioutgt
+    network_mode: service:sheep7
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8007 --backend sheepdog:${SHEEP7_IP}:7000
   sheep8:
     image: sheepdog
     hostname: ${SHEEP8_NAME}
@@ -203,16 +259,23 @@ services:
       - sheep8-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7008:7000"
+      - "127.0.0.1:8008:8008"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE8_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP8_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-8}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target8:
+    image: ioutgt
+    network_mode: service:sheep8
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8008 --backend sheepdog:${SHEEP8_IP}:7000
   sheep9:
     image: sheepdog
     hostname: ${SHEEP9_NAME}
@@ -226,16 +289,23 @@ services:
       - sheep9-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7009:7000"
+      - "127.0.0.1:8009:8009"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE9_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP9_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-9}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target9:
+    image: ioutgt
+    network_mode: service:sheep9
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8009 --backend sheepdog:${SHEEP9_IP}:7000
   sheep10:
     image: sheepdog
     hostname: ${SHEEP10_NAME}
@@ -249,16 +319,23 @@ services:
       - sheep10-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7010:7000"
+      - "127.0.0.1:8010:8010"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE10_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP10_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-10}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target10:
+    image: ioutgt
+    network_mode: service:sheep10
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8010 --backend sheepdog:${SHEEP10_IP}:7000
   sheep11:
     image: sheepdog
     hostname: ${SHEEP11_NAME}
@@ -272,16 +349,23 @@ services:
       - sheep11-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7011:7000"
+      - "127.0.0.1:8011:8011"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE11_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP11_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-11}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target11:
+    image: ioutgt
+    network_mode: service:sheep11
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8011 --backend sheepdog:${SHEEP11_IP}:7000
   sheep12:
     image: sheepdog
     hostname: ${SHEEP12_NAME}
@@ -295,16 +379,23 @@ services:
       - sheep12-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7012:7000"
+      - "127.0.0.1:8012:8012"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE12_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP12_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-12}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target12:
+    image: ioutgt
+    network_mode: service:sheep12
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8012 --backend sheepdog:${SHEEP12_IP}:7000
   sheep13:
     image: sheepdog
     hostname: ${SHEEP13_NAME}
@@ -318,16 +409,23 @@ services:
       - sheep13-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7013:7000"
+      - "127.0.0.1:8013:8013"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE13_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP13_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-13}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target13:
+    image: ioutgt
+    network_mode: service:sheep13
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8013 --backend sheepdog:${SHEEP13_IP}:7000
   sheep14:
     image: sheepdog
     hostname: ${SHEEP14_NAME}
@@ -341,16 +439,23 @@ services:
       - sheep14-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7014:7000"
+      - "127.0.0.1:8014:8014"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE14_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP14_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-14}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target14:
+    image: ioutgt
+    network_mode: service:sheep14
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8014 --backend sheepdog:${SHEEP14_IP}:7000
   sheep15:
     image: sheepdog
     hostname: ${SHEEP15_NAME}
@@ -364,16 +469,23 @@ services:
       - sheep15-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7015:7000"
+      - "127.0.0.1:8015:8015"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE15_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP15_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-15}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target15:
+    image: ioutgt
+    network_mode: service:sheep15
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8015 --backend sheepdog:${SHEEP15_IP}:7000
   sheep16:
     image: sheepdog
     hostname: ${SHEEP16_NAME}
@@ -387,16 +499,23 @@ services:
       - sheep16-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7016:7000"
+      - "127.0.0.1:8016:8016"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE16_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP16_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-16}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target16:
+    image: ioutgt
+    network_mode: service:sheep16
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8016 --backend sheepdog:${SHEEP16_IP}:7000
   sheep17:
     image: sheepdog
     hostname: ${SHEEP17_NAME}
@@ -410,16 +529,23 @@ services:
       - sheep17-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7017:7000"
+      - "127.0.0.1:8017:8017"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE17_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP17_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-17}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target17:
+    image: ioutgt
+    network_mode: service:sheep17
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8017 --backend sheepdog:${SHEEP17_IP}:7000
   sheep18:
     image: sheepdog
     hostname: ${SHEEP18_NAME}
@@ -433,16 +559,23 @@ services:
       - sheep18-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7018:7000"
+      - "127.0.0.1:8018:8018"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE18_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP18_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-18}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target18:
+    image: ioutgt
+    network_mode: service:sheep18
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8018 --backend sheepdog:${SHEEP18_IP}:7000
   sheep19:
     image: sheepdog
     hostname: ${SHEEP19_NAME}
@@ -456,16 +589,23 @@ services:
       - sheep19-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7019:7000"
+      - "127.0.0.1:8019:8019"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE19_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP19_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-19}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target19:
+    image: ioutgt
+    network_mode: service:sheep19
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8019 --backend sheepdog:${SHEEP19_IP}:7000
   sheep20:
     image: sheepdog
     hostname: ${SHEEP20_NAME}
@@ -479,16 +619,23 @@ services:
       - sheep20-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7020:7000"
+      - "127.0.0.1:8020:8020"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE20_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP20_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-20}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target20:
+    image: ioutgt
+    network_mode: service:sheep20
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8020 --backend sheepdog:${SHEEP20_IP}:7000
   sheep21:
     image: sheepdog
     hostname: ${SHEEP21_NAME}
@@ -502,16 +649,23 @@ services:
       - sheep21-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7021:7000"
+      - "127.0.0.1:8021:8021"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE21_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP21_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-21}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target21:
+    image: ioutgt
+    network_mode: service:sheep21
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8021 --backend sheepdog:${SHEEP21_IP}:7000
   sheep22:
     image: sheepdog
     hostname: ${SHEEP22_NAME}
@@ -525,16 +679,23 @@ services:
       - sheep22-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7022:7000"
+      - "127.0.0.1:8022:8022"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE22_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP22_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-22}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target22:
+    image: ioutgt
+    network_mode: service:sheep22
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8022 --backend sheepdog:${SHEEP22_IP}:7000
   sheep23:
     image: sheepdog
     hostname: ${SHEEP23_NAME}
@@ -548,16 +709,23 @@ services:
       - sheep23-data:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7023:7000"
+      - "127.0.0.1:8023:8023"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE23_IP}
       - SHEEP_LOGGING=level=debug,dst=stdout
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP23_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
-      - SHEEP_ZONE=${SHEEP_ZONE}
+      - SHEEP_ZONE=${SHEEP_ZONE:-23}
       - SHEEP_JOURNAL=${SHEEP_JOURNAL}
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
+  target23:
+    image: ioutgt
+    network_mode: service:sheep23
+    security_opt:
+      - seccomp=unconfined
+    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:8023 --backend sheepdog:${SHEEP23_IP}:7000
 
 volumes:
   sheep0-data:
