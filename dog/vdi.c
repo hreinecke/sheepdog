@@ -122,6 +122,21 @@ static uint32_t vdi_acl_id(void)
 	return acl_id;
 }
 
+static bool is_acl_id_valid(uint32_t acl_id)
+{
+	switch (acl_id) {
+	case LOCK_TYPE_NORMAL:
+		return false;
+	case LOCK_TYPE_SHARED:
+		return false;
+	case LOCK_TYPE_ANY:
+		return false;
+	default:
+		break;
+	}
+	return true;
+}
+
 /* The ACL '-A' was given as, for the messages which name it back */
 static const char *acl_option_name(void)
 {
@@ -3740,6 +3755,27 @@ static int lock_lock(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	if (is_acl_id_valid(acl_id)) {
+		struct sd_inode_header inode;
+
+		ret = dog_read_object(vid_to_vdi_oid(acl_id),
+				      &inode, sizeof(inode), 0, true);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to read ACL %s: %s",
+			       vdi_cmd_data.acl_name, sd_strerror(ret));
+			return EXIT_FAILURE;
+		}
+		inode.vdi_epoch++;
+		ret = dog_write_object(vid_to_vdi_oid(acl_id), 0,
+				       &inode.vdi_epoch, sizeof(uint32_t),
+				       offsetof(struct sd_inode_header, vdi_epoch),
+				       SD_FLAG_CMD_DIRECT, inode.nr_copies,
+				       inode.copy_policy, false);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to update ACL %s epoch: %s",
+			       vdi_cmd_data.acl_name, sd_strerror(ret));
+		}
+	}
 	return EXIT_SUCCESS;
 }
 
@@ -3834,14 +3870,39 @@ static int lock_unlock(int argc, char **argv)
 	}
 
 	ret = dog_exec_req(&sd_nid, &hdr, NULL);
-	if (ret < 0)
+	if (ret < 0) {
 		ret = EXIT_FAILURE;
-	else if (rsp->result != SD_RES_SUCCESS) {
+		goto out;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
 		sd_err("Failed to unlock VDI %s: %s", vdiname,
 		       sd_strerror(rsp->result));
 		ret = EXIT_FAILURE;
-	} else
-		ret = EXIT_SUCCESS;
+		goto out;
+	}
+	ret = EXIT_SUCCESS;
+
+	if (is_acl_id_valid(acl_id)) {
+		struct sd_inode_header inode;
+
+		ret = dog_read_object(vid_to_vdi_oid(acl_id),
+				      &inode, sizeof(inode), 0, true);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to read ACL %s: %s",
+			       vdi_cmd_data.acl_name, sd_strerror(ret));
+			return EXIT_FAILURE;
+		}
+		inode.vdi_epoch++;
+		ret = dog_write_object(vid_to_vdi_oid(acl_id), 0,
+				       &inode.vdi_epoch, sizeof(uint32_t),
+				       offsetof(struct sd_inode_header, vdi_epoch),
+				       SD_FLAG_CMD_DIRECT, inode.nr_copies,
+				       inode.copy_policy, false);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to update ACL %s epoch: %s",
+			       vdi_cmd_data.acl_name, sd_strerror(ret));
+		}
+	}
 
 out:
 	free(vs);
