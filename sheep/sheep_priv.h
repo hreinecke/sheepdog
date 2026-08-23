@@ -254,6 +254,7 @@ struct vdi_info {
 	uint32_t vid;
 	uint32_t snapid;
 	uint32_t free_bit;
+	uint32_t vdi_flags;
 	uint64_t create_time;
 };
 

@@ -237,6 +237,7 @@ static int cluster_get_vdi_info(struct request *req)
 	rsp->vdi.vdi_id = info.vid;
 	rsp->vdi.copies = get_vdi_copy_number(info.vid);
 	rsp->vdi.block_size_shift = get_vdi_block_size_shift(info.vid);
+	rsp->vdi.vdi_flags = info.vdi_flags;
 
 	return ret;
 }
@@ -1398,6 +1399,11 @@ static int cluster_lock_vdi_main(const struct sd_req *req, struct sd_rsp *rsp,
 		return SD_RES_SUCCESS;
 	}
 
+	if (rsp->vdi.vdi_flags & SD_VDI_FLAG_ACL) {
+		sd_debug("VDI %"PRIx32" is ACL, cannot lock", vid);
+		return SD_RES_INVALID_PARMS;
+	}
+
 	sd_info("node: %s is locking VDI (type: %s): %"PRIx32,
 		node_to_str(sender), lock_type, vid);
 
@@ -1433,6 +1439,10 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 		return SD_RES_SUCCESS;
 	}
 
+	if (rsp->vdi.vdi_flags & SD_VDI_FLAG_ACL) {
+		sd_debug("VDI %"PRIx32" is ACL, cannot unlock", vid);
+		return SD_RES_INVALID_PARMS;
+	}
 	sd_info("node: %s is unlocking VDI (type: %s): %"PRIx32,
 		node_to_str(sender), lock_type, vid);
 

@@ -1717,6 +1717,7 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 				if (!vdi_is_snapshot(&inode)) {
 					vdi_found = true;
 					info->vid = inode.vdi_id;
+					info->vdi_flags = inode.vdi_flags;
 					continue;
 				}
 				if (!vdi_tag_match(iocb, &inode))
@@ -1730,11 +1731,13 @@ static int fill_vdi_info_range(uint32_t left, uint32_t right,
 				if (vdi_is_snapshot(&inode)) {
 					/* Current working VDI is deleted */
 					info->vid = inode.vdi_id;
+					info->vdi_flags = inode.vdi_flags;
 					break;
 				}
 			}
 			info->create_time = inode.create_time;
 			info->vid = inode.vdi_id;
+			info->vdi_flags = inode.vdi_flags;
 			goto out;
 		}
 	}

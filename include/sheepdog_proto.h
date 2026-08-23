@@ -256,7 +256,7 @@ struct sd_rsp {
 			uint32_t	attr_id;
 			uint8_t		copies;
 			uint8_t		block_size_shift;
-			uint8_t		reserved[2];
+			uint16_t	vdi_flags;
 		} vdi;
 		struct {
 			uint32_t	__pad;

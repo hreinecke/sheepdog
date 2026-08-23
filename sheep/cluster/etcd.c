@@ -1314,6 +1314,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, attr_id);
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, copies);
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, block_size_shift);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi, vdi_flags);
 		json_object_object_add(rsp_obj, "vdi", vdi_obj);
 		break;
 	case SD_OP_REGISTER_VDI:
@@ -1385,6 +1386,7 @@ static void etcd_json_to_rsp_vdi(struct json_object *obj,
 		DEREF_JSON_INT(val_obj, &rsp->vdi, attr_id, key);
 		DEREF_JSON_INT(val_obj, &rsp->vdi, copies, key);
 		DEREF_JSON_INT(val_obj, &rsp->vdi, block_size_shift, key);
+		DEREF_JSON_INT(val_obj, &rsp->vdi, vdi_flags, key);
 		else
 			sd_warn("unhandled vdi attribute '%s'", key);
 		json_object_iter_next(&itb);
