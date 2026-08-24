@@ -728,6 +728,22 @@ static int acl_remove_vdi(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+	/*
+	 * Check (and clear) the VDI's own ACL id first: a locked VDI must not
+	 * change its ACL, and this is the only step that can fail on that
+	 * account.  Nothing in the ACL's own data_vdi_id[] is touched before
+	 * this succeeds, so a locked VDI leaves the ACL exactly as it was
+	 * instead of losing the member despite the reported failure.
+	 */
+	ret = do_vdi_alter_acl(vdiname, acl_vid, 0);
+	if (ret != EXIT_SUCCESS) {
+		sd_err("failed to remove ACL id %"PRIx32" from VDI %s",
+		       acl_vid, vdiname);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	/* Only now update the ACL's own VDI mapping table and commit it */
 	inode->data_vdi_id[old_idx] = 0;
 	limit = inode->header.max_data_id_nr;
 	inode->header.vdi_epoch++;
@@ -738,7 +754,6 @@ static int acl_remove_vdi(int argc, char **argv)
 
 		inode->header.max_data_id_nr = limit;
 	}
-	/* Modify the inode header first */
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       inode, sizeof(*inode), 0,
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
@@ -747,29 +762,7 @@ static int acl_remove_vdi(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-update_vdi:
-	/* Now update the VDI ACL */
-	ret = do_vdi_alter_acl(vdiname, acl_vid, 0);
-	if (ret != EXIT_SUCCESS) {
-		sd_err("failed to remove ACL id %"PRIx32" from VDI %s",
-		       acl_vid, vdiname);
-		goto out;
-	}
-	/* And finally the VDI mapping */
-	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-			       &inode->data_vdi_id[old_idx],
-			       sizeof(uint32_t),
-			       offsetof(struct sd_inode,
-					data_vdi_id[old_idx]),
-			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       inode->header.nr_copies,
-			       inode->header.copy_policy, false);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode %"PRIx64": %s",
-		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		/* Revert VDI ACL changes */
 		if (do_vdi_alter_acl(vdiname, 0, acl_vid) != EXIT_SUCCESS)
 			sd_err("VDI %"PRIx32" is left outside of ACL %"PRIx32,
 			       vid, acl_vid);
