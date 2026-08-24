@@ -20,6 +20,9 @@ services:
       context: ../
       dockerfile: Dockerfile.sheepdog
     command: echo sheep container ready
+  ioutgt-build:
+    image: ioutgt-sheepdog
+    build: https://github.com/hreinecke/ioutgt.git#sheepdog
 EOF
 
 for i in $(seq ${NUM_NODES}); do
@@ -51,7 +54,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "      - VALGRIND=\${VALGRIND}"
     echo "    command: \${VALGRIND} /usr/sbin/sheep -f"
     echo "  target${node}:"
-    echo "    image: ioutgt"
+    echo "    image: ioutgt-sheepdog"
     echo "    network_mode: service:sheep${node}"
     echo "    security_opt:"
     echo "      - seccomp=unconfined"

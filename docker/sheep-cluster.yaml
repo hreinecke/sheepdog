@@ -6,6 +6,9 @@ services:
       context: ../
       dockerfile: Dockerfile.sheepdog
     command: echo sheep container ready
+  ioutgt-build:
+    image: ioutgt-sheepdog
+    build: https://github.com/hreinecke/ioutgt.git#sheepdog
   sheep0:
     image: sheepdog
     hostname: ${SHEEP0_NAME}
@@ -31,7 +34,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target0:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep0
     security_opt:
       - seccomp=unconfined
@@ -61,7 +64,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target1:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep1
     security_opt:
       - seccomp=unconfined
@@ -91,7 +94,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target2:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep2
     security_opt:
       - seccomp=unconfined
@@ -121,7 +124,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target3:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep3
     security_opt:
       - seccomp=unconfined
@@ -151,7 +154,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target4:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep4
     security_opt:
       - seccomp=unconfined
@@ -181,7 +184,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target5:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep5
     security_opt:
       - seccomp=unconfined
@@ -211,7 +214,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target6:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep6
     security_opt:
       - seccomp=unconfined
@@ -241,7 +244,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target7:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep7
     security_opt:
       - seccomp=unconfined
@@ -271,7 +274,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target8:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep8
     security_opt:
       - seccomp=unconfined
@@ -301,7 +304,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target9:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep9
     security_opt:
       - seccomp=unconfined
@@ -331,7 +334,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target10:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep10
     security_opt:
       - seccomp=unconfined
@@ -361,7 +364,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target11:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep11
     security_opt:
       - seccomp=unconfined
@@ -391,7 +394,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target12:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep12
     security_opt:
       - seccomp=unconfined
@@ -421,7 +424,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target13:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep13
     security_opt:
       - seccomp=unconfined
@@ -451,7 +454,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target14:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep14
     security_opt:
       - seccomp=unconfined
@@ -481,7 +484,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target15:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep15
     security_opt:
       - seccomp=unconfined
@@ -511,7 +514,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target16:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep16
     security_opt:
       - seccomp=unconfined
@@ -541,7 +544,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target17:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep17
     security_opt:
       - seccomp=unconfined
@@ -571,7 +574,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target18:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep18
     security_opt:
       - seccomp=unconfined
@@ -601,7 +604,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target19:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep19
     security_opt:
       - seccomp=unconfined
@@ -631,7 +634,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target20:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep20
     security_opt:
       - seccomp=unconfined
@@ -661,7 +664,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target21:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep21
     security_opt:
       - seccomp=unconfined
@@ -691,7 +694,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target22:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep22
     security_opt:
       - seccomp=unconfined
@@ -721,7 +724,7 @@ services:
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
   target23:
-    image: ioutgt
+    image: ioutgt-sheepdog
     network_mode: service:sheep23
     security_opt:
       - seccomp=unconfined
