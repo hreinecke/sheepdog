@@ -728,6 +728,9 @@ static int acl_remove_vdi(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+	if (acl_cmd_data.force)
+		goto update_inode;
+
 	/*
 	 * Check (and clear) the VDI's own ACL id first: a locked VDI must not
 	 * change its ACL, and this is the only step that can fail on that
@@ -742,7 +745,7 @@ static int acl_remove_vdi(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-
+update_inode:
 	/* Only now update the ACL's own VDI mapping table and commit it */
 	inode->data_vdi_id[old_idx] = 0;
 	limit = inode->header.max_data_id_nr;
@@ -763,7 +766,8 @@ static int acl_remove_vdi(int argc, char **argv)
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
 		/* Revert VDI ACL changes */
-		if (do_vdi_alter_acl(vdiname, 0, acl_vid) != EXIT_SUCCESS)
+		if (!acl_cmd_data.force &&
+		    do_vdi_alter_acl(vdiname, 0, acl_vid) != EXIT_SUCCESS)
 			sd_err("VDI %"PRIx32" is left outside of ACL %"PRIx32,
 			       vid, acl_vid);
 		ret = EXIT_FAILURE;
@@ -862,7 +866,7 @@ static struct subcommand acl_cmd[] = {
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
 	 acl_add_cmd, CMD_NEED_ARG, acl_add, acl_options},
-	{"remove", "<aclname> <vdiname>", "ajprvhT", "remove an entry from ACL",
+	{"remove", "<aclname> <vdiname>", "fajprvhT", "remove an entry from ACL",
 	 acl_remove_cmd, CMD_NEED_ARG, acl_remove, acl_options},
 	{NULL,},
 };
