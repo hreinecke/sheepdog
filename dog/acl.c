@@ -557,7 +557,8 @@ static int acl_add_vdi(int argc, char **argv)
 			       &vid, sizeof(uint32_t),
 			       offsetof(struct sd_inode,
 					data_vdi_id[new_idx]),
-			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
+			       inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64": %s",
@@ -579,7 +580,8 @@ static int acl_add_vdi(int argc, char **argv)
 	inode->header.vdi_epoch++;
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       inode, sizeof(*inode), 0,
-			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
+			       inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
@@ -649,7 +651,8 @@ static int acl_add_member(int argc, char **argv)
 			       (unsigned int)SD_MAX_VDI_LEN,
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
-			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
+			       inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64": %s",
@@ -738,7 +741,7 @@ static int acl_remove_vdi(int argc, char **argv)
 	/* Modify the inode header first */
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       inode, sizeof(*inode), 0,
-			       SD_FLAG_CMD_DIRECT,
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
 			       inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
@@ -747,12 +750,12 @@ static int acl_remove_vdi(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
-
+update_vdi:
 	/* Now update the VDI ACL */
 	ret = do_vdi_alter_acl(vdiname, acl_vid, 0);
 	if (ret != EXIT_SUCCESS) {
-		sd_err("failed to update VDI %s with ACL id",
-		       vdiname);
+		sd_err("failed to remove ACL id %"PRIx32" from VDI %s",
+		       acl_vid, vdiname);
 		goto out;
 	}
 	/* And finally the VDI mapping */
@@ -761,7 +764,8 @@ static int acl_remove_vdi(int argc, char **argv)
 			       sizeof(uint32_t),
 			       offsetof(struct sd_inode,
 					data_vdi_id[old_idx]),
-			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
+			       inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64": %s",
@@ -824,7 +828,8 @@ static int acl_remove_member(int argc, char **argv)
 			       (unsigned int)SD_MAX_VDI_LEN,
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
-			       SD_FLAG_CMD_DIRECT, inode->header.nr_copies,
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
+			       inode->header.nr_copies,
 			       inode->header.copy_policy, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",

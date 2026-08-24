@@ -116,7 +116,7 @@ int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
 {
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-	int ret;
+	int ret, retries = 10;
 
 	if (create)
 		sd_init_req(&hdr, SD_OP_CREATE_AND_WRITE_OBJ);
@@ -133,13 +133,18 @@ int dog_write_object(uint64_t oid, uint64_t cow_oid, void *data,
 	hdr.obj.oid = oid;
 	hdr.obj.cow_oid = cow_oid;
 	hdr.obj.offset = offset;
-
+retry:
 	ret = dog_exec_req(&sd_nid, &hdr, data);
 	if (ret < 0) {
 		sd_err("Failed to write object %016" PRIx64, oid);
 		return SD_RES_EIO;
 	}
 	if (rsp->result != SD_RES_SUCCESS) {
+		if ((flags & SD_FLAG_CMD_TGT) &&
+		    rsp->result == SD_RES_INODE_INVALIDATED) {
+			if (--retries > 0)
+				goto retry;
+		}
 		sd_err("Failed to write object %016" PRIx64 ": %s", oid,
 		       sd_strerror(rsp->result));
 		return rsp->result;
