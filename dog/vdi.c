@@ -1643,6 +1643,7 @@ static int vdi_object_location(int argc, char **argv)
 	const char *vdiname = argv[optind];
 	uint64_t idx = vdi_cmd_data.index, oid;
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
+	const struct sd_vnode *vnode;
 	uint32_t vid, vdi_id, snap_id;
 	struct json_object *vdi_obj = NULL, *location_obj = NULL;
 	int ret;
@@ -1675,10 +1676,14 @@ static int vdi_object_location(int argc, char **argv)
 			JSON_ADD_INT(out_obj, "nr_copies",
 				     inode->header.nr_copies);
 			JSON_ADD_INT(out_obj, "nr_nodes", sd_nodes_nr);
+			JSON_ADD_INT(out_obj, "nr_zones", sd_zones_nr);
+			vnode = oid_to_first_vnode(oid, &sd_vroot);
+			JSON_ADD_INT(out_obj, "first_zone",
+				     vnode->node->zone);
 		} else
 			printf("Looking for the inode object 0x%" PRIx32
 			       " with %d nodes\n\n", vid, sd_nodes_nr);
-		for_each_node_print(vid_to_vdi_oid(vid), vdi_obj);
+		for_each_node_print(oid, vdi_obj);
 		if (json_output)
 			json_object_object_add(out_obj, "location", vdi_obj);
 
@@ -1707,6 +1712,10 @@ static int vdi_object_location(int argc, char **argv)
 			JSON_ADD_INT(out_obj, "nr_copies",
 				     inode->header.nr_copies);
 			JSON_ADD_INT(out_obj, "nr_nodes", sd_nodes_nr);
+			JSON_ADD_INT(out_obj, "nr_zones", sd_zones_nr);
+			vnode = oid_to_first_vnode(oid, &sd_vroot);
+			JSON_ADD_INT(out_obj, "first_zone",
+				     vnode->node->zone);
 		} else
 			printf("Looking for the object %016" PRIx64
 			       " (vid 0x%" PRIx32 " idx %"PRIu64
