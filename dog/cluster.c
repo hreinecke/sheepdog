@@ -13,6 +13,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/time.h>
+#include <uuid/uuid.h>
 
 #include "dog.h"
 #include "sheep.h"
@@ -203,6 +204,7 @@ static int cluster_format(int argc, char **argv)
 #ifdef HAVE_DISKVNODES
 	hdr.cluster.flags |= SD_CLUSTER_FLAG_DISKMODE;
 #endif
+	hdr.cluster.flags |= SD_CLUSTER_FLAG_STORE_UUID;
 
 	if (cluster_cmd_data.fixed_vnodes)
 		hdr.cluster.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
@@ -377,8 +379,11 @@ retry:
 		if (!raw_output && !json_output)
 			printf("Cluster store: ");
 		if (rsp->result == SD_RES_SUCCESS) {
-			char copy[10];
+			char copy[10], uuid_str[UUID_STR_LEN];
+			const char *drv_name = logs->drv_name;
 			int data, parity;
+			uuid_t uuid = {};
+
 			if (!logs->copy_policy)
 				snprintf(copy, sizeof(copy), "%d",
 					 logs->nr_copies);
@@ -388,27 +393,41 @@ retry:
 				snprintf(copy, sizeof(copy), "%d:%d",
 					 data, parity);
 			}
+			if (logs->flags & SD_CLUSTER_FLAG_STORE_UUID) {
+				memcpy(&uuid, logs->drv_name, 16);
+				uuid_unparse(uuid, uuid_str);
+				if (uuid[7] == 'e')
+					drv_name = "tree";
+				else
+					drv_name = "plain";
+			}
 			if (json_output) {
 				struct json_object *store_obj =
 					json_object_new_object();
-				json_object_object_add(store_obj, "driver",
-					json_object_new_string(logs->drv_name));
+				if (!uuid_is_null(uuid)) {
+					JSON_ADD_STRING(out_obj, "uuid",
+							uuid_str);
+				}
+				JSON_ADD_STRING(store_obj, "driver",
+						drv_name);
 				if (!logs->copy_policy)
-					json_object_object_add(store_obj,
-						"nr_copies",
-						json_object_new_int(logs->nr_copies));
+					JSON_ADD_INT(store_obj, "nr_copies",
+						     logs->nr_copies);
 				else
-					json_object_object_add(store_obj,
-						"redundancy_policy",
-						json_object_new_string(copy));
+					JSON_ADD_STRING(store_obj,
+							"redundancy_policy",
+							copy);
+				json_object_object_add(out_obj, "store",
+						       store_obj);
 			} else {
 				if (!logs->copy_policy)
 					printf("%s with %d copies\n",
-					       logs->drv_name,
-					       logs->nr_copies);
+					       drv_name, logs->nr_copies);
 				else
 					printf("%s with %s redundancy policy\n",
-					       logs->drv_name, copy);
+					       drv_name, copy);
+				if (!uuid_is_null(uuid))
+					printf("Cluster UUID: %s\n", uuid_str);
 			}
 		} else if (!json_output)
 			printf("%s\n", sd_strerror(rsp->result));

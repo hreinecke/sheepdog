@@ -503,15 +503,32 @@ static int local_stat_cluster(struct request *req)
 		elog = (struct epoch_log *)next_elog;
 		memset(elog, 0, sizeof(*elog));
 
-		/* some filed only need to store in first elog */
+		/* some values only need to be stored in the first elog */
 		if (i == 0) {
 			elog->ctime = sys->cinfo.ctime;
 			elog->disable_recovery = sys->cinfo.disable_recovery;
 			elog->nr_copies = sys->cinfo.nr_copies;
 			elog->copy_policy = sys->cinfo.copy_policy;
 			elog->flags = sys->cinfo.flags;
-			pstrcpy(elog->drv_name, STORE_LEN,
-				(char *)sys->cinfo.default_store);
+			if (sys->cinfo.flags & SD_CLUSTER_FLAG_STORE_UUID) {
+				char *store =
+					(char *)sys->cinfo.default_store;
+				uint32_t p;
+				int o;
+
+				p = (uint32_t)sys->cinfo.flags << 8;
+				p |= (uint32_t)sys->cinfo.proto_ver << 24;
+				p |= (uint32_t)sys->cinfo.block_size_shift << 16;
+				memcpy(elog->drv_name, &p, 4);
+				o = 8 - strlen(store);
+				memcpy(elog->drv_name + o, store,
+				       strlen(store));
+				memcpy(elog->drv_name + 8,
+				       (char *)&sys->cinfo.ctime,
+				       sizeof(sys->cinfo.ctime));
+			} else
+				pstrcpy(elog->drv_name, STORE_LEN,
+					(char *)sys->cinfo.default_store);
 		}
 
 		elog->epoch = epoch;

@@ -163,6 +163,7 @@
 #define SD_CLUSTER_FLAG_USE_LOCK	0x0008 /* Lock/Unlock vdi */
 #define SD_CLUSTER_FLAG_RECYCLE_VID	0x0010 /* Enable recycling of VID */
 #define SD_CLUSTER_FLAG_AVOID_DISKFULL	0x0020 /* Avoid disk full by recovery */
+#define SD_CLUSTER_FLAG_STORE_UUID	0x0040 /* Store UUID in drv_name */
 
 enum sd_status {
 	SD_STATUS_INVALID = 0,

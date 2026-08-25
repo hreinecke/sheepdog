@@ -405,6 +405,7 @@ struct sheepdog_config {
 		uint16_t use_lock:1;
 		uint16_t recycle_vid:1;
 		uint16_t avoid_diskfull:1;
+		uint16_t store_uuid:1;
 	} flags;
 	uint8_t copies;
 	uint8_t default_store[STORE_LEN];

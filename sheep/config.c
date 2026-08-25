@@ -45,6 +45,8 @@ static void config_to_json(struct sheepdog_config *cfg,
 			       json_object_new_boolean(cfg->flags.recycle_vid));
 	json_object_object_add(flags_obj, "avoid_diskfull",
 			       json_object_new_boolean(cfg->flags.avoid_diskfull));
+	json_object_object_add(flags_obj, "store_uuid",
+			       json_object_new_boolean(cfg->flags.store_uuid));
 	json_object_object_add(cfg_obj, "flags", flags_obj);
 	_SET_CINFO_VAL(cfg_obj, cfg, copies);
 	if (strlen(default_store))
@@ -113,6 +115,8 @@ static int get_cluster_config(void)
 		sys->cinfo.flags |= SD_CLUSTER_FLAG_RECYCLE_VID;
 	if (config.flags.avoid_diskfull)
 		sys->cinfo.flags |= SD_CLUSTER_FLAG_AVOID_DISKFULL;
+	if (config.flags.store_uuid)
+		sys->cinfo.flags |= SD_CLUSTER_FLAG_STORE_UUID;
 	if (config.ctime > 0 && config.flags.auto_vnodes)
 		autovnodes = true;
 	if (autovnodes)
@@ -172,6 +176,8 @@ static void json_decode_flags(struct json_object *obj,
 			!!(flags & SD_CLUSTER_FLAG_RECYCLE_VID);
 		cfg->flags.avoid_diskfull =
 			!!(flags & SD_CLUSTER_FLAG_AVOID_DISKFULL);
+		cfg->flags.store_uuid =
+			!!(flags & SD_CLUSTER_FLAG_STORE_UUID);
 		return;
 	}
 	itb = json_object_iter_begin(obj);
@@ -196,6 +202,9 @@ static void json_decode_flags(struct json_object *obj,
 				json_object_get_boolean(val_obj);
 		else if (!strcmp(key, "avoid_diskfull"))
 			cfg->flags.avoid_diskfull =
+				json_object_get_boolean(val_obj);
+		else if (!strcmp(key, "store_uuid"))
+			cfg->flags.store_uuid =
 				json_object_get_boolean(val_obj);
 		else
 			sd_warn("%s: unhandled key '%s'", __func__, key);
@@ -391,6 +400,8 @@ int set_cluster_config(const struct cluster_info *cinfo)
 		!!(cinfo->flags & SD_CLUSTER_FLAG_RECYCLE_VID);
 	config.flags.avoid_diskfull =
 		!!(cinfo->flags & SD_CLUSTER_FLAG_AVOID_DISKFULL);
+	config.flags.store_uuid =
+		!!(cinfo->flags & SD_CLUSTER_FLAG_STORE_UUID);
 	config.block_size_shift = cinfo->block_size_shift;
 	memset(config.default_store, 0, sizeof(config.default_store));
 	pstrcpy((char *)config.default_store, sizeof(config.default_store),
