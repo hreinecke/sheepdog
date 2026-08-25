@@ -34,6 +34,8 @@ for i in $(seq ${NUM_NODES}); do
     echo "    hostname: \${SHEEP${node}_NAME}"
     echo "    mac_address: \${SHEEP${node}_MAC}"
     echo "    init: true"
+    echo "    security_opt:"
+    echo "      - seccomp=unconfined"
     echo "    networks:"
     echo "      etcd-br:"
     echo "        ipv4_address: \${SHEEP${node}_IP}"

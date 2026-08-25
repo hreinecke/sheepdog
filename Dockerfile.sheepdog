@@ -1,11 +1,11 @@
 FROM registry.opensuse.org/opensuse/bci/gcc
 RUN zypper --non-interactive in automake autoconf libtool diffutils
 RUN zypper --non-interactive in liburcu-devel libjson-c-devel
-RUN zypper --non-interactive in libuuid-devel libneon-devel
+RUN zypper --non-interactive in libuuid-devel libneon-devel liburing-devel
 RUN zypper --non-interactive in coreutils nasm valgrind
 ENV SHEEPSRC=/usr/src/sheepdog
 
 WORKDIR $SHEEPSRC
 ADD . $SHEEPSRC
 RUN ./autogen.sh
-RUN ./configure --prefix=/usr --enable-etcd --disable-corosync && make && make install
+RUN ./configure --prefix=/usr --enable-etcd --disable-corosync --enable-io-uring && make && make install

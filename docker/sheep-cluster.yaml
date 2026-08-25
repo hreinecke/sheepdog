@@ -14,6 +14,8 @@ services:
     hostname: ${SHEEP0_NAME}
     mac_address: ${SHEEP0_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP0_IP}
@@ -44,6 +46,8 @@ services:
     hostname: ${SHEEP1_NAME}
     mac_address: ${SHEEP1_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP1_IP}
@@ -74,6 +78,8 @@ services:
     hostname: ${SHEEP2_NAME}
     mac_address: ${SHEEP2_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP2_IP}
@@ -104,6 +110,8 @@ services:
     hostname: ${SHEEP3_NAME}
     mac_address: ${SHEEP3_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP3_IP}
@@ -134,6 +142,8 @@ services:
     hostname: ${SHEEP4_NAME}
     mac_address: ${SHEEP4_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP4_IP}
@@ -164,6 +174,8 @@ services:
     hostname: ${SHEEP5_NAME}
     mac_address: ${SHEEP5_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP5_IP}
@@ -194,6 +206,8 @@ services:
     hostname: ${SHEEP6_NAME}
     mac_address: ${SHEEP6_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP6_IP}
@@ -224,6 +238,8 @@ services:
     hostname: ${SHEEP7_NAME}
     mac_address: ${SHEEP7_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP7_IP}
@@ -254,6 +270,8 @@ services:
     hostname: ${SHEEP8_NAME}
     mac_address: ${SHEEP8_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP8_IP}
@@ -284,6 +302,8 @@ services:
     hostname: ${SHEEP9_NAME}
     mac_address: ${SHEEP9_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP9_IP}
@@ -314,6 +334,8 @@ services:
     hostname: ${SHEEP10_NAME}
     mac_address: ${SHEEP10_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP10_IP}
@@ -344,6 +366,8 @@ services:
     hostname: ${SHEEP11_NAME}
     mac_address: ${SHEEP11_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP11_IP}
@@ -374,6 +398,8 @@ services:
     hostname: ${SHEEP12_NAME}
     mac_address: ${SHEEP12_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP12_IP}
@@ -404,6 +430,8 @@ services:
     hostname: ${SHEEP13_NAME}
     mac_address: ${SHEEP13_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP13_IP}
@@ -434,6 +462,8 @@ services:
     hostname: ${SHEEP14_NAME}
     mac_address: ${SHEEP14_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP14_IP}
@@ -464,6 +494,8 @@ services:
     hostname: ${SHEEP15_NAME}
     mac_address: ${SHEEP15_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP15_IP}
@@ -494,6 +526,8 @@ services:
     hostname: ${SHEEP16_NAME}
     mac_address: ${SHEEP16_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP16_IP}
@@ -524,6 +558,8 @@ services:
     hostname: ${SHEEP17_NAME}
     mac_address: ${SHEEP17_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP17_IP}
@@ -554,6 +590,8 @@ services:
     hostname: ${SHEEP18_NAME}
     mac_address: ${SHEEP18_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP18_IP}
@@ -584,6 +622,8 @@ services:
     hostname: ${SHEEP19_NAME}
     mac_address: ${SHEEP19_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP19_IP}
@@ -614,6 +654,8 @@ services:
     hostname: ${SHEEP20_NAME}
     mac_address: ${SHEEP20_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP20_IP}
@@ -644,6 +686,8 @@ services:
     hostname: ${SHEEP21_NAME}
     mac_address: ${SHEEP21_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP21_IP}
@@ -674,6 +718,8 @@ services:
     hostname: ${SHEEP22_NAME}
     mac_address: ${SHEEP22_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP22_IP}
@@ -704,6 +750,8 @@ services:
     hostname: ${SHEEP23_NAME}
     mac_address: ${SHEEP23_MAC}
     init: true
+    security_opt:
+      - seccomp=unconfined
     networks:
       etcd-br:
         ipv4_address: ${SHEEP23_IP}
