@@ -298,6 +298,11 @@ AC_ARG_ENABLE([accelio],
 	[ enable_accelio=$HAVE_ACCELIO ],)
 AM_CONDITIONAL(BUILD_ACCELIO, test x$enable_accelio = xyes)
 
+AC_ARG_ENABLE([io-uring],
+	[  --enable-io-uring        : use io_uring for the event loop instead of epoll (default no) ],,
+	[ enable_io_uring="no" ],)
+AM_CONDITIONAL(BUILD_IO_URING, test x$enable_io_uring = xyes)
+
 dnl systemd detection
 if test x$enable_systemd = xno ; then
     have_systemd=no;
@@ -404,6 +409,15 @@ fi
 if test "x${enable_etcd}" = xyes; then
 	AC_DEFINE_UNQUOTED([HAVE_ETCD], 1, [have etcd])
 	PACKAGE_FEATURES="$PACKAGE_FEATURES etcd"
+fi
+
+if test "x${enable_io_uring}" = xyes; then
+	PKG_CHECK_MODULES([liburing],[liburing],,
+		AC_MSG_ERROR(liburing not found))
+	AC_DEFINE_UNQUOTED([HAVE_IO_URING], 1, [have io_uring])
+	PACKAGE_FEATURES="$PACKAGE_FEATURES io_uring"
+	LIBS="$LIBS $liburing_LIBS"
+	CFLAGS="$CFLAGS $liburing_CFLAGS"
 fi
 
 if test "x${enable_trace}" = xyes; then

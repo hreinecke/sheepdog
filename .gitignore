@@ -67,6 +67,7 @@ stamp-h1
 libtool
 ltmain.sh
 config.h
+m4/
 config.h.in
 script/generic
 script/dog
