@@ -581,7 +581,7 @@ void list_sort(void *priv, struct list_head *head,
  * Find zero blocks from the beginning and end of buffer
  *
  * The caller passes the offset of 'buf' with 'poffset' so that this function
- * can align the return values to BLOCK_SIZE.  'plen' points the length of the
+ * can align the return values to PAGE_SIZE.  'plen' points the length of the
  * buffer.  If there are zero blocks at the beginning of the buffer, this
  * function increases the offset and decreases the length on condition that
  * '*poffset' is block-aligned.  If there are zero blocks at the end of the
@@ -590,15 +590,17 @@ void list_sort(void *priv, struct list_head *head,
  */
 void find_zero_blocks(const void *buf, uint64_t *poffset, uint32_t *plen)
 {
-	const uint8_t zero[BLOCK_SIZE] = {0};
+	uint8_t *zero;
 	const uint8_t *p = buf;
 	uint64_t start = *poffset;
 	uint64_t offset = 0;
 	uint32_t len = *plen;
+	unsigned int pg_sz = getpagesize();
 
+	zero = xzalloc(pg_sz);
 	/* trim zero blocks from the beginning of buffer */
-	while (len >= BLOCK_SIZE) {
-		size_t size = BLOCK_SIZE - (start + offset) % BLOCK_SIZE;
+	while (len >= pg_sz) {
+		size_t size = pg_sz - (start + offset) % pg_sz;
 
 		if (memcmp(p + offset, zero, size) != 0)
 			break;
@@ -608,17 +610,17 @@ void find_zero_blocks(const void *buf, uint64_t *poffset, uint32_t *plen)
 	}
 
 	/* trim zero sectors from the end of buffer */
-	while (len >= BLOCK_SIZE) {
-		size_t size = (start + offset + len) % BLOCK_SIZE;
+	while (len >= pg_sz) {
+		size_t size = (start + offset + len) % pg_sz;
 		if (size == 0)
-			size = BLOCK_SIZE;
+			size = pg_sz;
 
 		if (memcmp(p + offset + len - size, zero, size) != 0)
 			break;
 
 		len -= size;
 	}
-
+	free(zero);
 	*plen = len;
 	*poffset = start + offset;
 }

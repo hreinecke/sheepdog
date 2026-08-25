@@ -22,8 +22,6 @@
 
 #ifdef HAVE_IO_URING
 #include <liburing.h>
-/* liburing.h drags in linux/fs.h, whose BLOCK_SIZE clashes with util.h's */
-#undef BLOCK_SIZE
 #endif
 
 #define TRACEPOINT_DEFINE

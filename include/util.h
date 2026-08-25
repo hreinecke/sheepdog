@@ -18,7 +18,6 @@
 #include "list.h"
 
 #define SECTOR_SIZE (1U << 9)
-#define BLOCK_SIZE (1U << 12)
 
 #define TIME_FORMAT "%FT%T%z"
 

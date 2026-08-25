@@ -89,7 +89,7 @@ again:
 		const size_t nonzero_tail = nonzero_head + nonzero_len;
 		if (nonzero_tail < len) {
 			/* discard tail */
-			const size_t block_end = roundup(len, BLOCK_SIZE);
+			const size_t block_end = roundup(len, getpagesize());
 			const size_t tail_len = block_end - nonzero_tail;
 			ret = xfallocate(
 				fd, FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,

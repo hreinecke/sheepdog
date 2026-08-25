@@ -102,7 +102,7 @@ static int default_trim(int fd, uint64_t oid, const struct siocb *iocb,
 		uint32_t object_size = get_vdi_object_size(oid_to_vid(oid));
 		if (end == get_objsize(oid, object_size))
 			/* This is necessary to punch the last block */
-			end = round_up(end, BLOCK_SIZE);
+			end = round_up(end, getpagesize());
 		sd_debug("discard between %ld, %ld, %016" PRIx64, *poffset + *plen,
 			 end, oid);
 
