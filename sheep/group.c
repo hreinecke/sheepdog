@@ -829,7 +829,7 @@ static void get_vdis(const struct rb_root *nroot, const struct sd_node *joined)
 {
 	struct get_vdis_work *w;
 
-	w = xmalloc(sizeof(*w));
+	w = xzalloc(sizeof(*w));
 	w->joined = *joined;
 	INIT_RB_ROOT(&w->nroot);
 	rb_copy(nroot, struct sd_node, rb, &w->nroot, node_cmp);
