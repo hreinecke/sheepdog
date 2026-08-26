@@ -240,7 +240,6 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 		 * undetected. Catch it via nlink before trusting the cache.
 		 */
 		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
-			store_cache_remove(entry);
 			ret = err_to_sderr(entry->path, entry->oid, ENOENT);
 			goto out_remove;
 		}
