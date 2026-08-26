@@ -713,6 +713,7 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 				    uint32_t epoch, uint8_t ec_index,
 				    struct vnode_info *vinfo, void *arg)
 {
+	struct store_cache_entry *entry;
 	char *path, *stale_path;
 	uint32_t tgt_epoch = *(uint32_t *)arg;
 	int ret;
@@ -744,6 +745,24 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 		free(path);
 		free(stale_path);
 		return SD_RES_EIO;
+	}
+
+	/*
+	 * The rename leaves any cached fd for this oid pointing at the
+	 * renamed (still perfectly valid, nlink > 0) inode, so
+	 * default_exist()'s cache fast path would keep reporting the
+	 * object present at the live path. That makes recovery's
+	 * "already recovered" check (sd_store->exist()) skip objects
+	 * that were actually just moved to .stale, leaving them
+	 * under-replicated. Drop the cache entry so exist() falls back
+	 * to checking the live path on disk.
+	 */
+	entry = store_cache_remove_by_oid(oid);
+	if (entry) {
+		if (entry->fd >= 0)
+			close(entry->fd);
+		free(entry->path);
+		free(entry);
 	}
 
 	sd_debug("moved object %016"PRIx64, oid);
@@ -876,6 +895,7 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 	struct siocb iocb = {};
 	uint32_t length;
 	bool is_readonly_obj = oid_is_readonly(oid);
+	bool is_stale;
 
 	if (!entry)
 		return SD_RES_NO_MEM;
@@ -888,18 +908,31 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 		}
 	}
 
+	/*
+	 * get_object_path() may resolve to a .stale/ snapshot instead of
+	 * the live path (recovery calls us while hunting for a matching
+	 * local epoch to link from). Leaving that fd cached under the
+	 * plain oid key would later fool default_exist()'s cache fast
+	 * path into reporting the live object present when it never was,
+	 * so any such entry must not survive this call.
+	 */
+	is_stale = is_stale_path(entry->path);
+
 	if (is_readonly_obj) {
 		if (get_object_sha1(entry->path, sha1) == 0) {
 			sd_debug("use cached sha1 digest %s",
 				 sha1_to_hex(sha1));
-			return SD_RES_SUCCESS;
+			ret = SD_RES_SUCCESS;
+			goto out;
 		}
 	}
 
 	length = get_store_objsize(oid);
 	ret = posix_memalign((void **)&buf, getpagesize(), length);
-	if (ret)
-		return SD_RES_NO_MEM;
+	if (ret) {
+		ret = SD_RES_NO_MEM;
+		goto out;
+	}
 
 	iocb.epoch = epoch;
 	iocb.buf = buf;
@@ -907,8 +940,8 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 
 	ret = default_read_from_path(entry, &iocb);
 	if (ret != SD_RES_SUCCESS) {
-		store_cache_remove(entry);
-		return ret;
+		free(buf);
+		goto out;
 	}
 
 	get_buffer_sha1(buf, length, sha1);
@@ -920,6 +953,9 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 	if (is_readonly_obj)
 		set_object_sha1(entry->path, sha1);
 
+out:
+	if (is_stale || ret != SD_RES_SUCCESS)
+		store_cache_remove(entry);
 	return ret;
 }
 
