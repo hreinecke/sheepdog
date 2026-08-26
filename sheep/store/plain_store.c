@@ -29,6 +29,16 @@ static int store_cache_cmp(const struct store_cache_entry *a,
 	return intcmp(a->oid, b->oid);
 }
 
+static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
+{
+	struct store_cache_entry *entry, key = { .oid = oid };
+
+	sd_mutex_lock(&store_cache_lock);
+	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
+	sd_mutex_unlock(&store_cache_lock);
+	return entry;
+}
+
 static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 {
 	struct store_cache_entry *entry, *new = xzalloc(sizeof(*new));
@@ -134,9 +144,20 @@ static int get_store_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
  */
 bool default_exist(uint64_t oid, uint8_t ec_index)
 {
+	struct store_cache_entry *entry;
 	char *path;
 	int ret;
 
+	entry = store_cache_lookup_by_oid(oid);
+	if (entry && entry->fd >= 0) {
+		struct stat st;
+
+		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
+			store_cache_remove(entry);
+			return false;
+		} else
+			return true;
+	}
 	ret = get_store_path(oid, ec_index, &path);
 	if (ret < 0)
 		return false;
@@ -208,8 +229,23 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 	if (!entry)
 		return SD_RES_NO_MEM;
 
-	if (entry->fd >= 0)
+	if (entry->fd >= 0) {
+		struct stat st;
+
+		/*
+		 * A cached fd can outlive the file it points at (e.g. the
+		 * object's disk got pulled out from under us): xpwrite()
+		 * on such a fd silently succeeds against the orphaned
+		 * inode instead of failing, so disk failures would go
+		 * undetected. Catch it via nlink before trusting the cache.
+		 */
+		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
+			store_cache_remove(entry);
+			ret = err_to_sderr(entry->path, entry->oid, ENOENT);
+			goto out_remove;
+		}
 		goto do_write;
+	}
 
 	if (!entry->path) {
 		ret = get_store_path(entry->oid, iocb->ec_index, &entry->path);
@@ -303,6 +339,8 @@ int default_cleanup(void)
 			close(entry->fd);
 			sys->cache_stat.nr_close++;
 		}
+		if (entry->path)
+			free(entry->path);
 		free(entry);
 	}
 	sd_mutex_unlock(&store_cache_lock);
@@ -432,6 +470,13 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 		if (ret < 0) {
 			store_cache_remove(entry);
 			return SD_RES_NO_MEM;
+		}
+	} else {
+		struct stat st;
+		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
+			ret = err_to_sderr(entry->path, entry->oid, ENOENT);
+			store_cache_remove(entry);
+			return ret;
 		}
 	}
 	ret = default_read_from_path(entry, iocb);
