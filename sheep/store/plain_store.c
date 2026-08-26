@@ -35,6 +35,8 @@ static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
 
 	sd_mutex_lock(&store_cache_lock);
 	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
+	if (entry)
+		sys->cache_stat.nr_cache_hits++;
 	sd_mutex_unlock(&store_cache_lock);
 	return entry;
 }
