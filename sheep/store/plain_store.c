@@ -500,6 +500,7 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 
 int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 {
+	struct store_cache_entry *entry = store_cache_remove_by_oid(oid);
 	char *path, *tmp_path, *dir;
 	int flags = prepare_iocb(oid, iocb, true);
 	int ret, fd;
@@ -509,6 +510,13 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	uint64_t offset = iocb->offset;
 
 	sd_debug("%016"PRIx64, oid);
+	if (entry) {
+		if (entry->fd >= 0)
+			close(entry->fd);
+		if (entry->path)
+			free(entry->path);
+		free(entry);
+	}
 	ret = get_store_path(oid, iocb->ec_index, &path);
 	if (ret < 0)
 		return SD_RES_NO_MEM;
