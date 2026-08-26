@@ -142,6 +142,13 @@ struct request {
 	unsigned int retry_count; /* consecutive retries without progress */
 };
 
+struct sd_cache_stat {
+	unsigned int nr_open;
+	unsigned int nr_close;
+	unsigned int nr_cache_entries;
+	unsigned int nr_cache_hits;
+};
+
 struct system_info {
 	struct cluster_driver *cdrv;
 	const char *cdrv_option;
@@ -199,6 +206,7 @@ struct system_info {
 	/* upgrade data layout before starting service if necessary*/
 	bool upgrade;
 	struct sd_stat stat;
+	struct sd_cache_stat cache_stat;
 };
 
 struct disk {

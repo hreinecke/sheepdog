@@ -39,10 +39,13 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 	new->oid = oid;
 	new->fd = -1;
 	entry = rb_insert(&store_cache_root, new, node, store_cache_cmp);
-	if (entry)
+	if (entry) {
+		sys->cache_stat.nr_cache_entries++;
 		free(new);
-	else
+	} else {
+		sys->cache_stat.nr_cache_hits++;
 		entry = new;
+	}
 	sd_mutex_unlock(&store_cache_lock);
 	return entry;
 }
@@ -51,9 +54,12 @@ static void store_cache_remove(struct store_cache_entry *entry)
 {
 	sd_mutex_lock(&store_cache_lock);
 	rb_erase(&entry->node, &store_cache_root);
+	sys->cache_stat.nr_cache_entries--;
 	sd_mutex_unlock(&store_cache_lock);
-	if (entry->fd != -1)
+	if (entry->fd != -1) {
 		close(entry->fd);
+		sys->cache_stat.nr_close++;
+	}
 	if (entry->path)
 		free(entry->path);
 	free(entry);
@@ -65,8 +71,10 @@ static struct store_cache_entry *store_cache_remove_by_oid(uint64_t oid)
 
 	sd_mutex_lock(&store_cache_lock);
 	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
-	if (entry)
+	if (entry) {
 		rb_erase(&entry->node, &store_cache_root);
+		sys->cache_stat.nr_cache_entries--;
+	}
 	sd_mutex_unlock(&store_cache_lock);
 	return entry;
 }
@@ -227,6 +235,7 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 		ret = err_to_sderr(entry->path, entry->oid, errno);
 		goto out_remove;
 	}
+	sys->cache_stat.nr_open++;
 do_write:
 	if (trim_is_supported && is_sparse_object(oid)) {
 		if (default_trim(entry->fd, oid, iocb, &offset, &len) < 0) {
@@ -290,8 +299,10 @@ int default_cleanup(void)
 	sd_mutex_lock(&store_cache_lock);
 	rb_for_each_entry(entry, &store_cache_root, node) {
 		rb_erase(&entry->node, &store_cache_root);
-		if (entry->fd != -1)
+		if (entry->fd != -1) {
 			close(entry->fd);
+			sys->cache_stat.nr_close++;
+		}
 		free(entry);
 	}
 	sd_mutex_unlock(&store_cache_lock);
@@ -389,6 +400,7 @@ static int default_read_from_path(struct store_cache_entry *entry,
 		entry->fd = open(entry->path, flags);
 		if (entry->fd < 0)
 			return err_to_sderr(entry->path, entry->oid, errno);
+		sys->cache_stat.nr_open++;
 	}
 
 	size = xpread(entry->fd, iocb->buf, iocb->length, iocb->offset);
@@ -402,6 +414,7 @@ static int default_read_from_path(struct store_cache_entry *entry,
 	if (ret != SD_RES_SUCCESS) {
 		close(entry->fd);
 		entry->fd = -1;
+		sys->cache_stat.nr_close++;
 	}
 	return ret;
 }
@@ -478,6 +491,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 		free(path);
 		return ret;
 	}
+	sys->cache_stat.nr_open++;
 
 	obj_size = get_store_objsize(oid);
 
@@ -511,7 +525,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	}
 
 	close(fd);
-
+	sys->cache_stat.nr_close++;
 	if (uatomic_is_true(&sys->use_journal) || sys->nosync == true) {
 		objlist_cache_insert(oid);
 		free(tmp_path);
@@ -530,18 +544,20 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 		free(path);
 		return ret;
 	}
-
+	sys->cache_stat.nr_open++;
 	if (fsync(fd) != 0) {
 		sd_err("failed to write directory %s: %m", dir);
 		free(tmp_path);
 		ret = err_to_sderr(path, oid, errno);
 		close(fd);
+		sys->cache_stat.nr_close++;
 		if (unlink(path) != 0)
 			sd_err("failed to unlink %s: %m", path);
 		free(path);
 		return ret;
 	}
 	close(fd);
+	sys->cache_stat.nr_close++;
 	objlist_cache_insert(oid);
 	free(tmp_path);
 	free(path);
@@ -551,6 +567,7 @@ out:
 	if (unlink(tmp_path) != 0)
 		sd_err("failed to unlink %s: %m", tmp_path);
 	close(fd);
+	sys->cache_stat.nr_close++;
 	free(tmp_path);
 	free(path);
 	return ret;
@@ -568,8 +585,10 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 	if (entry) {
 		path = entry->path;
 		entry->path = NULL;
-		if (entry->fd >= 0)
+		if (entry->fd >= 0) {
 			close(entry->fd);
+			sys->cache_stat.nr_close++;
+		}
 		free(entry);
 	} else {
 		ret = asprintf(&path, "%s/%016"PRIx64,
@@ -715,8 +734,10 @@ int default_remove_object(uint64_t oid, uint8_t ec_index)
 
 	if (entry) {
 		path = entry->path;
-		if (entry->fd >= 0)
+		if (entry->fd >= 0) {
 			close(entry->fd);
+			sys->cache_stat.nr_close++;
+		}
 		free(entry);
 	} else {
 		ret = get_store_path(oid, ec_index, &path);

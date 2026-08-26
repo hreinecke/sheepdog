@@ -920,6 +920,10 @@ static int local_sd_stat(const struct sd_req *req, struct sd_rsp *rsp,
 {
 	memcpy(data, &sys->stat, sizeof(struct sd_stat));
 	rsp->data_length = sizeof(struct sd_stat);
+	sd_info("Cache stat: open %u close %u entries %u hits %u",
+		sys->cache_stat.nr_open, sys->cache_stat.nr_close,
+		sys->cache_stat.nr_cache_entries,
+		sys->cache_stat.nr_cache_hits);
 	return SD_RES_SUCCESS;
 }
 
