@@ -89,6 +89,19 @@ static struct store_cache_entry *store_cache_remove_by_oid(uint64_t oid)
 	return entry;
 }
 
+static int get_default_store_path(uint64_t oid, char **path)
+{
+	return asprintf(path, "%s/%016" PRIx64,
+			md_get_object_dir(oid), oid);
+}
+
+static int get_default_ec_store_path(uint64_t oid, uint8_t ec_index,
+				     char **path)
+{
+	return asprintf(path, "%s/%016"PRIx64"_%d",
+			md_get_object_dir(oid), oid, ec_index);
+}
+
 static int get_store_path(uint64_t oid, uint8_t ec_index, char **path)
 {
 	int ret;
@@ -99,11 +112,9 @@ static int get_store_path(uint64_t oid, uint8_t ec_index, char **path)
 			errno = EINVAL;
 			return -1;
 		}
-		ret = asprintf(path, "%s/%016"PRIx64"_%d",
-			       md_get_object_dir(oid), oid, ec_index);
+		ret = get_default_ec_store_path(oid, ec_index, path);
 	} else
-		ret = asprintf(path, "%s/%016" PRIx64,
-			       md_get_object_dir(oid), oid);
+		ret = get_default_store_path(oid, path);
 	return ret < 0 ? ret : 0;
 }
 
@@ -643,8 +654,7 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 		}
 		free(entry);
 	}
-	ret = asprintf(&path, "%s/%016"PRIx64,
-		       md_get_object_dir(oid), oid);
+	ret = get_default_store_path(oid, &path);
 	if (ret < 0)
 		return SD_RES_NO_MEM;
 
@@ -720,16 +730,14 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 
 	/* ec_index from md.c is reliable so we can directly use it */
 	if (ec_index < SD_MAX_COPIES) {
-		ret = asprintf(&path, "%s/%016"PRIx64"_%d",
-			       md_get_object_dir(oid), oid, ec_index);
+		ret = get_default_ec_store_path(oid, ec_index, &path);
 		if (ret < 0)
 			return SD_RES_NO_MEM;
 		ret = asprintf(&stale_path, "%s/.stale/%016"PRIx64"_%d.%"PRIu32,
 			       md_get_object_dir(oid), oid, ec_index,
 			       tgt_epoch);
 	} else {
-		ret = asprintf(&path, "%s/%016" PRIx64,
-			       md_get_object_dir(oid), oid);
+		ret = get_default_store_path(oid, &path);
 		if (ret <  0)
 			return SD_RES_NO_MEM;
 		ret = asprintf(&stale_path, "%s/.stale/%016"PRIx64".%"PRIu32,
@@ -864,8 +872,7 @@ static int get_object_path(uint64_t oid, uint32_t epoch, char **path)
 	int ret;
 
 	if (default_exist(oid, 0)) {
-		ret = asprintf(path, "%s/%016"PRIx64,
-			 md_get_object_dir(oid), oid);
+		ret = get_default_store_path(oid, path);
 		if (ret < 0)
 			return SD_RES_NO_MEM;
 	} else {
