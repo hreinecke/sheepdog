@@ -325,14 +325,26 @@ static void worker_thread_request_done(int fd, int events, void *data)
 		sd_mutex_unlock(&wi->finished_lock);
 
 		while (!list_empty(&list)) {
+			bool async;
+
 			work = list_first_entry(&list, struct work, w_list);
 			list_del(&work->w_list);
 
 			tracepoint(work, request_done, wi, work);
 
+			/*
+			 * Many work->done() implementations free the struct
+			 * containing work as their last step (the same way
+			 * they always could when this was the only place
+			 * that ever touched nr_queued_work). Capture async
+			 * and use the wi we already have in scope instead of
+			 * finish_work_done()'s work->arg, so we never read
+			 * @work again after a possibly-freeing done() call.
+			 */
+			async = work->async;
 			work->done(work);
-			if (!work->async)
-				finish_work_done(work);
+			if (!async)
+				uatomic_dec(&wi->nr_queued_work);
 		}
 	}
 }
