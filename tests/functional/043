@@ -31,6 +31,10 @@ for i in `seq 0 10`; do
 done
 
 for i in 0 1 2 3; do
+    _wait_for_epoch $i 2
+done
+
+for i in 0 1 2 3; do
     $DOG vdi read test -p 700$i | md5sum
     $DOG cluster info -p 700$i | _filter_cluster_info
 done
@@ -40,6 +44,10 @@ _kill_sheep 3
 
 for i in `seq 0 10`; do
     echo $(($i + 200)) | $DOG vdi write test $((i * 4 * 1024 * 1024)) 512
+done
+
+for i in 0 1 2; do
+    _wait_for_epoch $i 3
 done
 
 for i in 0 1 2; do

@@ -439,6 +439,25 @@ _wait_for_sheep()
     _die "sheep cluster is not ready."
 }
 
+# wait until node at $1 (port offset) reports epoch $2 in 'cluster info',
+# i.e. until it has processed the confchg/notify event for that epoch
+_wait_for_epoch()
+{
+    local port=$((7000 + $1))
+    local target=$2
+    local top
+    local cnt=30
+
+    while [ $cnt -gt 0 ]; do
+	top=$($DOG cluster info -p $port 2> /dev/null | \
+	      sed -n 's/^.*[^0-9]\([0-9][0-9]*\) \[.*/\1/p' | head -1)
+	[ "$top" = "$target" ] && return
+	cnt=$(( cnt - 1 ))
+	sleep 1
+    done
+    _die "node $1 stuck at epoch ${top:-unknown}, expected $target"
+}
+
 _valgrind_sheep()
 {
     local dir=$(echo $1 | sed -e s/,.*//)
