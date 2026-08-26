@@ -15,6 +15,18 @@ struct work {
 	struct list_node w_list;
 	work_func_t fn;
 	work_func_t done;
+	void *arg;	/* owned by the work queue; do not touch */
+	/*
+	 * If false (the default), fn and done are expected to complete
+	 * synchronously, and the work queue calls finish_work_fn()/
+	 * finish_work_done() itself right after each returns.
+	 *
+	 * If true, fn (and done) may instead kick off asynchronous
+	 * processing and return before it's finished; whoever completes it,
+	 * from any thread, must then call finish_work_fn() (respectively
+	 * finish_work_done()) exactly once.
+	 */
+	bool async;
 };
 
 struct work_queue {
@@ -64,6 +76,8 @@ struct work_queue *create_work_queue(const char *name, enum wq_thread_control);
 struct work_queue *create_ordered_work_queue(const char *name);
 struct work_queue *create_fixed_work_queue(const char *name, int nr_threads);
 void queue_work(struct work_queue *q, struct work *work);
+void finish_work_fn(struct work *work);
+void finish_work_done(struct work *work);
 bool work_queue_empty(struct work_queue *q);
 int wq_trace_init(void);
 void set_max_dynamic_threads(size_t nr_max);

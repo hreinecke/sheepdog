@@ -331,9 +331,43 @@ static void worker_thread_request_done(int fd, int events, void *data)
 			tracepoint(work, request_done, wi, work);
 
 			work->done(work);
-			uatomic_dec(&wi->nr_queued_work);
+			if (!work->async)
+				finish_work_done(work);
 		}
 	}
+}
+
+/*
+ * Mark the fn phase of @work as complete, moving it onto its queue's
+ * finished list so worker_thread_request_done() calls work->done() for it.
+ *
+ * work->fn() calls this itself once its work is actually done if it ran
+ * synchronously. If work->async is set, work->fn() is expected to kick off
+ * asynchronous processing and return without having finished yet; whoever
+ * completes that asynchronous processing (from any thread) must call this
+ * exactly once when it does.
+ */
+void finish_work_fn(struct work *work)
+{
+	struct wq_info *wi = work->arg;
+
+	sd_mutex_lock(&wi->finished_lock);
+	list_add_tail(&work->w_list, &wi->finished_list);
+	sd_mutex_unlock(&wi->finished_lock);
+
+	eventfd_xwrite(efd, 1);
+}
+
+/*
+ * Mark the done phase of @work as complete. Mirrors finish_work_fn(): called
+ * automatically for a synchronous work->done(), or by whoever completes an
+ * asynchronous one, exactly once.
+ */
+void finish_work_done(struct work *work)
+{
+	struct wq_info *wi = work->arg;
+
+	uatomic_dec(&wi->nr_queued_work);
 }
 
 static void *worker_routine(void *arg)
@@ -372,14 +406,13 @@ retest:
 
 		tracepoint(work, do_work, wi, work);
 
-		if (work->fn)
+		work->arg = wi;
+		if (work->fn) {
 			work->fn(work);
-
-		sd_mutex_lock(&wi->finished_lock);
-		list_add_tail(&work->w_list, &wi->finished_list);
-		sd_mutex_unlock(&wi->finished_lock);
-
-		eventfd_xwrite(efd, 1);
+			if (work->async)
+				continue;
+		}
+		finish_work_fn(work);
 	}
 
 	pthread_exit(NULL);
