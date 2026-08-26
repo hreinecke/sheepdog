@@ -635,19 +635,19 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 		 tgt_epoch);
 
 	if (entry) {
-		path = entry->path;
-		entry->path = NULL;
+		if (entry->path)
+			free(entry->path);
 		if (entry->fd >= 0) {
 			close(entry->fd);
 			sys->cache_stat.nr_close++;
 		}
 		free(entry);
-	} else {
-		ret = asprintf(&path, "%s/%016"PRIx64,
-			       md_get_object_dir(oid), oid);
-		if (ret < 0)
-			return SD_RES_NO_MEM;
 	}
+	ret = asprintf(&path, "%s/%016"PRIx64,
+		       md_get_object_dir(oid), oid);
+	if (ret < 0)
+		return SD_RES_NO_MEM;
+
 	ret = get_store_stale_path(oid, tgt_epoch, 0, &stale_path);
 	if (ret != SD_RES_SUCCESS) {
 		sd_warn("get stale path for %016"PRIx64" failed, %s",
@@ -778,7 +778,7 @@ int default_format(void)
 int default_remove_object(uint64_t oid, uint8_t ec_index)
 {
 	struct store_cache_entry *entry = store_cache_remove_by_oid(oid);
-	char *path;
+	char *path = NULL;
 	int ret;
 
 	if (uatomic_is_true(&sys->use_journal))
@@ -791,7 +791,8 @@ int default_remove_object(uint64_t oid, uint8_t ec_index)
 			sys->cache_stat.nr_close++;
 		}
 		free(entry);
-	} else {
+	}
+	if (!path) {
 		ret = get_store_path(oid, ec_index, &path);
 		if (ret < 0)
 			return SD_RES_NO_MEM;
