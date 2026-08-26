@@ -40,6 +40,7 @@ static struct sd_option cluster_options[] = {
 	{'d', "diff", false,
 	 "just output the changes between the two adjacent epoches"
 		"for cluster info"},
+	{'U', "use-uuid", false, "Generate a cluster UUID"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -56,6 +57,7 @@ static struct cluster_cmd_data {
 	bool use_lock;
 	bool recycle_vid;
 	bool avoid_diskfull;
+	bool use_uuid;
 } cluster_cmd_data;
 
 #define DEFAULT_STORE	"plain"
@@ -204,7 +206,8 @@ static int cluster_format(int argc, char **argv)
 #ifdef HAVE_DISKVNODES
 	hdr.cluster.flags |= SD_CLUSTER_FLAG_DISKMODE;
 #endif
-	hdr.cluster.flags |= SD_CLUSTER_FLAG_STORE_UUID;
+	if (cluster_cmd_data.use_uuid)
+		hdr.cluster.flags |= SD_CLUSTER_FLAG_STORE_UUID;
 
 	if (cluster_cmd_data.fixed_vnodes)
 		hdr.cluster.flags &= ~SD_CLUSTER_FLAG_AUTO_VNODES;
@@ -1040,7 +1043,7 @@ static int cluster_alter_copy(int argc, char **argv)
 static struct subcommand cluster_cmd[] = {
 	{"info", NULL, "ajprhvTd", "show cluster information",
 	 NULL, CMD_NEED_NODELIST, cluster_info, cluster_options},
-	{"format", NULL, "bcltajphzTVRfF", "create a Sheepdog store",
+	{"format", NULL, "bcltajphzTVRfFU", "create a Sheepdog store",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_NODELIST, cluster_format, cluster_options},
 	{"shutdown", NULL, "aphT", "stop Sheepdog",
 	 NULL, CMD_NEED_ROOT, cluster_shutdown, cluster_options},
@@ -1118,6 +1121,9 @@ static int cluster_parser(int ch, const char *opt)
 		break;
 	case 'F':
 		cluster_cmd_data.avoid_diskfull = true;
+		break;
+	case 'U':
+		cluster_cmd_data.use_uuid = true;
 		break;
 	}
 
