@@ -79,9 +79,13 @@ struct client_info {
 
 	struct request *rx_req;
 	struct work rx_work;
+	/* holds the header across rx_work's asynchronous read steps */
+	struct sd_req rx_hdr;
 
 	struct request *tx_req;
 	struct work tx_work;
+	/* holds the response header across tx_work's asynchronous write */
+	struct sd_rsp tx_rsp;
 
 	struct list_head done_reqs;
 

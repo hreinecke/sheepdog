@@ -871,42 +871,64 @@ main_fn void get_request(struct request *req)
 	refcount_inc(&req->refcnt);
 }
 
-static void rx_work(struct work *work)
+/* completion of the (optional) asynchronous body read that follows the
+ * header, or a stand-in for it when there is no body to read */
+static void rx_read_data_done(int res, void *data)
 {
-	struct client_info *ci = container_of(work, struct client_info,
-					      rx_work);
-	int ret;
+	struct client_info *ci = data;
 	struct connection *conn = &ci->conn;
-	struct sd_req hdr;
+
+	if (res) {
+		sd_err("failed to read data");
+		conn->dead = true;
+	}
+
+	tracepoint(request, rx_work, conn->fd, &ci->rx_work, ci->rx_req,
+		   ci->rx_hdr.opcode);
+	finish_work_fn(&ci->rx_work);
+}
+
+/* completion of the asynchronous header read */
+static void rx_read_header_done(int res, void *data)
+{
+	struct client_info *ci = data;
+	struct connection *conn = &ci->conn;
 	struct request *req;
 
-	ret = do_read(conn->fd, &hdr, sizeof(hdr), NULL, 0, UINT32_MAX);
-	if (ret) {
+	if (res) {
 		conn->dead = true;
+		finish_work_fn(&ci->rx_work);
 		return;
 	}
 
-	req = alloc_request(ci, hdr.data_length);
+	req = alloc_request(ci, ci->rx_hdr.data_length);
 	if (!req) {
 		sd_err("failed to allocate request");
 		conn->dead = true;
+		finish_work_fn(&ci->rx_work);
 		return;
 	}
 	ci->rx_req = req;
 
 	/* use le_to_cpu */
-	memcpy(&req->rq, &hdr, sizeof(req->rq));
+	memcpy(&req->rq, &ci->rx_hdr, sizeof(req->rq));
 
-	if (hdr.data_length && hdr.flags & SD_FLAG_CMD_WRITE) {
-		ret = do_read(conn->fd, req->data, hdr.data_length, NULL, 0,
-			      UINT32_MAX);
-		if (ret) {
-			sd_err("failed to read data");
-			conn->dead = true;
-		}
+	if (ci->rx_hdr.data_length && ci->rx_hdr.flags & SD_FLAG_CMD_WRITE) {
+		aio_read(conn->fd, req->data, ci->rx_hdr.data_length,
+			 rx_read_data_done, ci);
+		return;
 	}
 
-	tracepoint(request, rx_work, conn->fd, work, req, hdr.opcode);
+	rx_read_data_done(0, ci);
+}
+
+static void rx_work(struct work *work)
+{
+	struct client_info *ci = container_of(work, struct client_info,
+					      rx_work);
+
+	aio_read(ci->conn.fd, &ci->rx_hdr, sizeof(ci->rx_hdr),
+		 rx_read_header_done, ci);
 }
 
 static void rx_main(struct work *work)
@@ -924,6 +946,7 @@ static void rx_main(struct work *work)
 			free_request(req);
 
 		clear_client_info(ci);
+		finish_work_done(work);
 		return;
 	}
 
@@ -947,36 +970,47 @@ static void rx_main(struct work *work)
 
 	tracepoint(request, rx_main, ci->conn.fd, work, req);
 	queue_request(req);
+	finish_work_done(work);
+}
+
+static void tx_write_done(int res, void *data)
+{
+	struct client_info *ci = data;
+
+	if (res) {
+		sd_err("failed to send a request");
+		ci->conn.dead = true;
+	}
+
+	tracepoint(request, tx_work, ci->conn.fd, &ci->tx_work, ci->tx_req);
+	finish_work_fn(&ci->tx_work);
 }
 
 static void tx_work(struct work *work)
 {
 	struct client_info *ci = container_of(work, struct client_info,
 					      tx_work);
-	int ret;
 	struct connection *conn = &ci->conn;
-	struct sd_rsp rsp;
 	struct request *req = ci->tx_req;
-	void *data = NULL;
+	struct iovec iov[2];
+	int iovcnt = 1;
 
 	/* use cpu_to_le */
-	memcpy(&rsp, &req->rp, sizeof(rsp));
+	memcpy(&ci->tx_rsp, &req->rp, sizeof(ci->tx_rsp));
 
-	rsp.epoch = sys->cinfo.epoch;
-	rsp.opcode = req->rq.opcode;
-	rsp.id = req->rq.id;
+	ci->tx_rsp.epoch = sys->cinfo.epoch;
+	ci->tx_rsp.opcode = req->rq.opcode;
+	ci->tx_rsp.id = req->rq.id;
 
-	if (rsp.data_length)
-		data = req->data;
-
-	ret = send_req(conn->fd, (struct sd_req *)&rsp, data, rsp.data_length,
-		       NULL, 0, UINT32_MAX);
-	if (ret != 0) {
-		sd_err("failed to send a request");
-		conn->dead = true;
+	iov[0].iov_base = &ci->tx_rsp;
+	iov[0].iov_len = sizeof(ci->tx_rsp);
+	if (ci->tx_rsp.data_length) {
+		iov[1].iov_base = req->data;
+		iov[1].iov_len = ci->tx_rsp.data_length;
+		iovcnt = 2;
 	}
 
-	tracepoint(request, tx_work, conn->fd, work, req);
+	aio_writev(conn->fd, iov, iovcnt, tx_write_done, ci);
 }
 
 static void tx_main(struct work *work)
@@ -1008,6 +1042,7 @@ static void tx_main(struct work *work)
 
 	if (ci->conn.dead) {
 		clear_client_info(ci);
+		finish_work_done(work);
 		return;
 	}
 
@@ -1015,6 +1050,8 @@ static void tx_main(struct work *work)
 		if (conn_tx_on(&ci->conn))
 			sd_err("switch on sending flag failure, "
 					"connection maybe closed");
+
+	finish_work_done(work);
 }
 
 static void destroy_client(struct client_info *ci)
@@ -1119,6 +1156,7 @@ static void client_handler(int fd, int events, void *data)
 		refcount_inc(&ci->refcnt);
 		ci->rx_work.fn = rx_work;
 		ci->rx_work.done = rx_main;
+		ci->rx_work.async = true;
 		tracepoint(request, queue_request, fd, &ci->rx_work, 1);
 		queue_work(sys->net_wqueue, &ci->rx_work);
 	}
@@ -1142,6 +1180,7 @@ static void client_handler(int fd, int events, void *data)
 		refcount_inc(&ci->refcnt);
 		ci->tx_work.fn = tx_work;
 		ci->tx_work.done = tx_main;
+		ci->tx_work.async = true;
 		tracepoint(request, queue_request, fd, &ci->tx_work, 0);
 		queue_work(sys->net_wqueue, &ci->tx_work);
 	}

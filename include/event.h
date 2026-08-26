@@ -3,6 +3,7 @@
 
 #include "list.h"
 #include <limits.h>
+#include <sys/uio.h>
 
 struct event_info;
 
@@ -15,6 +16,20 @@ int modify_event(int fd, unsigned int events);
 void event_loop(int timeout);
 void event_loop_prio(int timeout);
 void event_force_refresh(void);
+
+/*
+ * Asynchronous read/write, backed by io_uring where available and by
+ * synchronous blocking I/O (calling back before returning) otherwise. Either
+ * way, @cb is called exactly once with 0 on success (the full length was
+ * transferred) or a negative errno on failure, from the thread that either
+ * called aio_read()/aio_writev() (epoll backend) or is running the event
+ * loop (io_uring backend) -- never both, and never synchronously with a
+ * later unrelated call.
+ */
+void aio_read(int fd, void *buf, size_t len, void (*cb)(int res, void *data),
+	      void *data);
+void aio_writev(int fd, const struct iovec *iov, int iovcnt,
+		void (*cb)(int res, void *data), void *data);
 
 struct timer {
 	void (*callback)(void *);

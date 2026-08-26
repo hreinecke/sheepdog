@@ -14,6 +14,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
 
 #include "rbtree.h"
 #include "logger.h"
@@ -26,6 +28,34 @@
 
 #define TRACEPOINT_DEFINE
 #include "event_tp.h"
+
+/* enough for a wire-protocol header + a single data buffer */
+#define AIO_MAX_IOV 2
+
+/*
+ * Drop @n bytes already transferred off the front of @iov/@iovcnt, shifting
+ * the remaining entries down. Shared by both event loop backends' aio_writev
+ * short-write handling.
+ */
+static void aio_advance_iov(struct iovec *iov, int *iovcnt, size_t n)
+{
+	int i = 0;
+
+	while (n > 0 && i < *iovcnt) {
+		if (n < iov[i].iov_len) {
+			iov[i].iov_base = (char *)iov[i].iov_base + n;
+			iov[i].iov_len -= n;
+			break;
+		}
+		n -= iov[i].iov_len;
+		i++;
+	}
+
+	if (i > 0) {
+		*iovcnt -= i;
+		memmove(iov, iov + i, *iovcnt * sizeof(*iov));
+	}
+}
 
 static void timer_handler(int fd, int events, void *data)
 {
@@ -297,6 +327,129 @@ static int dispatch_cmp(const struct dispatch_entry *a,
 }
 
 /*
+ * Asynchronous read/write on top of the same io_uring instance used for
+ * polling. Unlike a registered fd, an aio_op is a one-shot request with
+ * exactly one logical completion (after however many short-io resubmits it
+ * takes) and no rearming, so it never touches struct event_info or the
+ * dispatch_entries/prio machinery: aio completions are handled inline as
+ * they're reaped, straight out of the CQE loop.
+ *
+ * CQE user_data doubles as a tag: bit 0 set means "this is an aio_op", clear
+ * means "this is a struct event_info". Both are heap pointers from
+ * xzalloc()/xmalloc(), which on every architecture this runs on are at least
+ * 2-byte aligned, so bit 0 is always free to steal.
+ */
+#define AIO_TAG ((uintptr_t)1)
+
+struct aio_op {
+	int fd;
+	bool is_write;
+	void (*cb)(int res, void *data);
+	void *data;
+	union {
+		struct {
+			char *buf;
+			size_t len;
+		} r;
+		struct {
+			struct iovec iov[AIO_MAX_IOV];
+			int iovcnt;
+		} w;
+	};
+};
+
+static void aio_submit(struct aio_op *op)
+{
+	struct io_uring_sqe *sqe;
+
+	sd_mutex_lock(&events_mutex);
+	sqe = io_uring_get_sqe(&ring);
+	if (!sqe)
+		panic("io_uring SQ ring exhausted");
+
+	if (op->is_write)
+		io_uring_prep_writev(sqe, op->fd, op->w.iov, op->w.iovcnt, 0);
+	else
+		/* MSG_WAITALL makes the kernel do our short-read retries for
+		 * us in the common case; aio_reap() below still handles a
+		 * short completion defensively. */
+		io_uring_prep_recv(sqe, op->fd, op->r.buf, op->r.len,
+				   MSG_WAITALL);
+	io_uring_sqe_set_data(sqe, (void *)((uintptr_t)op | AIO_TAG));
+	io_uring_submit(&ring);
+	sd_mutex_unlock(&events_mutex);
+}
+
+void aio_read(int fd, void *buf, size_t len, void (*cb)(int, void *),
+	      void *data)
+{
+	struct aio_op *op = xzalloc(sizeof(*op));
+
+	op->fd = fd;
+	op->is_write = false;
+	op->cb = cb;
+	op->data = data;
+	op->r.buf = buf;
+	op->r.len = len;
+	aio_submit(op);
+}
+
+void aio_writev(int fd, const struct iovec *iov, int iovcnt,
+		void (*cb)(int, void *), void *data)
+{
+	struct aio_op *op;
+
+	sd_assert(0 < iovcnt && iovcnt <= AIO_MAX_IOV);
+
+	op = xzalloc(sizeof(*op));
+	op->fd = fd;
+	op->is_write = true;
+	op->cb = cb;
+	op->data = data;
+	memcpy(op->w.iov, iov, iovcnt * sizeof(*iov));
+	op->w.iovcnt = iovcnt;
+	aio_submit(op);
+}
+
+/* called from the event loop thread as CQEs are reaped */
+static void aio_reap(struct aio_op *op, int res)
+{
+	if (res < 0) {
+		op->cb(res, op->data);
+		free(op);
+		return;
+	}
+	if (res == 0) {
+		/* peer closed the connection (read), or nothing could be
+		 * written for a non-empty request (write): either way this
+		 * op can't make further progress. */
+		op->cb(-ECONNRESET, op->data);
+		free(op);
+		return;
+	}
+
+	if (!op->is_write) {
+		if ((size_t)res >= op->r.len) {
+			op->cb(0, op->data);
+			free(op);
+			return;
+		}
+		op->r.buf += res;
+		op->r.len -= res;
+		aio_submit(op);
+		return;
+	}
+
+	aio_advance_iov(op->w.iov, &op->w.iovcnt, (size_t)res);
+	if (op->w.iovcnt == 0) {
+		op->cb(0, op->data);
+		free(op);
+		return;
+	}
+	aio_submit(op);
+}
+
+/*
  * Reap one CQE. If it represents a real, dispatchable event, fill @out and
  * return true; the caller is then responsible for running the handler and
  * calling event_done() afterwards. Otherwise (teardown bookkeeping, or a
@@ -304,9 +457,17 @@ static int dispatch_cmp(const struct dispatch_entry *a,
  */
 static bool event_reap(struct io_uring_cqe *cqe, struct dispatch_entry *out)
 {
-	struct event_info *ei = io_uring_cqe_get_data(cqe);
+	void *cqe_data = io_uring_cqe_get_data(cqe);
+	uintptr_t raw = (uintptr_t)cqe_data;
 	int res = cqe->res;
 	bool free_now = false, valid = false;
+
+	if (raw & AIO_TAG) {
+		aio_reap((struct aio_op *)(raw & ~AIO_TAG), res);
+		return false;
+	}
+
+	struct event_info *ei = (struct event_info *)raw;
 
 	sd_mutex_lock(&events_mutex);
 	ei->pending--;
@@ -657,6 +818,62 @@ void event_loop(int timeout)
 void event_loop_prio(int timeout)
 {
 	do_event_loop(timeout, true);
+}
+
+/*
+ * No io_uring here, so these just do the equivalent blocking I/O inline and
+ * call back before returning. This keeps aio_read()/aio_writev() callers
+ * (e.g. sheep/request.c's rx_work/tx_work) backend-agnostic: under epoll
+ * they behave exactly like the do_read()/send_req() calls they replaced,
+ * still running synchronously on the calling (worker) thread.
+ */
+void aio_read(int fd, void *buf, size_t len, void (*cb)(int, void *),
+	      void *data)
+{
+	size_t done = 0;
+
+	while (done < len) {
+		ssize_t n = read(fd, (char *)buf + done, len - done);
+
+		if (n == 0) {
+			cb(-ECONNRESET, data);
+			return;
+		}
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			cb(-errno, data);
+			return;
+		}
+		done += (size_t)n;
+	}
+	cb(0, data);
+}
+
+void aio_writev(int fd, const struct iovec *iov_in, int iovcnt,
+		void (*cb)(int, void *), void *data)
+{
+	struct iovec iov[AIO_MAX_IOV];
+
+	sd_assert(0 < iovcnt && iovcnt <= AIO_MAX_IOV);
+	memcpy(iov, iov_in, iovcnt * sizeof(*iov));
+
+	while (iovcnt > 0) {
+		ssize_t n = writev(fd, iov, iovcnt);
+
+		if (n == 0) {
+			cb(-ECONNRESET, data);
+			return;
+		}
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			cb(-errno, data);
+			return;
+		}
+		aio_advance_iov(iov, &iovcnt, (size_t)n);
+	}
+	cb(0, data);
 }
 
 #endif /* HAVE_IO_URING */
