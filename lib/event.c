@@ -427,8 +427,25 @@ refresh:
 
 	for (i = 0; i < nr; i++) {
 		struct dispatch_entry *e = &dispatch_entries[i];
+		bool live;
 
-		e->handler(e->fd, e->events, e->data);
+		/*
+		 * A handler dispatched earlier in this same batch may have
+		 * called unregister_event() on this fd as a side effect
+		 * (e.g. tearing down other connections on a membership
+		 * change) and then freed its data immediately, the way
+		 * callers safely could under the old epoll-based loop. ei
+		 * itself can't have been freed (in_dispatch still holds it),
+		 * but e->data may already be dangling, so skip the handler
+		 * call in that case; event_done() still needs to run to
+		 * rearm or free ei.
+		 */
+		sd_mutex_lock(&events_mutex);
+		live = !e->ei->removing;
+		sd_mutex_unlock(&events_mutex);
+
+		if (live)
+			e->handler(e->fd, e->events, e->data);
 		event_done(e->ei);
 
 		if (event_loop_refresh)
