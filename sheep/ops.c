@@ -459,6 +459,13 @@ static int local_get_vdi_copies(const struct sd_req *req, struct sd_rsp *rsp,
 	return fill_vdi_state_list(req, rsp, data);
 }
 
+static int local_get_vdi_lock_state(const struct sd_req *req,
+				    struct sd_rsp *rsp,
+				    void *data, const struct sd_node *sender)
+{
+	return fill_vdi_lock_state(req, rsp, data);
+}
+
 static int local_stat_sheep(struct request *req)
 {
 	struct sd_rsp *rsp = &req->rp;
@@ -1945,6 +1952,13 @@ static struct sd_op_template sd_ops[] = {
 		.type = SD_OP_TYPE_LOCAL,
 		.force = true,
 		.process_main = local_get_vdi_copies,
+	},
+
+	[SD_OP_GET_VDI_LOCK_STATE] = {
+		.name = "GET_VDI_LOCK_STATE",
+		.type = SD_OP_TYPE_LOCAL,
+		.force = true,
+		.process_main = local_get_vdi_lock_state,
 	},
 
 	[SD_OP_GET_NODE_LIST] = {

@@ -952,6 +952,8 @@ static struct vdi_state *get_vdi_state(int *count)
 #define DEFAULT_VDI_STATE_COUNT 512
 	rlen = DEFAULT_VDI_STATE_COUNT * sizeof(struct vdi_state);
 	vs = xzalloc(rlen);
+	if (!vs)
+		return NULL;
 retry:
 	sd_init_req(&hdr, SD_OP_GET_VDI_COPIES);
 	hdr.data_length = rlen;
@@ -978,7 +980,6 @@ retry:
 
 fail:
 	free(vs);
-	vs = NULL;
 	return NULL;
 }
 
@@ -3667,6 +3668,110 @@ out:
 	return ret;
 }
 
+static int lock_detail(int argc, char **argv)
+{
+	char vdidesc[VDI_DESC_MAX] = { 0 };
+	const uint32_t snapid = vdi_cmd_data.snapshot_id;
+	const char *tag = vdi_cmd_data.snapshot_tag;
+	uint32_t acl_id = vdi_acl_id();
+	const char *vdiname = argv[optind];
+	int ret = 0;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	size_t buf_len = sizeof(struct vdi_lock_state) * 16;
+	char *buf = xzalloc(buf_len);
+	uint32_t vid;
+
+	if (json_output)
+		out_obj = json_object_new_array();
+
+	if (!vdiname)
+		return EXIT_USAGE;
+
+
+	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
+	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find VDI %s: %s",
+		       vdidesc, sd_strerror(ret));
+		free(buf);
+		return EXIT_FAILURE;
+	}
+	sd_init_req(&hdr, SD_OP_GET_VDI_LOCK_STATE);
+	hdr.vdi_lock.vid = vid;
+	hdr.vdi_lock.acl = acl_id;
+	hdr.vdi_lock.index = UINT32_MAX;
+	hdr.data_length = buf_len;
+retry:
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to get VDI %s state: %m",
+		       vdidesc);
+		free(buf);
+		return EXIT_SYSFAIL;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		free(buf);
+		if (rsp->result == SD_RES_BUFFER_SMALL) {
+			buf_len *= 2;
+			buf = xzalloc(buf_len);
+			if (!buf) {
+				sd_err("Failed to allocate buffer");
+				return EXIT_SYSFAIL;
+			}
+			goto retry;
+		}
+		sd_err("Failed to get VDI %s state: %s",
+		       vdidesc, sd_strerror(rsp->result));
+		return EXIT_SYSFAIL;
+	}
+	if (json_output) {
+		struct vdi_lock_state *vls = (struct vdi_lock_state *)buf;
+		const char *state_str;
+
+		for (int i = 0; i < rsp->data_length; i += sizeof(*vls)) {
+			struct json_object *st_obj =
+				json_object_new_object();
+			if (rsp->data_length - i < sizeof(*vls))
+				break;
+			JSON_ADD_INT(st_obj, "vid", vls->vid);
+			JSON_ADD_INT(st_obj, "acl", vls->acl);
+			JSON_ADD_INT(st_obj, "count", vls->count);
+			JSON_ADD_INT(st_obj, "index", vls->index);
+			JSON_ADD_STRING(st_obj, "owner", vls->owner);
+			JSON_ADD_STRING(st_obj, "sender",
+					node_id_to_str(&vls->sender, false));
+			switch(vls->state) {
+			case SHARED_LOCK_STATE_MODIFIED:
+				state_str = "modified";
+				break;
+			case SHARED_LOCK_STATE_SHARED:
+				state_str = "shared";
+				break;
+			case SHARED_LOCK_STATE_INVALIDATED:
+				state_str = "invalidated";
+				break;
+			default:
+				state_str = NULL;
+				break;
+			}
+			if (state_str)
+				JSON_ADD_STRING(st_obj, "state", state_str);
+			json_object_array_add(out_obj, st_obj);
+			vls++;
+		}
+	}
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
+
+	return EXIT_SUCCESS;
+}
+
 static int lock_lock(int argc, char **argv)
 {
 	int ret = 0;
@@ -3890,6 +3995,8 @@ out:
 
 static struct subcommand vdi_lock_cmd[] = {
 	{"list", NULL, NULL, "list locked VDIs", NULL, 0, lock_list},
+	{"detail", "<vdiname>", NULL, "list lock detail for VDI", NULL,
+	 CMD_NEED_ARG, lock_detail},
 	{"lock", "<vdiname>", NULL, "lock VDI", NULL, CMD_NEED_ARG, lock_lock},
 	{"unlock", "<vdiname>", NULL, "unlock locked VDI forcibly", NULL,
 	 CMD_NEED_ARG, lock_unlock},

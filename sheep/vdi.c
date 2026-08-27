@@ -605,6 +605,46 @@ static struct vdi_state *fill_vdi_state_list_with_alloc(int *result_nr)
 	return vs;
 }
 
+int fill_vdi_lock_state(const struct sd_req *hdr,
+			struct sd_rsp *rsp, void *data)
+{
+	struct vdi_state_entry *entry;
+	size_t length = hdr->data_length, data_length = 0;
+
+	sd_read_lock(&vdi_state_lock);
+	entry = vdi_state_search(&vdi_state_root, hdr->vdi_lock.vid);
+	if (entry && (hdr->vdi_lock.acl == LOCK_TYPE_ANY ||
+		      hdr->vdi_lock.acl == entry->acl)) {
+		struct vdi_lock_state *vs = data;
+		for (int i = 0; i < entry->nr_participants; i++) {
+			if (hdr->vdi_lock.index != UINT32_MAX &&
+			    hdr->vdi_lock.index != i)
+				continue;
+			data_length += sizeof(*vs);
+			if (length < data_length)
+				continue;
+
+			vs->vid = entry->vid;
+			vs->acl = entry->acl;
+			vs->count = entry->participants[i].count;
+			vs->index = i;
+			strcpy(vs->owner, entry->participants[i].owner);
+			vs->sender = entry->participants[i].nid;
+			vs->state = entry->participants[i].state;
+			vs++;
+		}
+	}
+	sd_rw_unlock(&vdi_state_lock);
+
+	if (hdr->data_length < data_length) {
+		sd_warn("response buffer length %u too small, need %lu",
+			hdr->data_length, data_length);
+		return SD_RES_BUFFER_SMALL;
+	}
+	rsp->data_length = data_length;
+	return SD_RES_SUCCESS;
+}
+
 static inline bool vdi_is_deleted(struct sd_inode *inode)
 {
 	return *inode->header.name == '\0';
@@ -791,7 +831,14 @@ static int del_participant(struct vdi_state_entry *entry,
 	ls->index = 0;
 	ls->count = 0;
 
-	sd_debug("participant: %s (%s) is deleted, current participants are below:",
+	if (!entry->nr_participants) {
+		sd_debug("participant: %s (%s) is deleted, "
+			 "no current participants",
+			 node_id_to_str(&ls->sender, false), ls->owner);
+		goto out;
+	}
+	sd_debug("participant: %s (%s) is deleted, "
+		 "current participants are below:",
 		 node_id_to_str(&ls->sender, false), ls->owner);
 	for (int i = 0; i < entry->nr_participants; i++) {
 		if (entry->participants[i].count) {
@@ -803,7 +850,7 @@ static int del_participant(struct vdi_state_entry *entry,
 			sd_debug("%d: <empty>", i);
 		}
 	}
-
+out:
 	if (!entry->nr_participants)
 		entry->lock_state = LOCK_STATE_UNLOCKED;
 	return SD_RES_SUCCESS;

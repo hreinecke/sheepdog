@@ -1173,6 +1173,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	case SD_OP_REGISTER_VDI:
 	case SD_OP_UNREGISTER_VDI:
+	case SD_OP_GET_VDI_LOCK_STATE:
 		lock_obj = json_object_new_object();
 		etcd_vdi_lock_to_json(&msg->req, lock_obj);
 		json_object_object_add(req_obj, "vdi_lock", lock_obj);

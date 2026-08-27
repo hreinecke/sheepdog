@@ -390,6 +390,8 @@ int lock_base_dir(const char *d);
 
 int fill_vdi_state_list(const struct sd_req *hdr,
 		struct sd_rsp *rsp, void *data);
+int fill_vdi_lock_state(const struct sd_req *hdr,
+			struct sd_rsp *rsp, void *data);
 bool oid_is_readonly(uint64_t oid);
 int get_vdi_copy_number(uint32_t vid);
 int get_vdi_copy_policy(uint32_t vid);
