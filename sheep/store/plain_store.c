@@ -10,12 +10,15 @@
  */
 
 #include <libgen.h>
+#include <sys/mman.h>
 
 #include "sheep_priv.h"
 
 struct store_cache_entry {
 	uint64_t oid;
 	struct rb_node node;
+	size_t size;
+	void *map;
 	char *path;
 	int fd;
 };
@@ -27,6 +30,23 @@ static int store_cache_cmp(const struct store_cache_entry *a,
 			   const struct store_cache_entry *b)
 {
 	return intcmp(a->oid, b->oid);
+}
+
+static void store_cache_cleanup(struct store_cache_entry *entry)
+{
+	if (entry->map != MAP_FAILED) {
+		munmap(entry->map, entry->size);
+		entry->map = MAP_FAILED;
+	}
+	if (entry->fd != -1) {
+		close(entry->fd);
+		entry->fd = -1;
+		sys->cache_stat.nr_close++;
+	}
+	if (entry->path) {
+		free(entry->path);
+		entry->path = NULL;
+	}
 }
 
 static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
@@ -50,12 +70,14 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 	sd_mutex_lock(&store_cache_lock);
 	new->oid = oid;
 	new->fd = -1;
+	new->size = get_store_objsize(oid);
+	new->map = MAP_FAILED;
 	entry = rb_insert(&store_cache_root, new, node, store_cache_cmp);
 	if (entry) {
-		sys->cache_stat.nr_cache_entries++;
+		sys->cache_stat.nr_cache_hits++;
 		free(new);
 	} else {
-		sys->cache_stat.nr_cache_hits++;
+		sys->cache_stat.nr_cache_entries++;
 		entry = new;
 	}
 	sd_mutex_unlock(&store_cache_lock);
@@ -68,12 +90,7 @@ static void store_cache_remove(struct store_cache_entry *entry)
 	rb_erase(&entry->node, &store_cache_root);
 	sys->cache_stat.nr_cache_entries--;
 	sd_mutex_unlock(&store_cache_lock);
-	if (entry->fd != -1) {
-		close(entry->fd);
-		sys->cache_stat.nr_close++;
-	}
-	if (entry->path)
-		free(entry->path);
+	store_cache_cleanup(entry);
 	free(entry);
 }
 
@@ -256,7 +273,7 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 			ret = err_to_sderr(entry->path, entry->oid, ENOENT);
 			goto out_remove;
 		}
-		goto do_write;
+		goto do_mmap;
 	}
 
 	if (!entry->path) {
@@ -284,7 +301,22 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 		goto out_remove;
 	}
 	sys->cache_stat.nr_open++;
-do_write:
+
+do_mmap:
+	if (entry->map == MAP_FAILED) {
+		entry->map = mmap(NULL, entry->size, PROT_READ | PROT_WRITE,
+				  MAP_SHARED, entry->fd, 0);
+		if (entry->map == MAP_FAILED)
+			sd_warn("Failed to map object %"PRIx64": %m", oid);
+	}
+
+	if (entry->map != MAP_FAILED) {
+		memcpy((unsigned char *)entry->map + offset, iocb->buf, len);
+		msync((unsigned char *)entry->map + offset, len, MS_ASYNC);
+		ret = SD_RES_SUCCESS;
+		goto out_remove;
+	}
+
 	if (trim_is_supported && is_sparse_object(oid)) {
 		if (default_trim(entry->fd, oid, iocb, &offset, &len) < 0) {
 			trim_is_supported = false;
@@ -347,13 +379,9 @@ int default_cleanup(void)
 	sd_mutex_lock(&store_cache_lock);
 	rb_for_each_entry(entry, &store_cache_root, node) {
 		rb_erase(&entry->node, &store_cache_root);
-		if (entry->fd != -1) {
-			close(entry->fd);
-			sys->cache_stat.nr_close++;
-		}
-		if (entry->path)
-			free(entry->path);
+		store_cache_cleanup(entry);
 		free(entry);
+		sys->cache_stat.nr_cache_entries--;
 	}
 	sd_mutex_unlock(&store_cache_lock);
 
@@ -452,6 +480,19 @@ static int default_read_from_path(struct store_cache_entry *entry,
 			return err_to_sderr(entry->path, entry->oid, errno);
 		sys->cache_stat.nr_open++;
 	}
+	if (entry->map == MAP_FAILED) {
+		entry->map = mmap(NULL, entry->size,
+				  PROT_READ | PROT_WRITE, MAP_SHARED,
+				  entry->fd, 0);
+		if (entry->map == MAP_FAILED)
+			sd_warn("Failed to map object %"PRIx64": %m",
+				entry->oid);
+	}
+	if (entry->map != MAP_FAILED) {
+		memcpy(iocb->buf, (unsigned char *)entry->map + iocb->offset,
+		       iocb->length);
+		return SD_RES_SUCCESS;
+	}
 
 	size = xpread(entry->fd, iocb->buf, iocb->length, iocb->offset);
 	if (size < 0) {
@@ -500,7 +541,7 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 	if (ret == SD_RES_NO_OBJ &&
 	    (iocb->wildcard ||
 	     (0 < iocb->epoch && iocb->epoch < sys_epoch()))) {
-		free(entry->path);
+		store_cache_cleanup(entry);
 		ret = get_store_stale_path(entry->oid, iocb->epoch,
 					   iocb->ec_index, &entry->path);
 		if (ret == SD_RES_SUCCESS)
@@ -523,10 +564,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 
 	sd_debug("%016"PRIx64, oid);
 	if (entry) {
-		if (entry->fd >= 0)
-			close(entry->fd);
-		if (entry->path)
-			free(entry->path);
+		store_cache_cleanup(entry);
 		free(entry);
 	}
 	ret = get_store_path(oid, iocb->ec_index, &path);
@@ -648,14 +686,10 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 		 tgt_epoch);
 
 	if (entry) {
-		if (entry->path)
-			free(entry->path);
-		if (entry->fd >= 0) {
-			close(entry->fd);
-			sys->cache_stat.nr_close++;
-		}
+		store_cache_cleanup(entry);
 		free(entry);
 	}
+
 	ret = get_default_store_path(oid, &path);
 	if (ret < 0)
 		return SD_RES_NO_MEM;
@@ -769,9 +803,7 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 	 */
 	entry = store_cache_remove_by_oid(oid);
 	if (entry) {
-		if (entry->fd >= 0)
-			close(entry->fd);
-		free(entry->path);
+		store_cache_cleanup(entry);
 		free(entry);
 	}
 
@@ -815,10 +847,8 @@ int default_remove_object(uint64_t oid, uint8_t ec_index)
 
 	if (entry) {
 		path = entry->path;
-		if (entry->fd >= 0) {
-			close(entry->fd);
-			sys->cache_stat.nr_close++;
-		}
+		entry->path = NULL;
+		store_cache_cleanup(entry);
 		free(entry);
 	}
 	if (!path) {
