@@ -543,7 +543,8 @@ int fill_vdi_state_list(const struct sd_req *hdr,
 		vs[last].parent_vid = entry->parent_vid;
 		for (int i = 0; i < vs[last].nr_participants; i++) {
 			vs[last].participants_state[i] =
-				entry->participants[i].state;
+				entry->participants[i].state |
+				(entry->participants[i].count << 8);
 			vs[last].participants[i] = entry->participants[i].nid;
 		}
 
@@ -589,7 +590,8 @@ static struct vdi_state *fill_vdi_state_list_with_alloc(int *result_nr)
 		vs[i].nr_participants = entry->nr_participants;
 		for (int j = 0; j < vs[i].nr_participants; j++) {
 			vs[i].participants_state[j] =
-				entry->participants[j].state;
+				entry->participants[j].state |
+				(entry->participants[j].count << 8);
 			vs[i].participants[j] = entry->participants[j].nid;
 		}
 
@@ -678,11 +680,13 @@ static int add_participant(struct vdi_state_entry *entry,
 	if (entry->lock_state == LOCK_STATE_UNLOCKED) {
 		sd_assert(!entry->nr_participants);
 
-		sd_debug("%s is first owner of %"PRIx32,
-			 node_id_to_str(&ls->owner, false), entry->vid);
+		sd_debug("%s (%s) is the first owner of %"PRIx32,
+			 node_id_to_str(&ls->sender, false),
+			 ls->owner, entry->vid);
 
 		entry->nr_participants = 1;
-		memcpy(&entry->participants[0].nid, &ls->owner,
+		strcpy(entry->participants[0].owner, ls->owner);
+		memcpy(&entry->participants[0].nid, &ls->sender,
 		       sizeof(struct node_id));
 		entry->participants[0].state = SHARED_LOCK_STATE_MODIFIED;
 		entry->lock_state = LOCK_STATE_SHARED;
@@ -706,15 +710,19 @@ static int add_participant(struct vdi_state_entry *entry,
 			free_idx = idx;
 			continue;
 		}
-		if (node_id_cmp(&entry->participants[idx].nid, &ls->owner))
+		if (strcmp(entry->participants[idx].owner, ls->owner))
+			continue;
+		if (node_id_cmp(&entry->participants[idx].nid, &ls->sender))
 			continue;
 
 		entry->participants[idx].count++;
 		ls->index = idx;
 		ls->count = entry->participants[idx].count;
-		sd_debug("participant %s (%d) added to  VID: %"PRIx32
-			 ", state is %d, count %d",
+
+		sd_debug("participant %s (%s) added to  VID: %"PRIx32
+			 ", index %d, state %d, count %d",
 			 node_id_to_str(&entry->participants[idx].nid, false),
+			 entry->participants[idx].owner,
 			 idx, entry->vid, entry->participants[idx].state,
 			 entry->participants[idx].count);
 		return SD_RES_SUCCESS;
@@ -723,8 +731,9 @@ static int add_participant(struct vdi_state_entry *entry,
 		free_idx = entry->nr_participants;
 		entry->nr_participants++;
 	}
-	memcpy(&entry->participants[free_idx].nid, &ls->owner,
-	       sizeof(ls->owner));
+	strcpy(entry->participants[free_idx].owner, ls->owner);
+	memcpy(&entry->participants[free_idx].nid, &ls->sender,
+	       sizeof(ls->sender));
 	entry->participants[free_idx].state =
 		is_modified(entry) ?
 		SHARED_LOCK_STATE_INVALIDATED : SHARED_LOCK_STATE_SHARED;
@@ -732,10 +741,11 @@ static int add_participant(struct vdi_state_entry *entry,
 	ls->index = free_idx;
 	ls->count = entry->participants[ls->index].count;
 
-	sd_debug("new participant %s (%d) joined to VID: %"PRIx32
-		 ", state is %d",
-		 node_id_to_str(&entry->participants[idx].nid, false), idx,
-		 entry->vid, entry->participants[idx].state);
+	sd_debug("new participant %s (%s) joined to VID: %"PRIx32
+		 ", index %d, state is %d",
+		 node_id_to_str(&entry->participants[free_idx].nid, false),
+		 entry->participants[free_idx].owner, free_idx,
+		 entry->vid, entry->participants[free_idx].state);
 
 	return SD_RES_SUCCESS;
 }
@@ -749,7 +759,9 @@ static int del_participant(struct vdi_state_entry *entry,
 		return SD_RES_VDI_NOT_LOCKED;
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (!node_id_cmp(&entry->participants[i].nid, &ls->owner)) {
+		if (strcmp(entry->participants[i].owner, ls->owner))
+			continue;
+		if (!node_id_cmp(&entry->participants[i].nid, &ls->sender)) {
 			idx = i;
 			break;
 		}
@@ -764,6 +776,7 @@ static int del_participant(struct vdi_state_entry *entry,
 		ls->count = entry->participants[idx].count;
 		return SD_RES_SUCCESS;
 	}
+	memset(&entry->participants[idx].owner, 0, SD_MAX_VDI_LEN);
 	memset(&entry->participants[idx].nid, 0, sizeof(struct node_id));
 	entry->participants[idx].count = 0;
 	entry->participants[idx].state = 0;
@@ -778,12 +791,13 @@ static int del_participant(struct vdi_state_entry *entry,
 	ls->index = 0;
 	ls->count = 0;
 
-	sd_debug("participant: %s is deleted, current participants are below:",
-		 node_id_to_str(&ls->owner, false));
+	sd_debug("participant: %s (%s) is deleted, current participants are below:",
+		 node_id_to_str(&ls->sender, false), ls->owner);
 	for (int i = 0; i < entry->nr_participants; i++) {
 		if (entry->participants[i].count) {
-			sd_debug("%d: %s count %d", i,
+			sd_debug("%d: %s (%s) count %d", i,
 				 node_id_to_str(&entry->participants[i].nid, false),
+				 entry->participants[i].owner,
 				 entry->participants[i].count);
 		} else {
 			sd_debug("%d: <empty>", i);
@@ -819,7 +833,7 @@ int vdi_lock(struct vdi_lock_state *ls)
 		switch (entry->lock_state) {
 		case LOCK_STATE_UNLOCKED:
 			entry->lock_state = LOCK_STATE_LOCKED;
-			memcpy(&entry->owner, &ls->owner, sizeof(ls->owner));
+			memcpy(&entry->owner, &ls->sender, sizeof(ls->sender));
 			sd_info("VDI %"PRIx32" is now locked", ls->vid);
 			ret = SD_RES_SUCCESS;
 			goto out;
@@ -888,14 +902,15 @@ int vdi_unlock(struct vdi_lock_state *ls)
 			ret = SD_RES_INVALID_PARMS;
 			break;
 		case LOCK_STATE_LOCKED:
-			if (memcmp(&entry->owner, &ls->owner,
-				   sizeof(ls->owner))) {
+			if (memcmp(&entry->owner, &ls->sender,
+				   sizeof(ls->sender))) {
 				sd_err("permission denied "
 				       "unlocking VDI: %"PRIx32, ls->vid);
 				ret = SD_RES_VDI_DENIED;
 			} else {
 				entry->lock_state = LOCK_STATE_UNLOCKED;
-				memset(&entry->owner, 0, sizeof(entry->owner));
+				memset(&entry->owner, 0,
+				       sizeof(entry->owner));
 				ret = SD_RES_SUCCESS;
 			}
 			break;
@@ -1030,7 +1045,8 @@ void apply_vdi_lock_state(struct vdi_state *vs)
 	entry->nr_participants = vs->nr_participants;
 	memset(entry->participants, 0, sizeof(entry->participants));
 	for (i = 0; i < vs->nr_participants; i++) {
-		entry->participants[i].state = vs->participants_state[i];
+		entry->participants[i].state = vs->participants_state[i] & 0xF;
+		entry->participants[i].count = vs->participants_state[i] >> 8;
 		entry->participants[i].nid = vs->participants[i];
 	}
 
@@ -1083,7 +1099,8 @@ struct vdi_op_log {
 	struct list_node list;
 };
 
-void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
+void log_vdi_op_lock(uint32_t vid, const struct node_id *sender,
+		     char *owner, uint32_t acl)
 {
 	struct vdi_op_log *op;
 
@@ -1091,12 +1108,15 @@ void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 	op->lock = true;
 	op->state.acl = acl;
 	op->state.vid = vid;
-	memcpy(&op->state.owner, owner, sizeof(*owner));
+	memcpy(&op->state.sender, sender, sizeof(*sender));
+	if (owner)
+		strcpy(op->state.owner, owner);
 	INIT_LIST_NODE(&op->list);
 	list_add_tail(&op->list, &logged_vdi_ops);
 }
 
-void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl)
+void log_vdi_op_unlock(uint32_t vid, const struct node_id *sender,
+		       char *owner, uint32_t acl)
 {
 	struct vdi_op_log *op;
 
@@ -1104,7 +1124,9 @@ void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl)
 	op->lock = false;
 	op->state.acl = acl;
 	op->state.vid = vid;
-	memcpy(&op->state.owner, owner, sizeof(*owner));
+	memcpy(&op->state.sender, sender, sizeof(*sender));
+	if (owner)
+		strcpy(op->state.owner, owner);
 	INIT_LIST_NODE(&op->list);
 	list_add_tail(&op->list, &logged_vdi_ops);
 }

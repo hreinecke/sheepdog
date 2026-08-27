@@ -453,7 +453,7 @@ struct vdi_lock_state {
 	uint32_t acl;
 	uint32_t count;
 	uint32_t index;
-	struct node_id owner;
+	char owner[SD_MAX_VDI_LEN];
 	struct node_id sender;
 	uint32_t state;
 };

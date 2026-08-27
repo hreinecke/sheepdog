@@ -422,8 +422,10 @@ void apply_vdi_lock_state(struct vdi_state *vs);
 void create_vdi_state_checkpoint(int epoch);
 int get_vdi_state_checkpoint(int epoch, uint32_t vid, void *data);
 void free_vdi_state_checkpoint(int epoch);
-void log_vdi_op_lock(uint32_t vid, const struct node_id *owner, uint32_t acl);
-void log_vdi_op_unlock(uint32_t vid, const struct node_id *owner, uint32_t acl);
+void log_vdi_op_lock(uint32_t vid, const struct node_id *sender,
+		     char *owner, uint32_t acl);
+void log_vdi_op_unlock(uint32_t vid, const struct node_id *sender,
+		       char *owner, uint32_t acl);
 void play_logged_vdi_ops(void);
 bool is_refresh_required(uint32_t vid);
 void validate_myself(uint32_t vid);
