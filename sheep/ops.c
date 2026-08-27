@@ -1475,48 +1475,6 @@ static int cluster_release_vdi_main(const struct sd_req *req,
 	return ret;
 }
 
-static int cluster_lock_vdi_lookup(struct request *req)
-{
-	const struct sd_req *hdr = &req->rq;
-	struct sd_rsp *rsp = &req->rp;
-	uint32_t data_len = hdr->data_length;
-	int ret;
-	struct vdi_info info = {};
-	struct vdi_iocb iocb = {
-		.name = req->data,
-		.data_len = data_len,
-		.snapid = hdr->vdi_lock.snapid,
-		.acl = hdr->vdi_lock.acl,
-	};
-
-	if (vdi_init_tag(&iocb.tag, req->data, data_len) < 0)
-		return SD_RES_INVALID_PARMS;
-
-	ret = vdi_lookup(&iocb, &info);
-	if (ret == SD_RES_SUCCESS)
-		rsp->vdi_lock.vid = info.vid;
-	return ret;
-}
-
-static int cluster_register_vdi_work(struct request *req)
-{
-	if (!(sys->cinfo.flags & SD_CLUSTER_FLAG_USE_LOCK)) {
-		sd_debug("vdi lock is disabled");
-		return cluster_lock_vdi_lookup(req);
-	}
-
-	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
-		/*
-		 * this node is collecting vdi locking status, not ready for
-		 * allowing lock by itself
-		 */
-		sd_err("This node is not ready for vdi register, try later");
-		return SD_RES_COLLECTING_CINFO;
-	}
-
-	return cluster_lock_vdi_lookup(req);
-}
-
 static int cluster_register_vdi_main(const struct sd_req *req,
 				     struct sd_rsp *rsp,
 				     void *data, const struct sd_node *sender)
@@ -1530,10 +1488,20 @@ static int cluster_register_vdi_main(const struct sd_req *req,
 		return ret;
 	}
 
-	ls.vid = rsp->vdi_lock.vid;
+	ls.vid = req->vdi_lock.vid;
 	ls.acl = req->vdi_lock.acl;
-	memcpy(ls.owner.addr, req->vdi_lock.addr, sizeof(ls.owner.addr));
-	ls.owner.port = req->vdi_lock.port;
+	ls.sender = sender->nid;
+
+	if (req->data_length) {
+		if (str_to_addr(data, ls.owner.addr, &ls.owner.port) < 0) {
+			sd_debug("failed to parse vdi register owner '%s'",
+				 (char *)data);
+			return SD_RES_INVALID_PARMS;
+		}
+	} else {
+		sd_debug("No owner for vdi register");
+		return SD_RES_INVALID_PARMS;
+	}
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
 		sd_debug("logging vdi register information for later replay");
@@ -1570,9 +1538,19 @@ static int cluster_unregister_vdi_main(const struct sd_req *req,
 
 	ls.vid = req->vdi_lock.vid;
 	ls.acl = req->vdi_lock.acl;
+	ls.sender = sender->nid;
 	ls.index = req->vdi_lock.index;
-	memcpy(ls.owner.addr, req->vdi_lock.addr, sizeof(ls.owner.addr));
-	ls.owner.port = req->vdi_lock.port;
+
+	if (req->data_length) {
+		if (str_to_addr(data, ls.owner.addr, &ls.owner.port) < 0) {
+			sd_debug("failed to parse vdi register owner '%s'",
+				 (char *)data);
+			return SD_RES_INVALID_PARMS;
+		}
+	} else {
+		sd_debug("No owner for vdi register");
+		return SD_RES_INVALID_PARMS;
+	}
 
 	if (sys->node_status == SD_NODE_STATUS_COLLECTING_CINFO) {
 		sd_debug("logging vdi unregister information for later replay");
@@ -1877,7 +1855,6 @@ static struct sd_op_template sd_ops[] = {
 	[SD_OP_REGISTER_VDI] = {
 		.name = "REGISTER_VDI",
 		.type = SD_OP_TYPE_CLUSTER,
-		.process_work = cluster_register_vdi_work,
 		.process_main = cluster_register_vdi_main,
 	},
 

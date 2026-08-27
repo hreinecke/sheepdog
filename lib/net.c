@@ -416,7 +416,7 @@ char *sockaddr_in_to_str(struct sockaddr_in *sockaddr)
 	return str;
 }
 
-uint8_t *str_to_addr(const char *ipstr, uint8_t *addr)
+int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
 {
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;
@@ -424,16 +424,50 @@ uint8_t *str_to_addr(const char *ipstr, uint8_t *addr)
 	struct sockaddr_in6 *sin6;
 	int res = -1;
 	int addr_start_idx;
+	char *hoststr = strdup(ipstr);
+	char *portstr = NULL;
 
+	if (!hoststr)
+		return -EINVAL;
+	if (ipstr[0] == '[') {
+		char *p = strchr(hoststr, ']');
+		if (!p) {
+			free(hoststr);
+			return -EINVAL;
+		}
+		if (strlen(p) > 1 && p[1] == ':') {
+			p[0] = '\0';
+			portstr = p + 2;
+		}
+	} else {
+		char *p = strrchr(hoststr, ':');
+		if (p) {
+			p[0] = '\0';
+			portstr = p + 1;
+		}
+	}
+	if (portstr && port) {
+		unsigned long p;
+		char *end = NULL;
+
+		p = strtoul(portstr, &end, 10);
+		if (portstr == end) {
+			free(hoststr);
+			return -EINVAL;
+		}
+		*port = p;
+	}
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = 0;
+	hints.ai_flags = AI_NUMERICHOST;
 	hints.ai_protocol = 0;
 
-	res = getaddrinfo(ipstr, NULL, &hints, &result);
-	if (res != 0)
-		return NULL;
+	res = getaddrinfo(hoststr, NULL, &hints, &result);
+	if (res != 0) {
+		free(hoststr);
+		return -EADDRNOTAVAIL;
+	}
 
 	for (rp = result; rp != NULL; rp = rp->ai_next) {
 		switch (rp->ai_family) {
@@ -451,12 +485,14 @@ uint8_t *str_to_addr(const char *ipstr, uint8_t *addr)
 		break;
 	}
 
-	if (rp == NULL)
-		return NULL;
+	if (rp == NULL) {
+		free(hoststr);
+		return -EHOSTUNREACH;
+	}
 
 	freeaddrinfo(result);
-
-	return addr;
+	free(hoststr);
+	return 0;
 }
 
 int set_snd_timeout(int fd)

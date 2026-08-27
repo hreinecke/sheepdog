@@ -174,10 +174,8 @@ struct sd_req {
 		struct {
 			uint32_t        vid;
 			uint32_t	snapid;
-			uint8_t		addr[16];
-			uint16_t	port;
-			uint16_t	index;
 			uint32_t	acl;
+			uint32_t	index;
 		} vdi_lock;
 
 		/* sheepdog-internal */
@@ -261,10 +259,8 @@ struct sd_rsp {
 		struct {
 			uint32_t	__pad;
 			uint32_t        vid;
-			uint8_t		addr[16];
-			uint16_t	port;
-			uint16_t	count;
 			uint32_t	acl;
+			uint32_t	count;
 		} vdi_lock;
 
 		/* sheepdog-internal */

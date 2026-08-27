@@ -87,7 +87,7 @@ static struct vdi_cmd_data {
 	int reclamation_interval;
 	int nr_max_reclaim;
 	char acl_name[SD_MAX_VDI_LEN];
-	struct node_id owner;
+	char owner_addr[MAX_NODE_STR_LEN];
 } vdi_cmd_data = { ~0, };
 
 /*
@@ -144,45 +144,6 @@ static const char *acl_option_name(void)
 		return vdi_cmd_data.acl_name;
 
 	return "none";
-}
-
-static int parse_vdi_address(const char *opt, struct node_id *owner)
-{
-	int port = SD_LISTEN_PORT;
-	char addr[MAX_NODE_STR_LEN], *p, *e = NULL;
-
-	if (!opt)
-		goto invalid;
-	if (strlen(opt) >= MAX_NODE_STR_LEN)
-		goto invalid;
-	if (opt[0] == '[') {
-		strcpy(addr, opt + 1);
-		p = strchr(addr, ']');
-		if (!p)
-			goto invalid;
-		*p = '\0';
-		p++;
-		p = strchr(p, ':');
-	} else {
-		strcpy(addr, opt);
-		p = strchr(addr, ':');
-	}
-	if (p) {
-		*p = '\0';
-		p++;
-		port = strtoul(p, &e, 10);
-		if (p == e)
-			goto invalid;
-	}
-
-	if (!str_to_addr(addr, owner->addr))
-		goto invalid;
-	owner->port = port;
-
-	return 0;
-invalid:
-	sd_err("Invalid ip address %s", addr);
-	return -1;
 }
 
 struct get_vdi_info {
@@ -3715,7 +3676,6 @@ static int lock_lock(int argc, char **argv)
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
 	uint32_t vid = 0;
-	const struct node_id *owner = &vdi_cmd_data.owner;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
@@ -3733,24 +3693,31 @@ static int lock_lock(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	/* SD_OP_LOCK_VDI looks up the VDI by name, not by vid */
 	memset(buf, 0, sizeof(buf));
-	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
-	if (tag)
-		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
 
-	if (!node_id_is_null(owner)) {
+	if (strlen(vdi_cmd_data.owner_addr)) {
+		/*
+		 * the vid is already resolved above, so send it directly
+		 * instead of making the sheep look it up by name again; the
+		 * owner address (an IP address or a FQDN) is sent as the
+		 * payload since it doesn't fit the fixed-size header, and is
+		 * resolved by the sheep itself
+		 */
 		sd_init_req(&hdr, SD_OP_REGISTER_VDI);
-		hdr.vdi_lock.snapid = snapid;
+		hdr.vdi_lock.vid = vid;
 		hdr.vdi_lock.acl = acl_id;
-		memcpy(hdr.vdi_lock.addr, owner->addr, sizeof(owner->addr));
-		hdr.vdi_lock.port = owner->port;
+		pstrcpy(buf, MAX_NODE_STR_LEN, vdi_cmd_data.owner_addr);
+		hdr.data_length = MAX_NODE_STR_LEN;
 	} else {
+		/* SD_OP_LOCK_VDI looks up the VDI by name, not by vid */
 		sd_init_req(&hdr, SD_OP_LOCK_VDI);
 		hdr.vdi.snapid = snapid;
 		hdr.vdi.acl = acl_id;
+		pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+		if (tag)
+			pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
+		hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
 	}
-	hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
 	hdr.flags = SD_FLAG_CMD_WRITE;
 
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
@@ -3862,23 +3829,26 @@ static int lock_unlock(int argc, char **argv)
 		goto out;
 	}
 
-	const struct node_id *owner = &vdi_cmd_data.owner;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 
-	if (!node_id_is_null(owner)) {
+	if (strlen(vdi_cmd_data.owner_addr)) {
+		char buf[MAX_NODE_STR_LEN] = { 0 };
+
 		sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
 		hdr.vdi_lock.vid = vid;
 		hdr.vdi_lock.acl = acl_id;
-		memcpy(hdr.vdi_lock.addr, owner->addr, sizeof(owner->addr));
-		hdr.vdi_lock.port = owner->port;
+		pstrcpy(buf, MAX_NODE_STR_LEN, vdi_cmd_data.owner_addr);
+		hdr.data_length = MAX_NODE_STR_LEN;
+		hdr.flags = SD_FLAG_CMD_WRITE;
+		ret = dog_exec_req(&sd_nid, &hdr, buf);
 	} else {
 		sd_init_req(&hdr, SD_OP_RELEASE_VDI);
 		hdr.vdi.base_vdi_id = vid;
 		hdr.vdi.acl = acl_id;
+		ret = dog_exec_req(&sd_nid, &hdr, NULL);
 	}
 
-	ret = dog_exec_req(&sd_nid, &hdr, NULL);
 	if (ret < 0) {
 		ret = EXIT_FAILURE;
 		goto out;
@@ -4147,8 +4117,7 @@ static int vdi_parser(int ch, const char *opt)
 		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
 		break;
 	case 'O':
-		if (parse_vdi_address(opt, &vdi_cmd_data.owner) < 0)
-			exit(EXIT_USAGE);
+		pstrcpy(vdi_cmd_data.owner_addr, MAX_NODE_STR_LEN, opt);
 		break;
 	}
 

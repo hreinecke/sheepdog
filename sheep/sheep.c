@@ -860,7 +860,8 @@ int main(int argc, char **argv, char **envp)
 			bindaddr = NULL;
 	}
 	if ((opt = getenv("SHEEP_ADDR"))) {
-		if (str_to_addr(opt, sys->this_node.nid.addr)) {
+		if (str_to_addr(opt, sys->this_node.nid.addr,
+				&sys->this_node.nid.port) == 0) {
 			explicit_addr = true;
 		}
 	}
@@ -962,7 +963,8 @@ int main(int argc, char **argv, char **envp)
 			sys->nosync = true;
 			break;
 		case 'y':
-			if (!str_to_addr(optarg, sys->this_node.nid.addr)) {
+			if (str_to_addr(optarg, sys->this_node.nid.addr,
+					&sys->this_node.nid.port) < 0) {
 				sd_err("Invalid address: '%s'", optarg);
 				exit(1);
 			}
@@ -1001,7 +1003,8 @@ int main(int argc, char **argv, char **envp)
 			if (option_parse(optarg, ",", ionic_parsers) < 0)
 				exit(1);
 
-			if (!str_to_addr(io_addr, sys->this_node.nid.io_addr)) {
+			if (str_to_addr(io_addr, sys->this_node.nid.io_addr,
+					&sys->this_node.nid.io_port) < 0) {
 				sd_err("Bad addr: '%s'", io_addr);
 				exit(1);
 			}

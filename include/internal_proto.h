@@ -454,6 +454,7 @@ struct vdi_lock_state {
 	uint32_t count;
 	uint32_t index;
 	struct node_id owner;
+	struct node_id sender;
 	uint32_t state;
 };
 

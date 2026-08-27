@@ -1073,13 +1073,6 @@ static void etcd_vdi_to_json(struct sd_req *req, struct json_object *obj)
 
 static void etcd_vdi_lock_to_json(struct sd_req *req, struct json_object *obj)
 {
-	struct node_id nid;
-
-	memcpy(nid.addr, req->vdi_lock.addr, sizeof(nid.addr));
-	nid.port = req->vdi_lock.port;
-
-	json_object_object_add(obj, "nid",
-		json_object_new_string(node_id_to_str(&nid, false)));
 	UPDATE_JSON_INT(obj, &req->vdi_lock, vid);
 	UPDATE_JSON_INT(obj, &req->vdi_lock, snapid);
 	UPDATE_JSON_INT(obj, &req->vdi_lock, index);
@@ -1140,7 +1133,6 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	struct json_object *vdi_obj, *data_obj, *node_obj, *lock_obj;
 	struct sheepdog_vdi_attr *vdi_attr;
 	struct sd_node *node;
-	struct node_id nid;
 
 	req_obj = json_object_new_object();
 	UPDATE_JSON_INT(req_obj, req, proto_ver);
@@ -1186,7 +1178,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		json_object_object_add(req_obj, "vdi_lock", lock_obj);
 		if (data_len) {
 			data_obj = json_object_new_object();
-			json_object_object_add(data_obj, "vdi_name",
+			json_object_object_add(data_obj, "owner",
 					       json_object_new_string(data));
 			json_object_object_add(obj, "data", data_obj);
 		}
@@ -1319,11 +1311,7 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 		break;
 	case SD_OP_REGISTER_VDI:
 	case SD_OP_UNREGISTER_VDI:
-		memcpy(nid.addr, rsp->vdi_lock.addr, sizeof(nid.addr));
-		nid.port = rsp->vdi_lock.port;
 		vdi_obj = json_object_new_object();
-		json_object_object_add(vdi_obj, "nid",
-			json_object_new_string(node_id_to_str(&nid, false)));
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, vid);
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, count);
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, acl);
@@ -1409,17 +1397,11 @@ static void etcd_json_to_vdi_lock(struct json_object *obj,
 		if (!strcmp(key, "vid"))
 			req->vdi_lock.vid =
 				json_object_get_int(val_obj);
+		DEREF_JSON_INT(val_obj, &req->vdi_lock, vid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_lock, snapid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_lock, index, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_lock, acl, key);
-		else if (!strcmp(key, "nid")) {
-			struct sd_node node;
-
-			str_to_node(json_object_get_string(val_obj), &node);
-			memcpy(req->vdi_lock.addr, node.nid.addr,
-			       sizeof(node.nid.addr));
-			req->vdi_lock.port = node.nid.port;
-		} else
+		else
 			sd_warn("unhandled vdi_lock attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
@@ -1632,14 +1614,7 @@ static void etcd_json_to_rsp_vdi_lock(struct json_object *obj,
 				json_object_get_int(val_obj);
 		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, count, key);
 		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, acl, key);
-		else if (!strcmp(key, "nid")) {
-			struct sd_node node;
-
-			str_to_node(json_object_get_string(val_obj), &node);
-			memcpy(rsp->vdi_lock.addr, node.nid.addr,
-			       sizeof(node.nid.addr));
-			rsp->vdi_lock.port = node.nid.port;
-		} else
+		else
 			sd_warn("unhandled vdi_lock attribute '%s'", key);
 		json_object_iter_next(&itb);
 	}
@@ -1699,7 +1674,8 @@ static void etcd_json_to_data(struct etcd_ctx *ctx, struct json_object *obj,
 		struct json_object *attr_obj;
 
 		if (!strcmp(key, "vdi_name") ||
-		    !strcmp(key, "store_name")) {
+		    !strcmp(key, "store_name") ||
+		    !strcmp(key, "owner")) {
 			const char *val = json_object_get_string(val_obj);
 			size_t data_len = strlen(val);;
 

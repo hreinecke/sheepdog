@@ -351,7 +351,7 @@ static inline struct sd_node *str_to_node(const char *str, struct sd_node *id)
 
 	sscanf(str, "%s ip:%s port:%d", v, ip, &port);
 	id->nid.port = port;
-	if (!str_to_addr(ip, id->nid.addr))
+	if (str_to_addr(ip, id->nid.addr, NULL) < 0)
 		return NULL;
 
 	return id;
@@ -364,7 +364,7 @@ static inline struct sd_node *str_to_io_node(const char *str, struct sd_node *id
 
 	sscanf(str, "%s ip:%s port:%d", v, ip, &port);
 	id->nid.io_port = port;
-	if (!str_to_addr(ip, id->nid.io_addr))
+	if (str_to_addr(ip, id->nid.io_addr, NULL) < 0)
 		return NULL;
 
 	return id;

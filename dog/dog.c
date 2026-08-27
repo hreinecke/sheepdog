@@ -474,7 +474,7 @@ int main(int argc, char **argv)
 
 	env = getenv("SHEEPDOG_DOG_ADDR");
 	if (env) {
-		if (!str_to_addr(env, sdhost)) {
+		if (str_to_addr(env, sdhost, &sd_nid.port) < 0) {
 			sd_err("Invalid ip address %s", env);
 			return EXIT_FAILURE;
 		}
@@ -497,7 +497,7 @@ int main(int argc, char **argv)
 
 		switch (ch) {
 		case 'a':
-			if (!str_to_addr(optarg, sdhost)) {
+			if (str_to_addr(optarg, sdhost, &sd_nid.port) < 0) {
 				sd_err("Invalid ip address %s", optarg);
 				return EXIT_FAILURE;
 			}
