@@ -11,6 +11,13 @@
 
 #include "sheep_priv.h"
 
+struct vdi_state_participant {
+	enum shared_lock_state state;
+	struct node_id nid;
+	char owner[SD_MAX_VDI_LEN];
+	uint32_t count;
+};
+
 struct vdi_state_entry {
 	uint32_t vid;
 	uint32_t acl;
@@ -29,9 +36,7 @@ struct vdi_state_entry {
 
 	/* used for shared locking (iSCSI multipath) */
 	int nr_participants;
-	enum shared_lock_state participants_state[SD_MAX_COPIES];
-	struct node_id participants[SD_MAX_COPIES];
-	unsigned int participants_count[SD_MAX_COPIES];
+	struct vdi_state_participant participants[SD_MAX_COPIES];
 
 	struct vdi_family_member *family_member;
 };
@@ -537,11 +542,9 @@ int fill_vdi_state_list(const struct sd_req *hdr,
 		vs[last].nr_participants = entry->nr_participants;
 		vs[last].parent_vid = entry->parent_vid;
 		for (int i = 0; i < vs[last].nr_participants; i++) {
-			uint32_t state = entry->participants_state[i];
-
-			state |= (entry->participants_count[i] << 8);
-			vs[last].participants_state[i] = state;
-			vs[last].participants[i] = entry->participants[i];
+			vs[last].participants_state[i] =
+				entry->participants[i].state;
+			vs[last].participants[i] = entry->participants[i].nid;
 		}
 
 		last++;
@@ -586,8 +589,8 @@ static struct vdi_state *fill_vdi_state_list_with_alloc(int *result_nr)
 		vs[i].nr_participants = entry->nr_participants;
 		for (int j = 0; j < vs[i].nr_participants; j++) {
 			vs[i].participants_state[j] =
-				entry->participants_state[j];
-			vs[i].participants[j] = entry->participants[j];
+				entry->participants[j].state;
+			vs[i].participants[j] = entry->participants[j].nid;
 		}
 
 		sd_assert(i < nr);
@@ -634,7 +637,7 @@ static bool is_valid_shared_state(struct vdi_state_entry *entry)
 	struct node_id *current_owner = NULL;	/* modified */
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		enum shared_lock_state state = entry->participants_state[i];
+		enum shared_lock_state state = entry->participants[i].state;
 
 		if (state == SHARED_LOCK_STATE_MODIFIED) {
 			if (current_owner) {
@@ -642,12 +645,12 @@ static bool is_valid_shared_state(struct vdi_state_entry *entry)
 				       " nodes are owning VDI %"PRIx32":"
 				       " %s and %s", entry->vid,
 				       node_id_to_str(current_owner, false),
-				       node_id_to_str(&entry->participants[i], false));
+				       node_id_to_str(&entry->participants[i].nid, false));
 
 				return false;
 			}
 
-			current_owner = &entry->participants[i];
+			current_owner = &entry->participants[i].nid;
 		}
 	}
 
@@ -660,7 +663,7 @@ static bool is_modified(struct vdi_state_entry *entry)
 		panic("invalid shared state");
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (SHARED_LOCK_STATE_MODIFIED == entry->participants_state[i])
+		if (SHARED_LOCK_STATE_MODIFIED == entry->participants[i].state)
 			return true;
 	}
 
@@ -679,13 +682,13 @@ static int add_participant(struct vdi_state_entry *entry,
 			 node_id_to_str(&ls->owner, false), entry->vid);
 
 		entry->nr_participants = 1;
-		memcpy(&entry->participants[0], &ls->owner,
+		memcpy(&entry->participants[0].nid, &ls->owner,
 		       sizeof(struct node_id));
-		entry->participants_state[0] = SHARED_LOCK_STATE_MODIFIED;
+		entry->participants[0].state = SHARED_LOCK_STATE_MODIFIED;
 		entry->lock_state = LOCK_STATE_SHARED;
-		entry->participants_count[0] = 1;
+		entry->participants[0].count = 1;
 		ls->index = 0;
-		ls->count = entry->participants_count[0];
+		ls->count = entry->participants[0].count;
 		return SD_RES_SUCCESS;
 	}
 
@@ -699,39 +702,40 @@ static int add_participant(struct vdi_state_entry *entry,
 	}
 
 	for (idx = 0; idx < entry->nr_participants; idx++) {
-		if (!entry->participants_count[idx]) {
+		if (!entry->participants[idx].count) {
 			free_idx = idx;
 			continue;
 		}
-		if (node_id_cmp(&entry->participants[idx], &ls->owner))
+		if (node_id_cmp(&entry->participants[idx].nid, &ls->owner))
 			continue;
 
-		entry->participants_count[idx]++;
+		entry->participants[idx].count++;
 		ls->index = idx;
-		ls->count = entry->participants_count[ls->index];
+		ls->count = entry->participants[idx].count;
 		sd_debug("participant %s (%d) added to  VID: %"PRIx32
 			 ", state is %d, count %d",
-			 node_id_to_str(&entry->participants[idx], false),
-			 idx, entry->vid, entry->participants_state[idx],
-			 entry->participants_count[idx]);
+			 node_id_to_str(&entry->participants[idx].nid, false),
+			 idx, entry->vid, entry->participants[idx].state,
+			 entry->participants[idx].count);
 		return SD_RES_SUCCESS;
 	}
 	if (free_idx == -1) {
 		free_idx = entry->nr_participants;
 		entry->nr_participants++;
 	}
-	memcpy(&entry->participants[free_idx], &ls->owner, sizeof(ls->owner));
-	entry->participants_state[free_idx] =
+	memcpy(&entry->participants[free_idx].nid, &ls->owner,
+	       sizeof(ls->owner));
+	entry->participants[free_idx].state =
 		is_modified(entry) ?
 		SHARED_LOCK_STATE_INVALIDATED : SHARED_LOCK_STATE_SHARED;
-	entry->participants_count[free_idx] = 1;
+	entry->participants[free_idx].count = 1;
 	ls->index = free_idx;
-	ls->count = entry->participants_count[ls->index];
+	ls->count = entry->participants[ls->index].count;
 
 	sd_debug("new participant %s (%d) joined to VID: %"PRIx32
 		 ", state is %d",
-		 node_id_to_str(&entry->participants[idx], false), idx,
-		 entry->vid, entry->participants_state[idx]);
+		 node_id_to_str(&entry->participants[idx].nid, false), idx,
+		 entry->vid, entry->participants[idx].state);
 
 	return SD_RES_SUCCESS;
 }
@@ -745,7 +749,7 @@ static int del_participant(struct vdi_state_entry *entry,
 		return SD_RES_VDI_NOT_LOCKED;
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (!node_id_cmp(&entry->participants[i], &ls->owner)) {
+		if (!node_id_cmp(&entry->participants[i].nid, &ls->owner)) {
 			idx = i;
 			break;
 		}
@@ -754,18 +758,18 @@ static int del_participant(struct vdi_state_entry *entry,
 	if (idx == -1)
 		return SD_RES_VDI_NOT_LOCKED;
 
-	entry->participants_count[idx]--;
-	if (entry->participants_count[idx]) {
+	entry->participants[idx].count--;
+	if (entry->participants[idx].count) {
 		ls->index = idx;
-		ls->count = entry->participants_count[idx];
+		ls->count = entry->participants[idx].count;
 		return SD_RES_SUCCESS;
 	}
-	memset(&entry->participants[idx], 0, sizeof(entry->participants[idx]));
-	entry->participants_count[idx] = 0;
-	entry->participants_state[idx] = 0;
+	memset(&entry->participants[idx].nid, 0, sizeof(struct node_id));
+	entry->participants[idx].count = 0;
+	entry->participants[idx].state = 0;
 
 	if (idx == entry->nr_participants - 1) {
-		while (idx >= 0 && entry->participants_count[idx] == 0) {
+		while (idx >= 0 && entry->participants[idx].count == 0) {
 			entry->nr_participants--;
 			idx--;
 		}
@@ -777,10 +781,10 @@ static int del_participant(struct vdi_state_entry *entry,
 	sd_debug("participant: %s is deleted, current participants are below:",
 		 node_id_to_str(&ls->owner, false));
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (entry->participants_count[i]) {
+		if (entry->participants[i].count) {
 			sd_debug("%d: %s count %d", i,
-				 node_id_to_str(&entry->participants[i], false),
-				 entry->participants_count[i]);
+				 node_id_to_str(&entry->participants[i].nid, false),
+				 entry->participants[i].count);
 		} else {
 			sd_debug("%d: <empty>", i);
 		}
@@ -1007,6 +1011,7 @@ out:
 void apply_vdi_lock_state(struct vdi_state *vs)
 {
 	struct vdi_state_entry *entry;
+	int i;
 
 	sd_write_lock(&vdi_state_lock);
 	entry = vdi_state_search(&vdi_state_root, vs->vid);
@@ -1023,10 +1028,11 @@ void apply_vdi_lock_state(struct vdi_state *vs)
 	memcpy(&entry->owner, &vs->lock_owner, sizeof(vs->lock_owner));
 
 	entry->nr_participants = vs->nr_participants;
-	memcpy(entry->participants_state, vs->participants_state,
-	       sizeof(entry->participants_state[0]) * SD_MAX_COPIES);
-	memcpy(entry->participants, vs->participants,
-	       sizeof(entry->participants[0]) * SD_MAX_COPIES);
+	memset(entry->participants, 0, sizeof(entry->participants));
+	for (i = 0; i < vs->nr_participants; i++) {
+		entry->participants[i].state = vs->participants_state[i];
+		entry->participants[i].nid = vs->participants[i];
+	}
 
 out:
 	sd_rw_unlock(&vdi_state_lock);
@@ -1144,10 +1150,11 @@ worker_fn bool is_refresh_required(uint32_t vid)
 		goto out;
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (node_id_cmp(&entry->participants[i], &sys->this_node.nid))
+		if (node_id_cmp(&entry->participants[i].nid,
+				&sys->this_node.nid))
 			continue;
 
-		if (entry->participants_state[i] ==
+		if (entry->participants[i].state ==
 		    SHARED_LOCK_STATE_INVALIDATED)
 			ret = true;
 		goto out;
@@ -1179,10 +1186,11 @@ worker_fn void validate_myself(uint32_t vid)
 		goto out;
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (node_id_cmp(&entry->participants[i], &sys->this_node.nid))
+		if (node_id_cmp(&entry->participants[i].nid,
+				&sys->this_node.nid))
 			continue;
 
-		if (entry->participants_state[i] !=
+		if (entry->participants[i].state !=
 		    SHARED_LOCK_STATE_INVALIDATED)
 			goto out;
 
@@ -1228,10 +1236,11 @@ worker_fn void invalidate_other_nodes(uint32_t vid)
 		goto out;
 
 	for (int i = 0; i < entry->nr_participants; i++) {
-		if (node_id_cmp(&entry->participants[i], &sys->this_node.nid))
+		if (node_id_cmp(&entry->participants[i].nid,
+				&sys->this_node.nid))
 			continue;
 
-		if (entry->participants_state[i] !=
+		if (entry->participants[i].state !=
 		    SHARED_LOCK_STATE_MODIFIED)
 			goto invalidate;
 
@@ -1280,8 +1289,8 @@ main_fn int inode_coherence_update(uint32_t vid, bool validate,
 
 	if (validate) {
 		for (int i = 0; i < entry->nr_participants; i++) {
-			if (node_id_cmp(&entry->participants[i], sender)
-			    && entry->participants_state[i] ==
+			if (node_id_cmp(&entry->participants[i].nid, sender)
+			    && entry->participants[i].state ==
 			    SHARED_LOCK_STATE_INVALIDATED)
 				/*
 				 * don't validate other invalidated, they need
@@ -1289,15 +1298,15 @@ main_fn int inode_coherence_update(uint32_t vid, bool validate,
 				 */
 				continue;
 
-			entry->participants_state[i] = SHARED_LOCK_STATE_SHARED;
+			entry->participants[i].state = SHARED_LOCK_STATE_SHARED;
 		}
 	} else {
 		for (int i = 0; i < entry->nr_participants; i++) {
-			if (node_id_cmp(&entry->participants[i], sender))
-				entry->participants_state[i] =
+			if (node_id_cmp(&entry->participants[i].nid, sender))
+				entry->participants[i].state =
 					SHARED_LOCK_STATE_INVALIDATED;
 			else {
-				entry->participants_state[i] =
+				entry->participants[i].state =
 					SHARED_LOCK_STATE_MODIFIED;
 				invalidated = true;
 			}
