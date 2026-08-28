@@ -333,6 +333,59 @@ int find_vdi_name(const char *vdiname, uint32_t snapid, const char *tag,
 	return rsp->result;
 }
 
+int find_vdi_lock_state(uint32_t vid, uint32_t acl_id, uint32_t index,
+			struct vdi_lock_state **vls, uint32_t *lock_state)
+{
+	size_t buf_len = 0;
+	char *buf = NULL;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	int ret;
+
+	if (vls) {
+		buf_len = sizeof(struct vdi_lock_state) * 16;
+		buf = xzalloc(buf_len);
+		if (!buf)
+			return -ENOMEM;
+	}
+	sd_init_req(&hdr, SD_OP_GET_VDI_LOCK_STATE);
+	hdr.vdi_lock.vid = vid;
+	hdr.vdi_lock.acl = acl_id;
+	hdr.vdi_lock.index = index;
+	hdr.data_length = buf_len;
+retry:
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to get VDI %"PRIx32" state: %m",
+		       vid);
+		free(buf);
+		return ret;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		free(buf);
+		if (rsp->result == SD_RES_BUFFER_SMALL) {
+			buf_len *= 2;
+			buf = xzalloc(buf_len);
+			if (!buf) {
+				sd_err("Failed to allocate buffer");
+				return -ENOMEM;
+			}
+			goto retry;
+		}
+		sd_err("Failed to get VDI %"PRIx32" state: %s",
+		       vid, sd_strerror(rsp->result));
+		return -EIO;
+	}
+	*lock_state = rsp->vdi_lock.state;
+	if (vls)
+		*vls = (struct vdi_lock_state *)buf;
+	else {
+		free(buf);
+		buf_len = 0;
+	}
+	return buf_len;
+}
+
 int subcmd_depth = -1;
 struct subcommand *subcmd_stack[MAX_SUBCMD_DEPTH];
 

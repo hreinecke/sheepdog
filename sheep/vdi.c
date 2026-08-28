@@ -609,19 +609,24 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 			struct sd_rsp *rsp, void *data)
 {
 	struct vdi_state_entry *entry;
-	size_t length = hdr->data_length, data_length = 0;
+	size_t data_length = 0;
 
 	sd_read_lock(&vdi_state_lock);
 	entry = vdi_state_search(&vdi_state_root, hdr->vdi_lock.vid);
-	if (entry && (hdr->vdi_lock.acl == LOCK_TYPE_ANY ||
-		      hdr->vdi_lock.acl == entry->acl)) {
+	if (!entry)
+		return SD_RES_NO_VDI;
+	if (hdr->vdi_lock.acl != LOCK_TYPE_ANY &&
+	    hdr->vdi_lock.acl != entry->acl)
+		return SD_RES_VDI_NOT_LOCKED;
+
+	if (hdr->data_length) {
 		struct vdi_lock_state *vs = data;
 		for (int i = 0; i < entry->nr_participants; i++) {
 			if (hdr->vdi_lock.index != UINT32_MAX &&
 			    hdr->vdi_lock.index != i)
 				continue;
 			data_length += sizeof(*vs);
-			if (length < data_length)
+			if (hdr->data_length < data_length)
 				continue;
 
 			vs->vid = entry->vid;
@@ -641,6 +646,8 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 			hdr->data_length, data_length);
 		return SD_RES_BUFFER_SMALL;
 	}
+	rsp->vdi_lock.count = entry->nr_participants;
+	rsp->vdi_lock.state = entry->lock_state;
 	rsp->data_length = data_length;
 	return SD_RES_SUCCESS;
 }

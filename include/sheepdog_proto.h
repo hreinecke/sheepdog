@@ -258,9 +258,8 @@ struct sd_rsp {
 		} vdi;
 		struct {
 			uint32_t	__pad;
-			uint32_t        vid;
-			uint32_t	acl;
 			uint32_t	count;
+			uint32_t	state;
 		} vdi_lock;
 
 		/* sheepdog-internal */

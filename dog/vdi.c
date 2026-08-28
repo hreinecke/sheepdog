@@ -57,9 +57,6 @@ static struct sd_option vdi_options[] = {
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
 	{'A', "acl", true, "specify the ACL for accessing the VDI"},
-	{'O', "owner", true, "specify the owner of the VDI lock as\n"
-	 "                          <address>[:<port>] instead of the node the\n"
-	 "                          request is sent to"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -87,7 +84,6 @@ static struct vdi_cmd_data {
 	int reclamation_interval;
 	int nr_max_reclaim;
 	char acl_name[SD_MAX_VDI_LEN];
-	char owner_addr[MAX_NODE_STR_LEN];
 } vdi_cmd_data = { ~0, };
 
 /*
@@ -120,21 +116,6 @@ static uint32_t vdi_acl_id(void)
 	if (lookup_acl_name(vdi_cmd_data.acl_name, &acl_id) != SD_RES_SUCCESS)
 		exit(EXIT_FAILURE);
 	return acl_id;
-}
-
-static bool is_acl_id_valid(uint32_t acl_id)
-{
-	switch (acl_id) {
-	case LOCK_TYPE_NORMAL:
-		return false;
-	case LOCK_TYPE_SHARED:
-		return false;
-	case LOCK_TYPE_ANY:
-		return false;
-	default:
-		break;
-	}
-	return true;
 }
 
 /* The ACL '-A' was given as, for the messages which name it back */
@@ -3676,11 +3657,8 @@ static int lock_detail(int argc, char **argv)
 	uint32_t acl_id = vdi_acl_id();
 	const char *vdiname = argv[optind];
 	int ret = 0;
-	struct sd_req hdr;
-	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
-	size_t buf_len = sizeof(struct vdi_lock_state) * 16;
-	char *buf = xzalloc(buf_len);
-	uint32_t vid;
+	struct vdi_lock_state *vls_data;
+	uint32_t vid, lock_state;
 
 	if (json_output)
 		out_obj = json_object_new_array();
@@ -3694,45 +3672,20 @@ static int lock_detail(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to find VDI %s: %s",
 		       vdidesc, sd_strerror(ret));
-		free(buf);
 		return EXIT_FAILURE;
 	}
-	sd_init_req(&hdr, SD_OP_GET_VDI_LOCK_STATE);
-	hdr.vdi_lock.vid = vid;
-	hdr.vdi_lock.acl = acl_id;
-	hdr.vdi_lock.index = UINT32_MAX;
-	hdr.data_length = buf_len;
-retry:
-	ret = dog_exec_req(&sd_nid, &hdr, buf);
-	if (ret < 0) {
-		sd_err("Failed to get VDI %s state: %m",
-		       vdidesc);
-		free(buf);
-		return EXIT_SYSFAIL;
-	}
-	if (rsp->result != SD_RES_SUCCESS) {
-		free(buf);
-		if (rsp->result == SD_RES_BUFFER_SMALL) {
-			buf_len *= 2;
-			buf = xzalloc(buf_len);
-			if (!buf) {
-				sd_err("Failed to allocate buffer");
-				return EXIT_SYSFAIL;
-			}
-			goto retry;
-		}
-		sd_err("Failed to get VDI %s state: %s",
-		       vdidesc, sd_strerror(rsp->result));
-		return EXIT_SYSFAIL;
-	}
+	ret = find_vdi_lock_state(vid, acl_id, UINT32_MAX,
+				  &vls_data, &lock_state);
+	if (ret < 0)
+		return EXIT_FAILURE;
 	if (json_output) {
-		struct vdi_lock_state *vls = (struct vdi_lock_state *)buf;
+		struct vdi_lock_state *vls = vls_data;
 		const char *state_str;
 
-		for (int i = 0; i < rsp->data_length; i += sizeof(*vls)) {
+		for (int i = 0; i < ret; i += sizeof(*vls)) {
 			struct json_object *st_obj =
 				json_object_new_object();
-			if (rsp->data_length - i < sizeof(*vls))
+			if (ret - i < sizeof(*vls))
 				break;
 			JSON_ADD_INT(st_obj, "vid", vls->vid);
 			JSON_ADD_INT(st_obj, "acl", vls->acl);
@@ -3761,6 +3714,7 @@ retry:
 			vls++;
 		}
 	}
+	free(vls_data);
 	if (json_output) {
 		const char *o;
 
@@ -3780,7 +3734,6 @@ static int lock_lock(int argc, char **argv)
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
-	uint32_t vid = 0;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	char buf[SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN];
@@ -3789,38 +3742,18 @@ static int lock_lock(int argc, char **argv)
 		sd_err("VDI name must be specified");
 		return EXIT_USAGE;
 	}
-
-	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
-	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to find VDI %s: %s",
-		       vdidesc, sd_strerror(ret));
-		return EXIT_FAILURE;
-	}
+	/* vid isn't known here; SD_OP_LOCK_VDI resolves the VDI by name */
+	describe_vdi(vdiname, snapid, tag, 0, vdidesc);
 
 	memset(buf, 0, sizeof(buf));
 
-	if (strlen(vdi_cmd_data.owner_addr)) {
-		/*
-		 * the vid is already resolved above, so send it directly
-		 * instead of making the sheep look it up by name again; the
-		 * owner address (an IP address or a FQDN) is sent as the
-		 * payload since it doesn't fit the fixed-size header, and is
-		 * resolved by the sheep itself
-		 */
-		sd_init_req(&hdr, SD_OP_REGISTER_VDI);
-		hdr.vdi_lock.vid = vid;
-		hdr.vdi_lock.acl = acl_id;
-		pstrcpy(buf, MAX_NODE_STR_LEN, vdi_cmd_data.owner_addr);
-		hdr.data_length = MAX_NODE_STR_LEN;
-	} else {
-		/* SD_OP_LOCK_VDI looks up the VDI by name, not by vid */
-		sd_init_req(&hdr, SD_OP_LOCK_VDI);
-		hdr.vdi.snapid = snapid;
-		hdr.vdi.acl = acl_id;
-		pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
-		if (tag)
-			pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
+	/* SD_OP_LOCK_VDI looks up the VDI by name, not by vid */
+	sd_init_req(&hdr, SD_OP_LOCK_VDI);
+	hdr.vdi.snapid = snapid;
+	hdr.vdi.acl = acl_id;
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+	if (tag) {
+		pstrcpy(buf + SD_MAX_VDI_LEN, SD_MAX_VDI_TAG_LEN, tag);
 		hdr.data_length = SD_MAX_VDI_LEN + SD_MAX_VDI_TAG_LEN;
 	}
 	hdr.flags = SD_FLAG_CMD_WRITE;
@@ -3835,28 +3768,57 @@ static int lock_lock(int argc, char **argv)
 		       vdidesc, sd_strerror(rsp->result));
 		return EXIT_FAILURE;
 	}
+	return EXIT_SUCCESS;
+}
 
-	if (is_acl_id_valid(acl_id)) {
-		struct sd_inode_header inode;
+static int lock_register(int argc, char **argv)
+{
+	int ret = 0;
+	char vdidesc[VDI_DESC_MAX] = { 0 };
+	const char *vdiname = argv[optind++];
+	const uint32_t snapid = vdi_cmd_data.snapshot_id;
+	const char *tag = vdi_cmd_data.snapshot_tag;
+	uint32_t acl_id = vdi_acl_id();
+	uint32_t vid = 0;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	char buf[SD_MAX_VDI_LEN];
+	const char *owner = NULL;
 
-		ret = dog_read_object(vid_to_vdi_oid(acl_id),
-				      &inode, sizeof(inode), 0, true);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("Failed to read ACL %s: %s",
-			       vdi_cmd_data.acl_name, sd_strerror(ret));
-			return EXIT_FAILURE;
-		}
-		inode.vdi_epoch++;
-		ret = dog_write_object(vid_to_vdi_oid(acl_id), 0,
-				       &inode.vdi_epoch, sizeof(uint32_t),
-				       offsetof(struct sd_inode_header, vdi_epoch),
-				       SD_FLAG_CMD_DIRECT, inode.nr_copies,
-				       inode.copy_policy, false);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("Failed to update ACL %s epoch: %s",
-			       vdi_cmd_data.acl_name, sd_strerror(ret));
-		}
+	if (!argv[optind]) {
+		sd_err("Owner must be specified");
+		return EXIT_USAGE;
 	}
+	owner = argv[optind];
+
+	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
+	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find VDI %s: %s",
+		       vdidesc, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	sd_init_req(&hdr, SD_OP_REGISTER_VDI);
+	hdr.vdi_lock.vid = vid;
+	hdr.vdi_lock.acl = acl_id;
+	pstrcpy(buf, SD_MAX_VDI_LEN, owner);
+	hdr.data_length = SD_MAX_VDI_LEN;
+	hdr.flags = SD_FLAG_CMD_WRITE;
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to register VDI %s owner", vdidesc);
+		return EXIT_SYSFAIL;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to register VDI %s owner: %s",
+		       vdidesc, sd_strerror(rsp->result));
+		return EXIT_FAILURE;
+	}
+
 	return EXIT_SUCCESS;
 }
 
@@ -3876,7 +3838,7 @@ static int lock_unlock(int argc, char **argv)
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
-	uint32_t vid = 0;
+	uint32_t vid = 0, lock_state;
 
 	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
 	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
@@ -3888,29 +3850,14 @@ static int lock_unlock(int argc, char **argv)
 	}
 	sd_assert(vid > 0);
 
-	/* TODO: get not all the status but only the state of target VDI */
-	int vs_count = 0;
-	vs = get_vdi_state(&vs_count);
-	if (!vs) {
-		sd_err("Failed to get VDI state");
-		ret = EXIT_SYSFAIL;
-		goto out;
-	}
-	sd_assert(vs_count >= 0);
-
-	/* run linear search to find vdi_state whose ID is vid */
-	size_t nmemb = (size_t)vs_count;
-	const struct vdi_state key = { .vid = vid };
-	const struct vdi_state *found = lfind(&key, vs, &nmemb,
-					      sizeof(struct vdi_state),
-					      compare_vdi_state_by_vid);
-	if (!found) {
-		sd_err("Failed to find VDI state %s", vdidesc);
-		ret = EXIT_SYSFAIL;
-		goto out;
+	ret = find_vdi_lock_state(vid, acl_id, UINT32_MAX,
+				  NULL, &lock_state);
+	if (ret < 0) {
+		sd_err("Failed to get VDI %"PRIx32" state", vid);
+		return EXIT_SYSFAIL;
 	}
 
-	switch (found->lock_state) {
+	switch (lock_state) {
 	case LOCK_STATE_UNLOCKED:
 		sd_err("VDI %s is not locked", vdidesc);
 		ret = EXIT_FAILURE;
@@ -3929,7 +3876,7 @@ static int lock_unlock(int argc, char **argv)
 		break;
 	default:
 		sd_err("VDI %s unknown lock state (%" PRIu32 ")",
-		       vdidesc, found->lock_state);
+		       vdidesc, lock_state);
 		ret = EXIT_SYSFAIL;
 		goto out;
 	}
@@ -3937,22 +3884,10 @@ static int lock_unlock(int argc, char **argv)
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 
-	if (strlen(vdi_cmd_data.owner_addr)) {
-		char buf[MAX_NODE_STR_LEN] = { 0 };
-
-		sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
-		hdr.vdi_lock.vid = vid;
-		hdr.vdi_lock.acl = acl_id;
-		pstrcpy(buf, MAX_NODE_STR_LEN, vdi_cmd_data.owner_addr);
-		hdr.data_length = MAX_NODE_STR_LEN;
-		hdr.flags = SD_FLAG_CMD_WRITE;
-		ret = dog_exec_req(&sd_nid, &hdr, buf);
-	} else {
-		sd_init_req(&hdr, SD_OP_RELEASE_VDI);
-		hdr.vdi.base_vdi_id = vid;
-		hdr.vdi.acl = acl_id;
-		ret = dog_exec_req(&sd_nid, &hdr, NULL);
-	}
+	sd_init_req(&hdr, SD_OP_RELEASE_VDI);
+	hdr.vdi.base_vdi_id = vid;
+	hdr.vdi.acl = acl_id;
+	ret = dog_exec_req(&sd_nid, &hdr, NULL);
 
 	if (ret < 0) {
 		ret = EXIT_FAILURE;
@@ -3966,30 +3901,85 @@ static int lock_unlock(int argc, char **argv)
 	}
 	ret = EXIT_SUCCESS;
 
-	if (is_acl_id_valid(acl_id)) {
-		struct sd_inode_header inode;
-
-		ret = dog_read_object(vid_to_vdi_oid(acl_id),
-				      &inode, sizeof(inode), 0, true);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("Failed to read ACL %s: %s",
-			       vdi_cmd_data.acl_name, sd_strerror(ret));
-			return EXIT_FAILURE;
-		}
-		inode.vdi_epoch++;
-		ret = dog_write_object(vid_to_vdi_oid(acl_id), 0,
-				       &inode.vdi_epoch, sizeof(uint32_t),
-				       offsetof(struct sd_inode_header, vdi_epoch),
-				       SD_FLAG_CMD_DIRECT, inode.nr_copies,
-				       inode.copy_policy, false);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("Failed to update ACL %s epoch: %s",
-			       vdi_cmd_data.acl_name, sd_strerror(ret));
-		}
-	}
-
 out:
 	free(vs);
+	return ret;
+}
+
+static int lock_unregister(int argc, char **argv)
+{
+	const char *vdiname = argv[optind++];
+	int ret = EXIT_SUCCESS;
+	char vdidesc[VDI_DESC_MAX] = { 0 };
+	const uint32_t snapid = vdi_cmd_data.snapshot_id;
+	const char *tag = vdi_cmd_data.snapshot_tag;
+	uint32_t acl_id = vdi_acl_id();
+	uint32_t vid = 0, lock_state;
+	char buf[SD_MAX_VDI_LEN];
+	const char *owner;
+
+	if (!argv[optind]) {
+		sd_err("Owner must be specified");
+		return EXIT_USAGE;
+	}
+	owner = argv[optind];
+
+	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
+	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find VDI %s: %s",
+		       vdidesc, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+	sd_assert(vid > 0);
+
+	ret = find_vdi_lock_state(vid, acl_id, UINT32_MAX,
+				  NULL, &lock_state);
+	if (ret < 0) {
+		sd_err("Failed to get VDI %"PRIx32" state", vid);
+		return EXIT_SYSFAIL;
+	}
+
+	switch (lock_state) {
+	case LOCK_STATE_UNLOCKED:
+		sd_err("VDI %s is not locked", vdidesc);
+		return EXIT_FAILURE;
+	case LOCK_STATE_LOCKED:
+		if (acl_id) {
+			sd_err("VDI %s is locked exclusively", vdidesc);
+			return EXIT_SYSFAIL;
+		}
+		acl_id = LOCK_TYPE_NORMAL;
+		break;
+	case LOCK_STATE_SHARED:
+		if (!acl_id)
+			acl_id = LOCK_TYPE_SHARED;
+		break;
+	default:
+		sd_err("VDI %s unknown lock state (%" PRIu32 ")",
+		       vdidesc, lock_state);
+		return EXIT_SYSFAIL;
+	}
+
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+
+	sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
+	hdr.vdi_lock.vid = vid;
+	hdr.vdi_lock.acl = acl_id;
+	pstrcpy(buf, sizeof(buf), owner);
+	hdr.data_length = sizeof(buf);
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		ret = EXIT_FAILURE;
+	} else if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to unlock VDI %s: %s", vdiname,
+		       sd_strerror(rsp->result));
+		ret = EXIT_FAILURE;
+	} else
+		ret = EXIT_SUCCESS;
+
 	return ret;
 }
 
@@ -3998,8 +3988,12 @@ static struct subcommand vdi_lock_cmd[] = {
 	{"detail", "<vdiname>", NULL, "list lock detail for VDI", NULL,
 	 CMD_NEED_ARG, lock_detail},
 	{"lock", "<vdiname>", NULL, "lock VDI", NULL, CMD_NEED_ARG, lock_lock},
+	{"register", "<vdiname>", NULL, "register VDI owner", NULL,
+	 CMD_NEED_ARG, lock_register},
 	{"unlock", "<vdiname>", NULL, "unlock locked VDI forcibly", NULL,
 	 CMD_NEED_ARG, lock_unlock},
+	{"unregister", "<vdiname>", NULL, "unregister VDI owner", NULL,
+	 CMD_NEED_ARG, lock_unregister},
 	{NULL},
 };
 
@@ -4070,7 +4064,7 @@ static struct subcommand vdi_cmd[] = {
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG|CMD_NEED_NODELIST, vdi_alter_copy, vdi_options},
 	{"alter-acl", "<vdiname> <new acl>", "aphTA", "set the vdi's ACL",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_alter_acl, vdi_options},
-	{"lock", NULL, "sajphTAO", "See 'dog vdi lock' for more information",
+	{"lock", NULL, "sajphTA", "See 'dog vdi lock' for more information",
 	 vdi_lock_cmd, CMD_NEED_ROOT|CMD_NEED_ARG, vdi_lock, vdi_options},
 	{NULL,},
 };
@@ -4222,9 +4216,6 @@ static int vdi_parser(int ch, const char *opt)
 		break;
 	case 'A':
 		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
-		break;
-	case 'O':
-		pstrcpy(vdi_cmd_data.owner_addr, MAX_NODE_STR_LEN, opt);
 		break;
 	}
 

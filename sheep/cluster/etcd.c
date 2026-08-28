@@ -1313,9 +1313,8 @@ static int etcd_msg_to_json(struct vdi_op_message *msg,
 	case SD_OP_REGISTER_VDI:
 	case SD_OP_UNREGISTER_VDI:
 		vdi_obj = json_object_new_object();
-		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, vid);
 		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, count);
-		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, acl);
+		UPDATE_JSON_INT(vdi_obj, &rsp->vdi_lock, state);
 		json_object_object_add(rsp_obj, "vdi_lock", vdi_obj);
 		break;
 	default:
@@ -1398,7 +1397,6 @@ static void etcd_json_to_vdi_lock(struct json_object *obj,
 		if (!strcmp(key, "vid"))
 			req->vdi_lock.vid =
 				json_object_get_int(val_obj);
-		DEREF_JSON_INT(val_obj, &req->vdi_lock, vid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_lock, snapid, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_lock, index, key);
 		DEREF_JSON_INT(val_obj, &req->vdi_lock, acl, key);
@@ -1610,11 +1608,10 @@ static void etcd_json_to_rsp_vdi_lock(struct json_object *obj,
 		struct json_object *val_obj = json_object_iter_peek_value(&itb);
 
 
-		if (!strcmp(key, "vid"))
-			rsp->vdi_lock.vid =
+		if (!strcmp(key, "count"))
+			rsp->vdi_lock.count =
 				json_object_get_int(val_obj);
-		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, count, key);
-		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, acl, key);
+		DEREF_JSON_INT(val_obj, &rsp->vdi_lock, state, key);
 		else
 			sd_warn("unhandled vdi_lock attribute '%s'", key);
 		json_object_iter_next(&itb);
