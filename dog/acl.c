@@ -241,6 +241,51 @@ static int acl_delete(int args, char **argv)
 	return ret;
 }
 
+static int acl_register(int argc, char **argv)
+{
+	int ret = 0;
+	const char *aclname = argv[optind++];
+	uint32_t acl_vid;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+	char buf[SD_MAX_VDI_LEN];
+	const char *owner = NULL;
+
+	if (!argv[optind]) {
+		sd_err("Owner must be specified");
+		return EXIT_USAGE;
+	}
+	owner = argv[optind];
+
+	ret = find_acl_name(aclname, &acl_vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find ACL %s: %s",
+		       aclname, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+
+	memset(buf, 0, sizeof(buf));
+
+	sd_init_req(&hdr, SD_OP_REGISTER_VDI);
+	hdr.vdi_lock.vid = acl_vid;
+	pstrcpy(buf, SD_MAX_VDI_LEN, owner);
+	hdr.data_length = SD_MAX_VDI_LEN;
+	hdr.flags = SD_FLAG_CMD_WRITE;
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to register ACL %s owner", aclname);
+		return EXIT_SYSFAIL;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to register ACL %s owner: %s",
+		       aclname, sd_strerror(rsp->result));
+		return EXIT_FAILURE;
+	}
+
+	return EXIT_SUCCESS;
+}
+
 struct get_acl_info {
 	struct json_object *obj;
 	const char *name;
@@ -862,6 +907,8 @@ static struct subcommand acl_cmd[] = {
 	{"delete", "<aclname>", "sfajphrvT", "delete an acl",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_delete, acl_options},
+	{"register", "<aclname>", "sfajphrvT", "register an ACL owner",
+	 NULL, CMD_NEED_ARG, acl_register, acl_options},
 	{"list", "[aclname]", "ajprhvT", "list images",
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
