@@ -286,6 +286,138 @@ static int acl_register(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+static int acl_unregister(int argc, char **argv)
+{
+	const char *aclname = argv[optind++];
+	int ret = EXIT_SUCCESS;
+	uint32_t acl_vid;
+	char buf[SD_MAX_VDI_LEN];
+	const char *owner;
+
+	if (!argv[optind]) {
+		sd_err("Owner must be specified");
+		return EXIT_USAGE;
+	}
+	owner = argv[optind];
+
+	ret = find_acl_name(aclname, &acl_vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find ACL %s: %s",
+		       aclname, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+
+	sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
+	hdr.vdi_lock.vid = acl_vid;
+	pstrcpy(buf, sizeof(buf), owner);
+	hdr.data_length = sizeof(buf);
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to unregister ACL %s: %m", aclname);
+		ret = EXIT_FAILURE;
+	} else if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to unregister ACL %s: %s", aclname,
+		       sd_strerror(rsp->result));
+		ret = EXIT_FAILURE;
+	} else
+		ret = EXIT_SUCCESS;
+
+	return ret;
+}
+
+static int acl_detail(int argc, char **argv)
+{
+	uint32_t acl_vid;
+	const char *aclname = argv[optind];
+	int ret = 0;
+	struct vdi_lock_state *vls_data;
+	uint32_t lock_state;
+
+	if (json_output)
+		out_obj = json_object_new_array();
+
+	if (!aclname)
+		return EXIT_USAGE;
+
+	ret = find_acl_name(aclname, &acl_vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to find ACL %s: %s",
+		       aclname, sd_strerror(ret));
+		return EXIT_FAILURE;
+	}
+	ret = find_vdi_lock_state(acl_vid, LOCK_TYPE_ANY, UINT32_MAX,
+				  &vls_data, &lock_state);
+	if (ret < 0)
+		return EXIT_FAILURE;
+	if (json_output) {
+		struct vdi_lock_state *vls = vls_data;
+		const char *state_str;
+
+		for (int i = 0; i < ret; i += sizeof(*vls)) {
+			struct json_object *st_obj =
+				json_object_new_object();
+			const char *lock_str = "acl";
+
+			if (ret - i < sizeof(*vls))
+				break;
+			JSON_ADD_INT(st_obj, "vid", vls->vid);
+			switch (vls->acl) {
+			case LOCK_TYPE_NORMAL:
+				lock_str = "normal";
+				vls->acl = 0;
+				break;
+			case LOCK_TYPE_SHARED:
+				lock_str = "shared";
+				vls->acl = 0;
+				break;
+			default:
+				break;
+			}
+			JSON_ADD_STRING(st_obj, "type", lock_str);
+			if (vls->acl)
+				JSON_ADD_INT(st_obj, "acl", vls->acl);
+			JSON_ADD_INT(st_obj, "count", vls->count);
+			JSON_ADD_INT(st_obj, "index", vls->index);
+			if (strlen(vls->owner))
+				JSON_ADD_STRING(st_obj, "owner", vls->owner);
+			JSON_ADD_STRING(st_obj, "sender",
+					node_id_to_str(&vls->sender, false));
+			switch(vls->state) {
+			case SHARED_LOCK_STATE_MODIFIED:
+				state_str = "modified";
+				break;
+			case SHARED_LOCK_STATE_SHARED:
+				state_str = "shared";
+				break;
+			case SHARED_LOCK_STATE_INVALIDATED:
+				state_str = "invalidated";
+				break;
+			default:
+				state_str = NULL;
+				break;
+			}
+			if (state_str)
+				JSON_ADD_STRING(st_obj, "state", state_str);
+			json_object_array_add(out_obj, st_obj);
+			vls++;
+		}
+	}
+	free(vls_data);
+	if (json_output) {
+		const char *o;
+
+		o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
+	}
+
+	return EXIT_SUCCESS;
+}
+
 struct get_acl_info {
 	struct json_object *obj;
 	const char *name;
@@ -909,6 +1041,10 @@ static struct subcommand acl_cmd[] = {
 	 acl_delete, acl_options},
 	{"register", "<aclname>", "sfajphrvT", "register an ACL owner",
 	 NULL, CMD_NEED_ARG, acl_register, acl_options},
+	{"unregister", "<aclname>", "sfajphrvT", "unregister an ACL owner",
+	 NULL, CMD_NEED_ARG, acl_unregister, acl_options},
+	{"owner", "<aclname>", "ajprhvT", "list ACL owners",
+	 NULL, CMD_NEED_ARG, acl_detail, acl_options},
 	{"list", "[aclname]", "ajprhvT", "list images",
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
