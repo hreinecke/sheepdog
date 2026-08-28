@@ -352,18 +352,20 @@ int find_vdi_lock_state(uint32_t vid, uint32_t acl_id, uint32_t index,
 	hdr.vdi_lock.vid = vid;
 	hdr.vdi_lock.acl = acl_id;
 	hdr.vdi_lock.index = index;
-	hdr.data_length = buf_len;
 retry:
+	hdr.data_length = buf_len;
 	ret = dog_exec_req(&sd_nid, &hdr, buf);
 	if (ret < 0) {
 		sd_err("Failed to get VDI %"PRIx32" state: %m",
 		       vid);
-		free(buf);
+		if (buf)
+			free(buf);
 		return ret;
 	}
 	if (rsp->result != SD_RES_SUCCESS) {
-		free(buf);
-		if (rsp->result == SD_RES_BUFFER_SMALL) {
+		if (buf)
+			free(buf);
+		if (buf_len && rsp->result == SD_RES_BUFFER_SMALL) {
 			buf_len *= 2;
 			buf = xzalloc(buf_len);
 			if (!buf) {
@@ -379,11 +381,9 @@ retry:
 	*lock_state = rsp->vdi_lock.state;
 	if (vls)
 		*vls = (struct vdi_lock_state *)buf;
-	else {
+	else if (buf)
 		free(buf);
-		buf_len = 0;
-	}
-	return buf_len;
+	return rsp->data_length;
 }
 
 int subcmd_depth = -1;

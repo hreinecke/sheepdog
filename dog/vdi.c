@@ -3666,8 +3666,7 @@ static int lock_detail(int argc, char **argv)
 	if (!vdiname)
 		return EXIT_USAGE;
 
-
-	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
+	ret = find_vdi_name(vdiname, snapid, tag, LOCK_TYPE_ANY, &vid);
 	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to find VDI %s: %s",
@@ -3685,13 +3684,30 @@ static int lock_detail(int argc, char **argv)
 		for (int i = 0; i < ret; i += sizeof(*vls)) {
 			struct json_object *st_obj =
 				json_object_new_object();
+			const char *lock_str = "acl";
+
 			if (ret - i < sizeof(*vls))
 				break;
 			JSON_ADD_INT(st_obj, "vid", vls->vid);
-			JSON_ADD_INT(st_obj, "acl", vls->acl);
+			switch (vls->acl) {
+			case LOCK_TYPE_NORMAL:
+				lock_str = "normal";
+				vls->acl = 0;
+				break;
+			case LOCK_TYPE_SHARED:
+				lock_str = "shared";
+				vls->acl = 0;
+				break;
+			default:
+				break;
+			}
+			JSON_ADD_STRING(st_obj, "type", lock_str);
+			if (vls->acl)
+				JSON_ADD_INT(st_obj, "acl", vls->acl);
 			JSON_ADD_INT(st_obj, "count", vls->count);
 			JSON_ADD_INT(st_obj, "index", vls->index);
-			JSON_ADD_STRING(st_obj, "owner", vls->owner);
+			if (strlen(vls->owner))
+				JSON_ADD_STRING(st_obj, "owner", vls->owner);
 			JSON_ADD_STRING(st_obj, "sender",
 					node_id_to_str(&vls->sender, false));
 			switch(vls->state) {
@@ -3824,62 +3840,28 @@ static int lock_register(int argc, char **argv)
 
 static int lock_unlock(int argc, char **argv)
 {
-	struct vdi_state *vs = NULL;
 	int ret = EXIT_SUCCESS;
 	char vdidesc[VDI_DESC_MAX] = { 0 };
 
 	const char *vdiname = argv[optind];
 	if (!vdiname) {
 		sd_err("VDI name must be specified");
-		ret = EXIT_USAGE;
-		goto out;
+		return EXIT_USAGE;
 	}
 
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
-	uint32_t vid = 0, lock_state;
+	uint32_t vid = 0;
 
 	ret = find_vdi_name(vdiname, snapid, tag, acl_id, &vid);
 	describe_vdi(vdiname, snapid, tag, vid, vdidesc);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to find VDI %s: %s",
 		       vdidesc, sd_strerror(ret));
-		ret = EXIT_FAILURE;
-		goto out;
+		return EXIT_FAILURE;
 	}
 	sd_assert(vid > 0);
-
-	ret = find_vdi_lock_state(vid, acl_id, UINT32_MAX,
-				  NULL, &lock_state);
-	if (ret < 0) {
-		sd_err("Failed to get VDI %"PRIx32" state", vid);
-		return EXIT_SYSFAIL;
-	}
-
-	switch (lock_state) {
-	case LOCK_STATE_UNLOCKED:
-		sd_err("VDI %s is not locked", vdidesc);
-		ret = EXIT_FAILURE;
-		goto out;
-	case LOCK_STATE_LOCKED:
-		if (acl_id) {
-			sd_err("VDI %s is locked exclusively", vdidesc);
-			ret = EXIT_SYSFAIL;
-			goto out;
-		}
-		acl_id = LOCK_TYPE_NORMAL;
-		break;
-	case LOCK_STATE_SHARED:
-		if (!acl_id)
-			acl_id = LOCK_TYPE_SHARED;
-		break;
-	default:
-		sd_err("VDI %s unknown lock state (%" PRIu32 ")",
-		       vdidesc, lock_state);
-		ret = EXIT_SYSFAIL;
-		goto out;
-	}
 
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -3891,18 +3873,13 @@ static int lock_unlock(int argc, char **argv)
 
 	if (ret < 0) {
 		ret = EXIT_FAILURE;
-		goto out;
-	}
-	if (rsp->result != SD_RES_SUCCESS) {
+	} else if (rsp->result != SD_RES_SUCCESS) {
 		sd_err("Failed to unlock VDI %s: %s", vdiname,
 		       sd_strerror(rsp->result));
 		ret = EXIT_FAILURE;
-		goto out;
-	}
-	ret = EXIT_SUCCESS;
+	} else
+		ret = EXIT_SUCCESS;
 
-out:
-	free(vs);
 	return ret;
 }
 
@@ -3914,7 +3891,7 @@ static int lock_unregister(int argc, char **argv)
 	const uint32_t snapid = vdi_cmd_data.snapshot_id;
 	const char *tag = vdi_cmd_data.snapshot_tag;
 	uint32_t acl_id = vdi_acl_id();
-	uint32_t vid = 0, lock_state;
+	uint32_t vid = 0;
 	char buf[SD_MAX_VDI_LEN];
 	const char *owner;
 
@@ -3932,34 +3909,6 @@ static int lock_unregister(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 	sd_assert(vid > 0);
-
-	ret = find_vdi_lock_state(vid, acl_id, UINT32_MAX,
-				  NULL, &lock_state);
-	if (ret < 0) {
-		sd_err("Failed to get VDI %"PRIx32" state", vid);
-		return EXIT_SYSFAIL;
-	}
-
-	switch (lock_state) {
-	case LOCK_STATE_UNLOCKED:
-		sd_err("VDI %s is not locked", vdidesc);
-		return EXIT_FAILURE;
-	case LOCK_STATE_LOCKED:
-		if (acl_id) {
-			sd_err("VDI %s is locked exclusively", vdidesc);
-			return EXIT_SYSFAIL;
-		}
-		acl_id = LOCK_TYPE_NORMAL;
-		break;
-	case LOCK_STATE_SHARED:
-		if (!acl_id)
-			acl_id = LOCK_TYPE_SHARED;
-		break;
-	default:
-		sd_err("VDI %s unknown lock state (%" PRIu32 ")",
-		       vdidesc, lock_state);
-		return EXIT_SYSFAIL;
-	}
 
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
