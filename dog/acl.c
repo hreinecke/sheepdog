@@ -268,6 +268,7 @@ static int acl_register(int argc, char **argv)
 
 	sd_init_req(&hdr, SD_OP_REGISTER_VDI);
 	hdr.vdi_lock.vid = acl_vid;
+	hdr.vdi_lock.acl = LOCK_TYPE_SHARED;
 	pstrcpy(buf, SD_MAX_VDI_LEN, owner);
 	hdr.data_length = SD_MAX_VDI_LEN;
 	hdr.flags = SD_FLAG_CMD_WRITE;
@@ -312,6 +313,7 @@ static int acl_unregister(int argc, char **argv)
 
 	sd_init_req(&hdr, SD_OP_UNREGISTER_VDI);
 	hdr.vdi_lock.vid = acl_vid;
+	hdr.vdi_lock.acl = LOCK_TYPE_SHARED;
 	pstrcpy(buf, sizeof(buf), owner);
 	hdr.data_length = sizeof(buf);
 	hdr.flags = SD_FLAG_CMD_WRITE;
