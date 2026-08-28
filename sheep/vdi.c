@@ -610,14 +610,19 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 {
 	struct vdi_state_entry *entry;
 	size_t data_length = 0;
+	int ret = SD_RES_SUCCESS;
 
 	sd_read_lock(&vdi_state_lock);
 	entry = vdi_state_search(&vdi_state_root, hdr->vdi_lock.vid);
-	if (!entry)
-		return SD_RES_NO_VDI;
+	if (!entry) {
+		ret = SD_RES_NO_VDI;
+		goto out;
+	}
 	if (hdr->vdi_lock.acl != LOCK_TYPE_ANY &&
-	    hdr->vdi_lock.acl != entry->acl)
-		return SD_RES_VDI_NOT_LOCKED;
+	    hdr->vdi_lock.acl != entry->acl) {
+		ret = SD_RES_VDI_NOT_LOCKED;
+		goto out;
+	}
 
 	if (hdr->data_length) {
 		struct vdi_lock_state *vs = data;
@@ -639,7 +644,10 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 			vs++;
 		}
 	}
+out:
 	sd_rw_unlock(&vdi_state_lock);
+	if (ret != SD_RES_SUCCESS)
+		return ret;
 
 	if (hdr->data_length < data_length) {
 		sd_warn("response buffer length %u too small, need %lu",
