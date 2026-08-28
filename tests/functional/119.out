@@ -53,11 +53,11 @@ c acl_clone     0   16 MB  0.0 MB  4.0 MB DATE   950169      3                22
 s acl_vdi      1   16 MB  4.0 MB  0.0 MB DATE   b33bdd      3          snap  22
   acl_vdi      0   16 MB  0.0 MB  4.0 MB DATE   b33bde      3                22
 = an ACL protected VDI cannot be locked exclusively
-Failed to find VDI acl_vdi: Permission denied accessing VDI
-Failed to find VDI acl_vdi: Permission denied accessing VDI
-Failed to lock VDI acl_vdi (vid=b33bde): Permission denied accessing VDI
+Failed to lock VDI acl_vdi: Permission denied accessing VDI
+Failed to lock VDI acl_vdi: Permission denied accessing VDI
+Failed to lock VDI acl_vdi: Permission denied accessing VDI
 = a VDI without an ACL is still locked exclusively
-Failed to lock VDI plain_vdi (vid=1859ea): VDI is already locked
+Failed to lock VDI plain_vdi: VDI is already locked
 = changing the ACL needs the right current ACL
 Failed to find acl_vdi in ACL 0.
 acl_vdi already belongs to ACL other_acl.
