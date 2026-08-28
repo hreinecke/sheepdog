@@ -916,79 +916,117 @@ static int set_object_sha1(const char *path, const uint8_t *sha1)
 	return ret;
 }
 
-static int get_object_path(uint64_t oid, uint32_t epoch, char **path)
+/*
+ * Hash a stale/historical-epoch snapshot of oid, read through a private,
+ * uncached fd.
+ *
+ * Recovery's epoch-scan loop calls us to check old .stale/ snapshots while
+ * hunting for a matching local epoch to link from. Sharing the oid-keyed
+ * store_cache_entry for that would be actively dangerous: a concurrent
+ * default_exist()/default_write() on the very same oid could see the
+ * .stale/ file's fd cached as if it were the live object, and freeing the
+ * shared entry here (to undo that) races any other thread still holding
+ * the same entry pointer -- rb_erase()ing or closing it twice crashes or
+ * corrupts the cache. A stale-epoch lookup is rare (recovery-only) and
+ * gains nothing from the fd cache, so just don't touch the shared entry.
+ */
+static int get_hash_stale(uint64_t oid, uint32_t epoch, uint8_t *sha1,
+			  const char *path, bool is_readonly_obj)
 {
-	int ret;
+	struct siocb iocb = { .epoch = epoch };
+	int ret, fd, flags = prepare_iocb(oid, &iocb, false);
+	ssize_t size;
+	void *buf;
+	uint32_t length;
 
-	if (default_exist(oid, 0)) {
-		ret = get_default_store_path(oid, path);
-		if (ret < 0)
-			return SD_RES_NO_MEM;
-	} else {
-		ret = get_store_stale_path(oid, epoch, 0, path);
-		if (ret == SD_RES_SUCCESS) {
-			if (access(*path, F_OK) < 0) {
-				ret = SD_RES_EIO;
-				if (errno == ENOENT)
-					ret = SD_RES_NO_OBJ;
-			}
-		}
-		if (ret != SD_RES_SUCCESS) {
-			free(*path);
-			*path = NULL;
-			return ret;
-		}
-
+	if (is_readonly_obj && get_object_sha1(path, sha1) == 0) {
+		sd_debug("use cached sha1 digest %s", sha1_to_hex(sha1));
+		return SD_RES_SUCCESS;
 	}
+
+	length = get_store_objsize(oid);
+	ret = posix_memalign((void **)&buf, getpagesize(), length);
+	if (ret)
+		return SD_RES_NO_MEM;
+
+	fd = open(path, flags);
+	if (fd < 0) {
+		ret = err_to_sderr(path, oid, errno);
+		free(buf);
+		return ret;
+	}
+
+	size = xpread(fd, buf, length, 0);
+	ret = size < 0 ? err_to_sderr(path, oid, errno) : SD_RES_SUCCESS;
+	close(fd);
+	if (ret != SD_RES_SUCCESS) {
+		free(buf);
+		return ret;
+	}
+
+	get_buffer_sha1(buf, length, sha1);
+	free(buf);
+
+	sd_debug("the message digest of %016"PRIx64" at epoch %d is %s", oid,
+		 epoch, sha1_to_hex(sha1));
+
+	if (is_readonly_obj)
+		set_object_sha1(path, sha1);
+
 	return SD_RES_SUCCESS;
 }
 
 int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 {
-	struct store_cache_entry *entry = store_cache_lookup(oid);
+	struct store_cache_entry *entry;
 	int ret;
 	void *buf;
 	struct siocb iocb = {};
 	uint32_t length;
 	bool is_readonly_obj = oid_is_readonly(oid);
-	bool is_stale;
 
+	if (!default_exist(oid, 0)) {
+		char *path;
+
+		ret = get_store_stale_path(oid, epoch, 0, &path);
+		if (ret == SD_RES_SUCCESS && access(path, F_OK) < 0) {
+			ret = SD_RES_EIO;
+			if (errno == ENOENT)
+				ret = SD_RES_NO_OBJ;
+		}
+		if (ret != SD_RES_SUCCESS) {
+			free(path);
+			return ret;
+		}
+		ret = get_hash_stale(oid, epoch, sha1, path, is_readonly_obj);
+		free(path);
+		return ret;
+	}
+
+	entry = store_cache_lookup(oid);
 	if (!entry)
 		return SD_RES_NO_MEM;
 
 	if (!entry->path) {
-		ret = get_object_path(oid, epoch, &entry->path);
-		if (ret != SD_RES_SUCCESS) {
+		ret = get_default_store_path(oid, &entry->path);
+		if (ret < 0) {
 			entry->path = NULL;
-			return ret;
+			return SD_RES_NO_MEM;
 		}
 	}
-
-	/*
-	 * get_object_path() may resolve to a .stale/ snapshot instead of
-	 * the live path (recovery calls us while hunting for a matching
-	 * local epoch to link from). Leaving that fd cached under the
-	 * plain oid key would later fool default_exist()'s cache fast
-	 * path into reporting the live object present when it never was,
-	 * so any such entry must not survive this call.
-	 */
-	is_stale = is_stale_path(entry->path);
 
 	if (is_readonly_obj) {
 		if (get_object_sha1(entry->path, sha1) == 0) {
 			sd_debug("use cached sha1 digest %s",
 				 sha1_to_hex(sha1));
-			ret = SD_RES_SUCCESS;
-			goto out;
+			return SD_RES_SUCCESS;
 		}
 	}
 
 	length = get_store_objsize(oid);
 	ret = posix_memalign((void **)&buf, getpagesize(), length);
-	if (ret) {
-		ret = SD_RES_NO_MEM;
-		goto out;
-	}
+	if (ret)
+		return SD_RES_NO_MEM;
 
 	iocb.epoch = epoch;
 	iocb.buf = buf;
@@ -997,7 +1035,8 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 	ret = default_read_from_path(entry, &iocb);
 	if (ret != SD_RES_SUCCESS) {
 		free(buf);
-		goto out;
+		store_cache_remove(entry);
+		return ret;
 	}
 
 	get_buffer_sha1(buf, length, sha1);
@@ -1009,10 +1048,7 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 	if (is_readonly_obj)
 		set_object_sha1(entry->path, sha1);
 
-out:
-	if (is_stale || ret != SD_RES_SUCCESS)
-		store_cache_remove(entry);
-	return ret;
+	return SD_RES_SUCCESS;
 }
 
 int default_purge_obj(void)
