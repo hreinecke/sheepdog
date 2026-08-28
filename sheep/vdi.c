@@ -611,6 +611,7 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 	struct vdi_state_entry *entry;
 	size_t data_length = 0;
 	int ret = SD_RES_SUCCESS;
+	uint32_t nr_entries;
 
 	sd_read_lock(&vdi_state_lock);
 	entry = vdi_state_search(&vdi_state_root, hdr->vdi_lock.vid);
@@ -618,15 +619,37 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 		ret = SD_RES_NO_VDI;
 		goto out;
 	}
-	if (hdr->vdi_lock.acl != LOCK_TYPE_ANY &&
+	/*
+	 * Only gate visibility by ACL when the lock actually has an
+	 * owning ACL. A normal/exclusive or plain shared lock never
+	 * records one (entry->acl stays 0), so any caller may see who
+	 * holds it; only an ACL-type lock needs the caller's -A to
+	 * match.
+	 */
+	if (entry->acl && hdr->vdi_lock.acl != LOCK_TYPE_ANY &&
 	    hdr->vdi_lock.acl != entry->acl) {
 		ret = SD_RES_VDI_NOT_LOCKED;
 		goto out;
 	}
 
-	if (hdr->data_length) {
+	nr_entries = entry->nr_participants;
+
+	if (!hdr->data_length)
+		goto out;
+
+	if (entry->lock_state == LOCK_STATE_LOCKED) {
 		struct vdi_lock_state *vs = data;
-		for (int i = 0; i < entry->nr_participants; i++) {
+
+		vs->vid = hdr->vdi_lock.vid;
+		vs->count = 1;
+		vs->owner[0] = '\0';
+		vs->sender = entry->owner;
+		vs->state = 0;
+		data_length = sizeof(*vs);
+		nr_entries = 1;
+	} else {
+		struct vdi_lock_state *vs = data;
+		for (uint32_t i = 0; i < nr_entries; i++) {
 			if (hdr->vdi_lock.index != UINT32_MAX &&
 			    hdr->vdi_lock.index != i)
 				continue;
@@ -636,8 +659,8 @@ int fill_vdi_lock_state(const struct sd_req *hdr,
 
 			vs->vid = entry->vid;
 			vs->acl = entry->acl;
-			vs->count = entry->participants[i].count;
 			vs->index = i;
+			vs->count = entry->participants[i].count;
 			strcpy(vs->owner, entry->participants[i].owner);
 			vs->sender = entry->participants[i].nid;
 			vs->state = entry->participants[i].state;
@@ -654,7 +677,7 @@ out:
 			hdr->data_length, data_length);
 		return SD_RES_BUFFER_SMALL;
 	}
-	rsp->vdi_lock.count = entry->nr_participants;
+	rsp->vdi_lock.count = nr_entries;
 	rsp->vdi_lock.state = entry->lock_state;
 	rsp->data_length = data_length;
 	return SD_RES_SUCCESS;
@@ -866,8 +889,16 @@ static int del_participant(struct vdi_state_entry *entry,
 		}
 	}
 out:
-	if (!entry->nr_participants)
+	if (!entry->nr_participants) {
 		entry->lock_state = LOCK_STATE_UNLOCKED;
+		/*
+		 * Only clear the synthetic LOCK_TYPE_SHARED marker
+		 * vdi_lock() records for a VDI with no real ACL; a real
+		 * ACL id must persist as the VDI's ACL membership.
+		 */
+		if (entry->acl == LOCK_TYPE_SHARED)
+			entry->acl = 0;
+	}
 	return SD_RES_SUCCESS;
 }
 
@@ -885,7 +916,13 @@ int vdi_lock(struct vdi_lock_state *ls)
 	}
 
 	if (ls->acl == LOCK_TYPE_NORMAL) {
-		if (entry->acl != LOCK_TYPE_NORMAL) {
+		/*
+		 * entry->acl == LOCK_TYPE_SHARED just means a plain shared
+		 * lock is currently in effect, not that a real ACL is
+		 * required; let that fall through to the lock_state switch
+		 * below, which reports it as already locked.
+		 */
+		if (entry->acl && entry->acl != LOCK_TYPE_SHARED) {
 			sd_info("VDI %"PRIx32" can only be locked with ACL %"PRIx32,
 				ls->vid, entry->acl);
 			ret = SD_RES_VDI_DENIED;
@@ -925,6 +962,18 @@ int vdi_lock(struct vdi_lock_state *ls)
 				ret = SD_RES_VDI_DENIED;
 				break;
 			}
+			/*
+			 * A VDI with no real ACL (entry->acl == 0) records
+			 * the type of the shared lock currently in effect,
+			 * so 'lock detail' can report LOCK_TYPE_SHARED
+			 * instead of looking unlocked/normal. del_participant()
+			 * clears it back to 0 once the last participant
+			 * leaves. VDIs with a real ACL already have
+			 * entry->acl == ls->acl here, so this is a no-op
+			 * for them.
+			 */
+			if (!entry->acl)
+				entry->acl = ls->acl;
 			ret = add_participant(entry, ls);
 			break;
 		case LOCK_STATE_LOCKED:

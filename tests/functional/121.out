@@ -90,76 +90,82 @@ add VDIs to the ACL
 Lock VDI with exclusive lock (expect 2 errors)
 [
   {
-    "name": "vdi_three",
-    "vdi_id": 6464925,
-    "lock_state": {
-      "holder": "IPv4 ip:192.168.122.100 port:7000"
-    }
+    "vid": 6464925,
+    "type": "normal",
+    "count": 1,
+    "index": 0,
+    "sender": "IPv4 ip:192.168.122.100 port:7000"
   }
 ]
-Failed to lock VDI vdi_three (vid=62a59d): VDI is already locked
+Failed to lock VDI vdi_three: VDI is already locked
 Failed to unlock VDI vdi_three: Permission denied accessing VDI
 []
 Lock VDI with shared lock (expect 2 errors)
-Failed to lock VDI vdi_three (vid=62a59d): VDI is already locked
-Failed to find VDI vdi_three: Permission denied accessing VDI
+Failed to lock VDI vdi_three: VDI is already locked
+Failed to lock VDI vdi_three: Permission denied accessing VDI
 [
   {
-    "name": "vdi_three",
-    "vdi_id": 6464925,
-    "lock_state": [
-      {
-        "holder": "IPv4 ip:192.168.122.100 port:7000",
-        "state": "modified",
-        "count": 1
-      },
-      {
-        "holder": "IPv4 ip:192.168.122.101 port:7000",
-        "state": "invalidated",
-        "count": 1
-      }
-    ]
+    "vid": 6464925,
+    "type": "shared",
+    "count": 1,
+    "index": 0,
+    "sender": "IPv4 ip:192.168.122.100 port:7000",
+    "state": "modified"
+  },
+  {
+    "vid": 6464925,
+    "type": "shared",
+    "count": 1,
+    "index": 1,
+    "sender": "IPv4 ip:192.168.122.101 port:7000",
+    "state": "invalidated"
   }
 ]
 []
 Lock VDI with ACL lock (expect 3 errors)
-Failed to find VDI vdi_one: Permission denied accessing VDI
-Failed to find VDI vdi_one: Permission denied accessing VDI
-Failed to find VDI vdi_one: Permission denied accessing VDI
+Failed to lock VDI vdi_one: Permission denied accessing VDI
+Failed to lock VDI vdi_one: Permission denied accessing VDI
+Failed to lock VDI vdi_one: Permission denied accessing VDI
 [
   {
-    "name": "vdi_one",
-    "vdi_id": 6032141,
-    "acl_id": 9370536,
-    "lock_state": [
-      {
-        "holder": "IPv4 ip:192.168.122.100 port:7000",
-        "state": "modified",
-        "count": 1
-      },
-      {
-        "holder": "IPv4 ip:192.168.122.101 port:7000",
-        "state": "invalidated",
-        "count": 2
-      }
-    ]
+    "vid": 6032141,
+    "type": "acl",
+    "acl": 9370536,
+    "count": 1,
+    "index": 0,
+    "sender": "IPv4 ip:192.168.122.100 port:7000",
+    "state": "modified"
   },
   {
-    "name": "vdi_two",
-    "vdi_id": 9225831,
-    "acl_id": 9370536,
-    "lock_state": [
-      {
-        "holder": "IPv4 ip:127.0.0.1 port:7000",
-        "state": "modified",
-        "count": 1
-      },
-      {
-        "holder": "IPv4 ip:127.0.0.1 port:7001",
-        "state": "invalidated",
-        "count": 1
-      }
-    ]
+    "vid": 6032141,
+    "type": "acl",
+    "acl": 9370536,
+    "count": 2,
+    "index": 1,
+    "sender": "IPv4 ip:192.168.122.101 port:7000",
+    "state": "invalidated"
+  }
+]
+[
+  {
+    "vid": 9225831,
+    "type": "acl",
+    "acl": 9370536,
+    "count": 1,
+    "index": 0,
+    "owner": "127.0.0.1:7000",
+    "sender": "IPv4 ip:192.168.122.100 port:7000",
+    "state": "modified"
+  },
+  {
+    "vid": 9225831,
+    "type": "acl",
+    "acl": 9370536,
+    "count": 1,
+    "index": 1,
+    "owner": "127.0.0.1:7001",
+    "sender": "IPv4 ip:192.168.122.101 port:7000",
+    "state": "invalidated"
   }
 ]
 Unlocking VDI with ACL lock (expect 1 error)
