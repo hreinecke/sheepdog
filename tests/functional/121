@@ -31,7 +31,7 @@ _acl_list_json
 
 echo "Lock VDI with exclusive lock (expect 2 errors)"
 $DOG vdi lock lock vdi_three || err=1
-$DOG vdi lock detail vdi_three -A acl_one -j | jq
+$DOG vdi lock detail vdi_three -A acl_one -j | jq 'del(.[].sender)'
 $DOG vdi lock lock -p 7001 vdi_three && err=1
 $DOG vdi lock unlock -p 7001 vdi_three && err=1
 $DOG vdi lock unlock vdi_three || err=1
@@ -43,7 +43,7 @@ $DOG vdi lock lock vdi_three -A shared || err=1
 $DOG vdi lock lock -p 7001 vdi_three -A shared || err=1
 $DOG vdi lock lock -p 7002 vdi_three && err=1
 $DOG vdi lock lock -p 7003 vdi_three -A acl_one && err=1
-$DOG vdi lock detail vdi_three -A any -j | jq
+$DOG vdi lock detail vdi_three -A any -j | jq 'del(.[].sender)'
 $DOG vdi lock unlock -p 7001 vdi_three -A shared || err=1
 $DOG vdi lock unlock vdi_three -A shared || err=1
 
@@ -58,8 +58,8 @@ $DOG vdi lock register vdi_two 127.0.0.1:7001 -p 7001 -A acl_one || err=1
 $DOG vdi lock lock vdi_one -p 7002 && err=1
 $DOG vdi lock lock vdi_one -p 7002 -A shared && err=1
 $DOG vdi lock lock vdi_one -A acl_two && err=1
-$DOG vdi lock detail vdi_one -j -A any | jq
-$DOG vdi lock detail vdi_two -j -A any | jq
+$DOG vdi lock detail vdi_one -j -A any | jq 'del(.[].sender)'
+$DOG vdi lock detail vdi_two -j -A any | jq 'del(.[].sender)'
 echo "Unlocking VDI with ACL lock (expect 1 error)"
 $DOG vdi lock unregister vdi_two 127.0.0.1:7000 -A acl_one || err=1
 $DOG vdi lock unlock vdi_two -A acl_one && err=1

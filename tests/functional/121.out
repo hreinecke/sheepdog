@@ -93,8 +93,7 @@ Lock VDI with exclusive lock (expect 2 errors)
     "vid": 6464925,
     "type": "normal",
     "count": 1,
-    "index": 0,
-    "sender": "IPv4 ip:192.168.122.100 port:7000"
+    "index": 0
   }
 ]
 Failed to lock VDI vdi_three: VDI is already locked
@@ -109,7 +108,6 @@ Failed to lock VDI vdi_three: Permission denied accessing VDI
     "type": "shared",
     "count": 1,
     "index": 0,
-    "sender": "IPv4 ip:192.168.122.100 port:7000",
     "state": "modified"
   },
   {
@@ -117,7 +115,6 @@ Failed to lock VDI vdi_three: Permission denied accessing VDI
     "type": "shared",
     "count": 1,
     "index": 1,
-    "sender": "IPv4 ip:192.168.122.101 port:7000",
     "state": "invalidated"
   }
 ]
@@ -133,7 +130,6 @@ Failed to lock VDI vdi_one: Permission denied accessing VDI
     "acl": 9370536,
     "count": 1,
     "index": 0,
-    "sender": "IPv4 ip:192.168.122.100 port:7000",
     "state": "modified"
   },
   {
@@ -142,7 +138,6 @@ Failed to lock VDI vdi_one: Permission denied accessing VDI
     "acl": 9370536,
     "count": 2,
     "index": 1,
-    "sender": "IPv4 ip:192.168.122.101 port:7000",
     "state": "invalidated"
   }
 ]
@@ -154,7 +149,6 @@ Failed to lock VDI vdi_one: Permission denied accessing VDI
     "count": 1,
     "index": 0,
     "owner": "127.0.0.1:7000",
-    "sender": "IPv4 ip:192.168.122.100 port:7000",
     "state": "modified"
   },
   {
@@ -164,7 +158,6 @@ Failed to lock VDI vdi_one: Permission denied accessing VDI
     "count": 1,
     "index": 1,
     "owner": "127.0.0.1:7001",
-    "sender": "IPv4 ip:192.168.122.101 port:7000",
     "state": "invalidated"
   }
 ]
