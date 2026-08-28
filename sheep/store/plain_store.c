@@ -182,10 +182,15 @@ bool default_exist(uint64_t oid, uint8_t ec_index)
 	if (entry && entry->fd >= 0) {
 		struct stat st;
 
-		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
-			store_cache_remove(entry);
-			return false;
-		} else
+		/*
+		 * A changed inode means the path was atomically replaced
+		 * (e.g. an out-of-band repair/restore), not that nothing
+		 * is there anymore -- fall through to a fresh, path-based
+		 * check instead of reporting the object missing.
+		 */
+		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
+			store_cache_cleanup(entry);
+		else
 			return true;
 	}
 	ret = get_store_path(oid, ec_index, &path);
@@ -263,17 +268,21 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 		struct stat st;
 
 		/*
-		 * A cached fd can outlive the file it points at (e.g. the
-		 * object's disk got pulled out from under us): xpwrite()
+		 * A cached fd can outlive the file it points at: xpwrite()
 		 * on such a fd silently succeeds against the orphaned
 		 * inode instead of failing, so disk failures would go
 		 * undetected. Catch it via nlink before trusting the cache.
+		 * nlink == 0 can also mean the path was atomically replaced
+		 * (e.g. an out-of-band repair/restore) rather than left
+		 * empty, so drop the stale fd/mapping and fall through to
+		 * resolve and reopen the path fresh instead of failing
+		 * outright -- the md_exist() check below still correctly
+		 * fails this if the path is genuinely gone.
 		 */
-		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
-			ret = err_to_sderr(entry->path, entry->oid, ENOENT);
-			goto out_remove;
-		}
-		goto do_mmap;
+		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
+			store_cache_cleanup(entry);
+		else
+			goto do_mmap;
 	}
 
 	if (!entry->path) {
@@ -518,18 +527,26 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 	if (!entry)
 		return SD_RES_NO_MEM;
 
+	if (entry->fd >= 0) {
+		struct stat st;
+		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
+			/*
+			 * The path's inode changed (e.g. an out-of-band
+			 * repair/restore replaced the file) rather than
+			 * having nothing left there at all. Drop the stale
+			 * fd/mapping and let the path be freshly resolved
+			 * and re-opened below instead of treating a live
+			 * replacement as a missing object -- default_exist()
+			 * in default_read_from_path() still correctly fails
+			 * this if the path is genuinely gone.
+			 */
+			store_cache_cleanup(entry);
+	}
 	if (entry->fd == -1) {
 		ret = get_store_path(oid, iocb->ec_index, &entry->path);
 		if (ret < 0) {
 			store_cache_remove(entry);
 			return SD_RES_NO_MEM;
-		}
-	} else {
-		struct stat st;
-		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0) {
-			ret = err_to_sderr(entry->path, entry->oid, ENOENT);
-			store_cache_remove(entry);
-			return ret;
 		}
 	}
 	ret = default_read_from_path(entry, iocb);
