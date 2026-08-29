@@ -60,7 +60,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "    network_mode: service:sheep${node}"
     echo "    security_opt:"
     echo "      - seccomp=unconfined"
-    echo "    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:${disc_port} --backend sheepdog:\${SHEEP${node}_IP}:7000"
+    echo "    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:${disc_port} --backend sheepdog:\${SHEEP${node}_IP}:7000 --portaddr 127.0.0.1:${disc_port}"
 done
 
 echo
