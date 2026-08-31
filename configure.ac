@@ -275,6 +275,12 @@ AC_ARG_ENABLE([nfs],
 	[ enable_nfs="no" ],)
 AM_CONDITIONAL(BUILD_NFS, test x$enable_nfs = xyes)
 
+PKG_CHECK_MODULES([openssl],[openssl],[have_openssl=yes],[have_openssl=no])
+AC_ARG_ENABLE([nvmet],
+	[  --enable-nvmet	    : enable nvme-over-fabric target (default yes)],,
+	[ enable_nvmet="${have_openssl}" ],)
+AM_CONDITIONAL(BUILD_NVMET, test x$enable_nvmet = xyes)
+
 AC_ARG_ENABLE([diskvnodes],
 	[  --enable-diskvnodes      : enable disk as vnodes (default no) ],,
 	[ enable_diskvnodes="no" ],)
@@ -464,6 +470,11 @@ if test "x${enable_nfs}" = xyes; then
 		AC_MSG_ERROR(rpc.h header not found))
 	AC_DEFINE_UNQUOTED(HAVE_NFS, 1, [have nfs])
 	PACKAGE_FEATURES="$PACKAGE_FEATURES nfs"
+fi
+
+if test "x${enable_nvmet}" = xyes; then
+	AC_DEFINE_UNQUOTED(HAVE_NVMET, 1, [have_nvmet])
+	PACKAGE_FEATURES="$PACKAGE_FEATURES nvmet"
 fi
 
 if test "x${enable_diskvnodes}" = xyes; then

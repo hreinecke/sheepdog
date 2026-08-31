@@ -36,6 +36,11 @@ sheep_SOURCES		+= http/http.c http/kv.c http/s3.c http/swift.c \
 			   http/oalloc.c
 endif
 
+if BUILD_NVMET
+sheep_SOURCES		+= nvmet/nofuse.c nvmet/gnutls.c nvmet/port.c \
+			   nvmet/queue.c nvmet/tcp.c nvmet/tls.c nvmet/uring.c
+endif
+
 if BUILD_NFS
 sheep_SOURCES		+= nfs/nfsd.c nfs/nfs.c nfs/xdr.c nfs/mount.c nfs/fs.c
 endif
