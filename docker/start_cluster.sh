@@ -17,7 +17,3 @@ $DOG acl add vdi nqn.subsys-1 nqn.ns-2
 $DOG acl add member nqn.subsys-1 $(cat /etc/nvme/hostnqn)
 $DOG acl list -j | jq
 
-for node in $(seq 0 4); do
-    docker compose --env-file ${ENV} -f ${SHEEP} up -d target${node}
-done
-

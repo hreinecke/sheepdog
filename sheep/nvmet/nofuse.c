@@ -25,7 +25,13 @@
 #include "tls.h"
 #include "configdb.h"
 
-LIST_HEAD(device_linked_list);
+struct nofuse_context {
+	char *traddr;
+	char *dbname;
+	int trsvcid;
+	int debug;
+	int help;
+};
 
 int stopped;
 bool tcp_debug;
@@ -35,24 +41,42 @@ bool port_debug;
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
-struct nofuse_namespace *find_namespace(const char *subsysnqn, uint32_t nsid)
+int lookup_namespace(struct nofuse_ctrl *ctrl, uint32_t nsid,
+		     struct nofuse_namespace *ns)
 {
-	struct nofuse_namespace *ns;
+	struct sd_inode_header *inode;
+	int ret;
 
-	list_for_each_entry(ns, &device_linked_list, node) {
-		if (!strcmp(ns->subsysnqn, subsysnqn) &&
-		    ns->nsid == nsid)
-			return ns;
+	inode = xzalloc(sizeof(*inode));
+	ret = sd_read_object(vid_to_vdi_oid(nsid), (char *)inode,
+			     sizeof(*inode), 0);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("fail to read vdi inode (%" PRIx32 ")", nsid);
+		goto out;
 	}
-	return NULL;
-}
 
-static void free_ports(void)
-{
-	struct nofuse_port *port, *_port;
-
-	list_for_each_entry_safe(port, _port, &port_linked_list, node)
-		del_port(port);
+	if (inode->name[0] == '\0') {
+		ret = SD_RES_NO_VDI;
+		goto out;
+	}
+	if (inode->vdi_flags & SD_VDI_FLAG_ACL) {
+		ret = SD_RES_NO_VDI;
+		goto out;
+	}
+	if (ctrl->subsys_vid != inode->acl_id) {
+		ret = SD_RES_VDI_DENIED;
+		goto out;
+	}
+	if (!inode->vdi_size) {
+		ret = SD_RES_INVALID_PARMS;
+		goto out;
+	}
+	ns->size = inode->vdi_size;
+	ns->blksize = SECTOR_SIZE;
+	ns->readonly = oid_is_readonly(vid_to_vdi_oid(nsid));
+out:
+	free(inode);
+	return ret;
 }
 
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
@@ -121,17 +145,30 @@ out:
 	return ret;
 }
 
-int nofuse_init(const char *traddr, int trsvcid)
+static void nofuse_cleanup(void *arg)
 {
-	int tls_keyring;
-	int ret = 1;
-	struct nofuse_port *port;
-	const char *dbname = "nofuse.sqlite";
+	struct nofuse_context *ctx = arg;
 
-	ret = configdb_open(dbname);
+	free(ctx->traddr);
+	free(ctx->dbname);
+	free(arg);
+}
+
+static void *nofuse_main(void *arg)
+{
+	struct nofuse_context *ctx = arg;
+	int tls_keyring;
+	int ret;
+	struct nofuse_port *port;
+
+	pthread_detach(pthread_self());
+
+	pthread_cleanup_push(nofuse_cleanup, arg);
+
+	ret = configdb_open(ctx->dbname);
 	if (ret < 0) {
 		sd_err("Failed to open configdb");
-		return -1;
+		goto out_pop;
 	}
 	ret = configdb_add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (ret < 0) {
@@ -145,11 +182,11 @@ int nofuse_init(const char *traddr, int trsvcid)
 		goto out_close;
 	}
 
-	sd_debug("register nvmet port traddr '%s' trsvcid '%d',
-		 traddr, trsvcid);
-	port = add_port(1, traddr, trsvcid);
-	if (ret < 0) {
-		fprintf(stderr, "failed to add nvmet port");
+	sd_debug("register nvmet port traddr '%s' trsvcid '%d'",
+		 ctx->traddr, ctx->trsvcid);
+	port = add_port(1, ctx->traddr, ctx->trsvcid);
+	if (!port) {
+		sd_err("failed to add nvmet port");
 		goto out_close;
 	}
 
@@ -159,15 +196,40 @@ int nofuse_init(const char *traddr, int trsvcid)
 
 	stopped = 0;
 
-	start_port(port);
+	ret = start_port(port);
+	if (ret) {
+		sd_err("failed to start nvmet port");
+	}
 
-	stopped = 1;
-
-	stop_port(port);
-
-	free_ports();
+	return NULL;
 out_close:
-	configdb_close(dbname);
+	configdb_close(ctx->dbname);
+out_pop:
+	pthread_cleanup_pop(1);
+	return NULL;
+}
 
-	return ret;
+int nofuse_init(const char *traddr, int trsvcid)
+{
+	struct nofuse_context *ctx;
+	sd_thread_t t;
+	int err;
+
+	ctx = malloc(sizeof(struct nofuse_context));
+	if (!ctx)
+		return 1;
+	memset(ctx, 0, sizeof(struct nofuse_context));
+	ctx->dbname = strdup("nofuse.sqlite");
+	ctx->traddr = strdup(traddr);
+	ctx->trsvcid = trsvcid;
+	ctx->dbname = strdup("nofuse.sqlite");
+
+	err = sd_thread_create("nofuse", &t, nofuse_main, ctx);
+	if (err) {
+		sd_err("failed to create nofuse thread: %s", strerror(err));
+		nofuse_cleanup(ctx);
+		return -1;
+	}
+
+	return 0;
 }

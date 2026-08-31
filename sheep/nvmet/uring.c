@@ -18,7 +18,7 @@
 static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
-	int ret;
+	int ret, fd = -1;
 
 	qe->opcode = nvme_cmd_write;
 	sqe = io_uring_get_sqe(&ep->uring);
@@ -27,7 +27,7 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		return NVME_SC_QUEUE_SIZE;
 	}
 
-	io_uring_prep_writev(sqe, qe->ns->fd, &qe->iovec, 1, qe->data_pos);
+	io_uring_prep_writev(sqe, fd, &qe->iovec, 1, qe->data_pos);
 	io_uring_sqe_set_data(sqe, qe);
 
 	ret = io_uring_submit(&ep->uring);
@@ -43,7 +43,7 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
-	int ret;
+	int ret, fd = -1;
 
 	qe->opcode = nvme_cmd_read;
 	sqe = io_uring_get_sqe(&ep->uring);
@@ -51,7 +51,7 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 		ctrl_err(ep, "tag %d no sqes available", qe->tag);
 		return NVME_SC_QUEUE_SIZE;
 	}
-	io_uring_prep_readv(sqe, qe->ns->fd, &qe->iovec, 1,
+	io_uring_prep_readv(sqe, fd, &qe->iovec, 1,
 			    qe->data_pos);
 	io_uring_sqe_set_data(sqe, qe);
 

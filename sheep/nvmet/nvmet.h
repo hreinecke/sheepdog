@@ -75,7 +75,6 @@ extern int stopped;
 struct ep_qe {
 	int tag;
 	struct nofuse_queue *ep;
-	struct nofuse_namespace *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
 	struct nvme_completion resp;
@@ -131,6 +130,7 @@ struct nofuse_ctrl {
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
 	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
+	uint32_t subsys_vid;
 	int cntlid;
 	int kato;
 	int kato_countdown;
@@ -144,11 +144,7 @@ struct nofuse_ctrl {
 };
 
 struct nofuse_namespace {
-	struct list_node node;
-	struct ns_ops *ops;
-	char subsysnqn[MAX_NQN_SIZE + 1];
 	uint32_t nsid;
-	int fd;
 	size_t size;
 	unsigned int blksize;
 	bool readonly;
@@ -270,7 +266,8 @@ int stop_port(struct nofuse_port *port);
 int add_ana_group(int portid, int ana_grpid, int ana_state);
 int del_ana_group(int portid, int ana_grpid);
 
-struct nofuse_namespace *find_namespace(const char *subsysnqn, uint32_t nsid);
+int lookup_namespace(struct nofuse_ctrl *ctrl, uint32_t nsid,
+		     struct nofuse_namespace *ns);
 int add_namespace(const char *subsysnqn, uint32_t nsid);
 int del_namespace(const char *subsysnqn, uint32_t nsid);
 int enable_namespace(const char *subsysnqn, uint32_t nsid);

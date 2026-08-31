@@ -3,6 +3,7 @@ RUN zypper --non-interactive in automake autoconf libtool diffutils
 RUN zypper --non-interactive in liburcu-devel libjson-c-devel
 RUN zypper --non-interactive in libuuid-devel libneon-devel liburing-devel
 RUN zypper --non-interactive in coreutils nasm valgrind
+RUN zypper --non-interactive in libopenssl-devel sqlite3-devel keyutils-devel
 ENV SHEEPSRC=/usr/src/sheepdog
 
 WORKDIR $SHEEPSRC

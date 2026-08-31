@@ -36,7 +36,7 @@ struct nofuse_port *add_port(unsigned int id, const char *ifaddr, int portnum)
 		return NULL;
 	}
 	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
-		if (!strchr(ifaddr, ','))
+		if (strchr(ifaddr, ':'))
 			configdb_set_port_attr(port->portid, "addr_adrfam",
 					    "ipv6");
 		configdb_set_port_attr(port->portid, "addr_traddr", ifaddr);
