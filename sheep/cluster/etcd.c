@@ -916,7 +916,7 @@ static int etcd_build_node_list(struct etcd_ctx *ctx, struct rb_root *root)
 				       node->idx, node->node_id);
 			}
 		} else if (node->idx >= node_idx) {
-			sd_info("etcd node %u '%s' updating index",
+			sd_debug("etcd node %u '%s' updating index",
 				node->idx, node->node_id);
 			node_idx = node->idx + 1;
 		}
