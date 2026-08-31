@@ -5,13 +5,12 @@
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
  */
-#define _GNU_SOURCE
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 
-#include "common.h"
+#include "nvmet.h"
 #include "tcp.h"
 #include "ops.h"
 #include "configdb.h"
@@ -141,8 +140,9 @@ static void tcp_destroy_queue(struct nofuse_queue *ep)
 	}
 }
 
-struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu,
-			      u16 ccid, u64 pos, u64 len)
+static struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep,
+				     union nvme_tcp_pdu *pdu,
+				     u16 ccid, u64 pos, u64 len)
 {
 	int m, i = 0, j, cid;
 	struct ep_qe *qe = NULL;
@@ -203,14 +203,14 @@ retry:
 	return qe;
 }
 
-struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
+static struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
 {
 	if (tag >= ep->qsize || !ep->qes[tag].busy)
 		return NULL;
 	return &ep->qes[tag];
 }
 
-struct ep_qe *tcp_get_aen(struct nofuse_queue *ep)
+static struct ep_qe *tcp_get_aen(struct nofuse_queue *ep)
 {
 	int i;
 
@@ -223,7 +223,7 @@ struct ep_qe *tcp_get_aen(struct nofuse_queue *ep)
 	return NULL;
 }
 
-void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
+static void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	if (!qe)
 		return;
@@ -815,7 +815,7 @@ static int tcp_read_msg(struct nofuse_queue *ep)
 	return 0;
 }
 
-int tcp_handle_msg(struct nofuse_queue *ep)
+static int tcp_handle_msg(struct nofuse_queue *ep)
 {
 	union nvme_tcp_pdu *pdu = ep->recv_pdu;
 	struct nvme_tcp_hdr *hdr = &pdu->common;

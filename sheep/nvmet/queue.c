@@ -5,7 +5,6 @@
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
  */
-#define _GNU_SOURCE
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -13,7 +12,7 @@
 #include <arpa/inet.h>
 #include <sys/poll.h>
 
-#include "common.h"
+#include "nvmet.h"
 #include "ops.h"
 #include "configdb.h"
 

@@ -7,12 +7,11 @@
 #include <zlib.h>
 #include <keyutils.h>
 
-#include "base64.h"
-
-#include "common.h"
+#include "nvmet.h"
 #include "tls.h"
 #include "ops.h"
 
+#ifdef _GNUTLS
 
 static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
@@ -188,3 +187,4 @@ void tls_free_queue(struct nofuse_queue *ep)
 	gnutls_deinit(ep->session);
 	gnutls_psk_free_server_credentials(ep->psk_cred);
 }
+#endif

@@ -5,17 +5,16 @@
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
  */
-#define _GNU_SOURCE
 #include <stdio.h>
 #include <pthread.h>
 #include <sys/eventfd.h>
 #include <pthread.h>
 
-#include "common.h"
+#include "nvmet.h"
 #include "nvme.h"
 #include "ops.h"
 
-int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
+static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -40,7 +39,7 @@ int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 	return 0;
 }
 
-int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
+static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
@@ -93,7 +92,9 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		return ep->ops->rma_write(ep, qe, qe->data_len);
 
 	if (res != qe->iovec.iov_len) {
-		qe->iovec.iov_base += res;
+		unsigned char *iov_base = qe->iovec.iov_base;
+		iov_base += res;
+		qe->iovec.iov_base = iov_base;
 		qe->iovec.iov_len -= res;
 		status = uring_submit_read(ep, qe);
 		if (!status)

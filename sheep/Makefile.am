@@ -38,6 +38,7 @@ endif
 
 if BUILD_NVMET
 sheep_SOURCES		+= nvmet/nofuse.c nvmet/gnutls.c nvmet/port.c \
+			   nvmet/configdb.c \
 			   nvmet/queue.c nvmet/tcp.c nvmet/tls.c nvmet/uring.c
 endif
 
@@ -72,6 +73,10 @@ sheep_LDADD	  	= ../lib/libsd.a ../lib/libisa.a -luuid -lpthread -lm -ljson-c \
 
 if BUILD_NFS
 sheep_LDADD		+= -lrt
+endif
+
+if BUILD_NVMET
+sheep_LDADD		+= -lssl -lcrypto -lkeyutils -luring -lsqlite3
 endif
 
 if BUILD_TRACE
