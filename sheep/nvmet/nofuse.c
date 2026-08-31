@@ -19,10 +19,11 @@
 #include <ifaddrs.h>
 #include <getopt.h>
 
-#include "sheep.h"
+#include "sheep_priv.h"
 #include "nvmet.h"
 #include "ops.h"
 #include "tls.h"
+#include "configdb.h"
 
 LIST_HEAD(device_linked_list);
 
@@ -31,14 +32,6 @@ bool tcp_debug;
 bool cmd_debug;
 bool ep_debug;
 bool port_debug;
-
-struct nofuse_context {
-	const char *subsysnqn;
-	const char *traddr;
-	const char *dbname;
-	int debug;
-	int help;
-};
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
@@ -62,22 +55,102 @@ static void free_ports(void)
 		del_port(port);
 }
 
+#define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
+
+static int register_subsystems(void)
+{
+	int ret;
+	unsigned long nr;
+	struct sd_inode *i = xmalloc(sizeof(*i));
+	struct sd_req req;
+	struct sd_rsp *rsp = (struct sd_rsp *)&req;
+	static DECLARE_BITMAP(vdi_inuse, SD_NR_VDIS);
+	static DECLARE_BITMAP(vdi_deleted, SD_NR_VDIS);
+
+	sd_init_req(&req, SD_OP_READ_VDIS);
+	req.data_length = sizeof(vdi_inuse);
+	ret = sheep_exec_req(&sys->this_node.nid, &req, vdi_inuse);
+	if (ret < 0)
+		goto out;
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("%s", sd_strerror(rsp->result));
+		goto out;
+	}
+
+	sd_init_req(&req, SD_OP_READ_DEL_VDIS);
+	req.data_length = sizeof(vdi_deleted);
+
+	ret = sheep_exec_req(&sys->this_node.nid, &req, vdi_deleted);
+	if (ret < 0)
+		goto out;
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("%s", sd_strerror(rsp->result));
+		goto out;
+	}
+
+	FOR_EACH_VDI(nr, vdi_inuse) {
+		uint64_t oid;
+
+		if (test_bit(nr, vdi_deleted))
+			continue;
+
+		oid = vid_to_vdi_oid(nr);
+
+		ret = sd_read_object(oid, (char *)i,
+				     SD_INODE_HEADER_SIZE, 0);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to read inode header");
+			continue;
+		}
+
+		/* this VDI has been deleted, and no need to handle it */
+		if (i->header.name[0] == '\0')
+			continue;
+		/* We are only interested in ACL VDIs */
+		if (!vdi_is_acl(&i->header))
+			continue;
+
+		ret = configdb_add_subsys(i->header.name, NVME_NQN_NVM);
+		if (ret < 0)
+			sd_warn("Failed add subsyste '%s'", i->header.name);
+		else
+			sd_debug("registered subsystem '%s'", i->header.name);
+	}
+out:
+	free(i);
+	return ret;
+}
+
 int nofuse_init(const char *traddr, int trsvcid)
 {
 	int tls_keyring;
 	int ret = 1;
-	struct nofuse_context *ctx;
 	struct nofuse_port *port;
+	const char *dbname = "nofuse.sqlite";
 
-	ctx = malloc(sizeof(struct nofuse_context));
-	if (!ctx)
-		return 1;
-	memset(ctx, 0, sizeof(struct nofuse_context));
-	ctx->traddr = strdup(traddr);
-	port = add_port(1, ctx->traddr, trsvcid);
+	ret = configdb_open(dbname);
+	if (ret < 0) {
+		sd_err("Failed to open configdb");
+		return -1;
+	}
+	ret = configdb_add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
+	if (ret < 0) {
+		sd_err("failed to create default discovery subsystem");
+		goto out_close;
+	}
+
+	ret = register_subsystems();
+	if (ret < 0) {
+		sd_err("failed to register ACL VDIs");
+		goto out_close;
+	}
+
+	sd_debug("register nvmet port traddr '%s' trsvcid '%d',
+		 traddr, trsvcid);
+	port = add_port(1, traddr, trsvcid);
 	if (ret < 0) {
 		fprintf(stderr, "failed to add nvmet port");
-		return -1;
+		goto out_close;
 	}
 
 	tls_keyring = tls_global_init();
@@ -90,12 +163,11 @@ int nofuse_init(const char *traddr, int trsvcid)
 
 	stopped = 1;
 
-	list_for_each_entry(port, &port_linked_list, node)
-		stop_port(port);
+	stop_port(port);
 
 	free_ports();
-
-	free(ctx);
+out_close:
+	configdb_close(dbname);
 
 	return ret;
 }
