@@ -24,6 +24,10 @@
 #include <systemd/sd-daemon.h>
 #endif
 
+#ifdef HAVE_NVMET
+extern int nofuse_init(const char *traddr, int trsvcid);
+#endif
+
 #define EPOLL_SIZE 4096
 #define DEFAULT_OBJECT_DIR "/tmp"
 #define LOG_FILE_NAME "sheep.log"
@@ -792,6 +796,10 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 		fprintf(stdout, " nfs");
 		have_feats = 1;
 #endif
+#ifdef HAVE_NVMET
+		fprintf(stdout, " nvmet");
+		have_feats = 1;
+#endif
 #ifdef HAVE_DISKVNODES
 		fprintf(stdout, " diskvnodes");
 		have_feats = 1;
@@ -834,6 +842,10 @@ int main(int argc, char **argv, char **envp)
 	struct option *long_options;
 #ifdef HAVE_HTTP
 	const char *http_options = NULL;
+#endif
+#ifdef HAVE_NVMET
+	char *traddr = NULL;
+	unsigned int trsvcid = 0;
 #endif
 	static struct logger_user_info sheep_info;
 	struct stat logdir_st;
@@ -900,6 +912,19 @@ int main(int argc, char **argv, char **envp)
 		}
 		uatomic_set_true(&sys->use_journal);
 	}
+#ifdef HAVE_NVMET
+	if ((traddr = getenv("SHEEP_TRADDR"))) {
+		if (!inetaddr_is_valid(traddr))
+			traddr = NULL;
+	}
+	if ((opt = getenv("SHEEP_TRSVCID")) && strlen(opt)) {
+		trsvcid = str_to_u16(opt);
+		if (errno != 0) {
+			sd_err("Invalid value for trsvcid '%s'", opt);
+			exit(1);
+		}
+	}
+#endif
 	if ((opt = getenv("SHEEP_OPTS"))) {
 		int o;
 		char *p = strtok((char *)opt, ",");
@@ -1331,6 +1356,11 @@ int main(int argc, char **argv, char **envp)
 		goto cleanup_journal;
 	#endif
 
+	#ifdef HAVE_NVMET
+	ret = nofuse_init(traddr, trsvcid);
+	if (ret)
+		goto cleanup_journal;
+	#endif
 	if (pid_file && (create_pidfile(pid_file) != 0)) {
 		sd_err("failed to pid file '%s' - %m", pid_file);
 		goto cleanup_journal;

@@ -12,7 +12,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "common.h"
+#include "sheep.h"
+#include "nvmet.h"
 #include "ops.h"
 #include "nvme.h"
 #include "tcp.h"
@@ -20,7 +21,7 @@
 #include "firmware.h"
 
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
-			 u16 status)
+			 uint16_t status)
 {
 	int ret;
 
@@ -78,20 +79,20 @@ static int handle_property_set(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
-	u64 value;
+	uint64_t value;
 	const char *reg_str = "unknown";
 
 	if (cmd->prop_get.offset == NVME_REG_CSTS) {
 		reg_str = "csts";
 		value = ep->ctrl->csts;
 	} else if (cmd->prop_get.offset == NVME_REG_CAP) {
-		u16 mqes = (NVMF_SQ_DEPTH - 1);
-		u8 rdy_timeout = 4; /* 2 seconds */
-		u8 css = 1;
+		uint16_t mqes = (NVMF_SQ_DEPTH - 1);
+		uint8_t rdy_timeout = 4; /* 2 seconds */
+		uint8_t css = 1;
 
 		reg_str = "cap";
-		value = (u64)(mqes) | (1 << 16) | \
-			((u64)rdy_timeout << 24) | ((u64)css << 37);
+		value = (uint64_t)(mqes) | (1 << 16) | \
+			((uint64_t)rdy_timeout << 24) | ((uint64_t)css << 37);
 	} else if (cmd->prop_get.offset == NVME_REG_CC) {
 		reg_str = "cc";
 		value = ep->ctrl->cc;
@@ -116,7 +117,7 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_FIELD;
 	}
 
-	ctrl_info(ep, "nvme_fabrics_type_property_get %x (%s): %llx",
+	ctrl_info(ep, "nvme_fabrics_type_property_get %x (%s): %"PRIx64,
 		  cmd->prop_get.offset, reg_str, value);
 	qe->resp.result.u64 = htole64(value);
 
@@ -126,8 +127,8 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
-	u32 cdw10 = le32toh(cmd->common.cdw10);
-	u32 cdw11 = le32toh(cmd->common.cdw11);
+	uint32_t cdw10 = le32toh(cmd->common.cdw10);
+	uint32_t cdw11 = le32toh(cmd->common.cdw11);
 	int fid = (cdw10 & 0xff), ncqr, nsqr;
 	int ret = 0;
 
@@ -165,10 +166,10 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_get_features(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
-	u32 cdw10 = le32toh(cmd->common.cdw10);
-	u8 fid = (cdw10 & 0xff);
-	u8 sel = (cdw10 >> 8) & 0x7;
-	u32 result = 0;
+	uint32_t cdw10 = le32toh(cmd->common.cdw10);
+	uint8_t fid = (cdw10 & 0xff);
+	uint8_t sel = (cdw10 >> 8) & 0x7;
+	uint32_t result = 0;
 	int ret = NVME_SC_INVALID_FIELD;
 
 	ctrl_info(ep,"nvme_fabrics_type_get_features cdw10 %x fid %x sel %x",
@@ -241,9 +242,9 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			  struct nvme_command *cmd)
 {
 	struct nvmf_connect_data *connect = qe->data;
-	u16 sqsize;
-	u16 cntlid, qid;
-	u32 kato;
+	uint16_t sqsize;
+	uint16_t cntlid, qid;
+	uint32_t kato;
 	int ret;
 
 	qid = le16toh(cmd->connect.qid);
@@ -304,7 +305,8 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 	return ret;
 }
 
-static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
+static int handle_identify_ctrl(struct nofuse_queue *ep,
+				uint8_t *id_buf, size_t len)
 {
 	struct nvme_id_ctrl id;
 	int ret;
@@ -353,8 +355,8 @@ static int handle_identify_ctrl(struct nofuse_queue *ep, u8 *id_buf, u64 len)
 	return len;
 }
 
-static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
-			      u8 *id_buf, u64 len)
+static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
+			      uint8_t *id_buf, uint64_t len)
 {
 	struct nofuse_namespace *ns;
 	struct nvme_id_ns id;
@@ -374,7 +376,7 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 
 	memset(&id, 0, sizeof(id));
 
-	id.nsze = (u64)ns->size / ns->blksize;
+	id.nsze = (uint64_t)ns->size / ns->blksize;
 	id.ncap = id.nsze;
 	id.nlbaf = 1;
 	id.flbas = 0;
@@ -395,7 +397,7 @@ static int handle_identify_ns(struct nofuse_queue *ep, u32 nsid,
 }
 
 static int handle_identify_active_ns(struct nofuse_queue *ep,
-				     u8 *id_buf, u64 len)
+				     uint8_t *id_buf, size_t len)
 {
 	int ret;
 
@@ -408,7 +410,7 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 	return len;
 }
 
-static int parse_guid(u8 *guid, size_t guid_len, const char *guid_str)
+static int parse_guid(uint8_t *guid, size_t guid_len, const char *guid_str)
 {
 	int i;
 	unsigned long val, _val;
@@ -431,14 +433,14 @@ static int parse_guid(u8 *guid, size_t guid_len, const char *guid_str)
 	return 0;
 }
 
-static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
-					u8 *desc_list, u64 len)
+static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
+					uint8_t *desc_list, size_t len)
 {
 	int desc_len = len, ret;
 	struct nvme_ns_id_desc *desc;
 	char uid_str[37];
 	uuid_t uuid;
-	u8 *desc_list_save = desc_list;
+	uint8_t *desc_list_save = desc_list;
 
 	memset(desc_list, 0, len);
 	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
@@ -475,7 +477,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, u32 nsid,
 		ret = parse_guid(desc_list, NVME_NIDT_NGUID_LEN, uid_str);
 		if (ret) {
 			ctrl_info(ep, "failed to parse nguid, error %d", ret);
-			desc_list = (u8 *)desc;
+			desc_list = (uint8_t *)desc;
 		} else {
 			desc_list += desc->nidl;
 			desc_len -= desc->nidl;
@@ -499,7 +501,7 @@ parse_eui64:
 		ret = parse_guid(desc_list, NVME_NIDT_EUI64_LEN, uid_str);
 		if (ret) {
 			ctrl_info(ep, "failed to parse eui64, error %d", ret);
-			desc_list = (u8 *)desc;
+			desc_list = (uint8_t *)desc;
 		} else {
 			desc_list += desc->nidl;
 			desc_len -= desc->nidl;
@@ -527,13 +529,13 @@ done:
 static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
 {
-	u8 cns = cmd->identify.cns;
-	u8 csi = cmd->identify.csi;
-	u32 nsid = le32toh(cmd->identify.nsid);
-	u16 cid = cmd->identify.command_id;
+	uint8_t cns = cmd->identify.cns;
+	uint8_t csi = cmd->identify.csi;
+	uint32_t nsid = le32toh(cmd->identify.nsid);
+	uint16_t cid = cmd->identify.command_id;
 	int ret, id_len;
 
-	ctrl_info(ep, "cid %#x nvme_fabrics_identify cns %d len %llu",
+	ctrl_info(ep, "cid %#x nvme_fabrics_identify cns %d len %"PRIu64,
 		  cid, cns, qe->data_len);
 
 	switch (cns) {
@@ -579,10 +581,10 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 }
 
 static int format_disc_log(struct nofuse_queue *ep,
-			   void *data, u64 data_offset, u64 data_len)
+			   void *data, off_t data_offset, size_t data_len)
 {
 	int len, log_len, genctr, num_recs = 0, ret;
-	u8 *log_buf;
+	uint8_t *log_buf;
 	struct nvmf_disc_rsp_page_hdr *log_hdr;
 	struct nvmf_disc_rsp_page_entry *log_ptr;
 
@@ -604,7 +606,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 
 	if (num_recs) {
 		len = configdb_host_disc_entries(ep->ctrl->hostnqn,
-					      (u8 *)log_ptr, len);
+					      (uint8_t *)log_ptr, len);
 		if (len < 0) {
 			ctrl_err(ep, "error fetching discovery log entries");
 			num_recs = 0;
@@ -620,7 +622,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 	log_hdr->numrec = htole64(num_recs);
 	log_hdr->genctr = htole64(genctr);
 	if (log_len < data_offset) {
-		ctrl_err(ep, "offset %llu beyond log page size %d",
+		ctrl_err(ep, "offset %lu beyond log page size %d",
 			 data_offset, log_len);
 		log_len = 0;
 	} else {
@@ -629,7 +631,7 @@ static int format_disc_log(struct nofuse_queue *ep,
 			log_len = data_len;
 		memcpy(data, log_buf + data_offset, log_len);
 	}
-	ctrl_info(ep, "discovery log page entries %d offset %llu len %d",
+	ctrl_info(ep, "discovery log page entries %d offset %lu len %d",
 		  num_recs, data_offset, log_len);
 	free(log_buf);
 	ep->ctrl->aen_masked &= ~NVME_AEN_CFG_DISC_CHANGE;
@@ -637,17 +639,17 @@ static int format_disc_log(struct nofuse_queue *ep,
 }
 
 static int format_ana_log(struct nofuse_queue *ep,
-			  void *data, u64 data_offset, u64 data_len)
+			  void *data, off_t data_offset, size_t data_len)
 {
 	int len, log_len;
-	u8 *log_buf, *grp_ptr;
+	uint8_t *log_buf, *grp_ptr;
 	struct nvme_ana_rsp_hdr *log_hdr;
 	struct nvme_ana_group_desc *desc;
 	int grp;
 
 	log_len = sizeof(*log_hdr) +
 		MAX_ANAGRPID * sizeof(struct nvme_ana_group_desc) +
-		MAX_NSID * sizeof(u32);
+		MAX_NSID * sizeof(uint32_t);
 	log_buf = malloc(log_len);
 	if (!log_buf) {
 		ctrl_err(ep, "error allocating ana log");
@@ -664,16 +666,16 @@ static int format_ana_log(struct nofuse_queue *ep,
 		log_hdr->ngrps = 0;
 	}
 
-	grp_ptr = (u8 *)log_hdr->entries;
+	grp_ptr = (uint8_t *)log_hdr->entries;
 	for (grp = 0; grp < le32toh(log_hdr->ngrps); grp++) {
 		desc = (struct nvme_ana_group_desc *)grp_ptr;
 		ctrl_info(ep, "ANA grp %d (state %d, chgcnt %lu)",
 			  desc->grpid, desc->state, le64toh(desc->chgcnt));
 		grp_ptr += sizeof(*desc);
-		grp_ptr += le32toh(desc->nnsids) * sizeof(u32);
+		grp_ptr += le32toh(desc->nnsids) * sizeof(uint32_t);
 	}
 	if (log_len < data_offset) {
-		ctrl_err(ep, "offset %llu beyond log page size %d",
+		ctrl_err(ep, "offset %lu beyond log page size %d",
 			 data_offset, log_len);
 		log_len = 0;
 	} else {
@@ -682,20 +684,20 @@ static int format_ana_log(struct nofuse_queue *ep,
 			log_len = data_len;
 		memcpy(data, log_buf + data_offset, log_len);
 	}
-	ctrl_info(ep, "ana log page entries %d offset %llu len %d",
+	ctrl_info(ep, "ana log page entries %d offset %lu len %d",
 		  le32toh(log_hdr->ngrps), data_offset, log_len);
 	free(log_buf);
 	ep->ctrl->aen_masked &= ~~NVME_AEN_CFG_ANA_CHANGE;
 	return log_len;
 }
 
-static int format_ns_chg_log(struct nofuse_queue *ep,
-			     void *data, u64 data_offset, u64 data_len)
+static int format_ns_chg_log(struct nofuse_queue *ep, void *data,
+			     off_t data_offset, size_t data_len)
 {
 	int len, log_len;
-	u8 *log_buf;
+	uint8_t *log_buf;
 
-	log_len = 1024 * sizeof(u32);
+	log_len = 1024 * sizeof(uint32_t);
 	log_buf = malloc(log_len);
 	if (!log_buf) {
 		ctrl_err(ep, "error allocating ana log");
@@ -711,7 +713,7 @@ static int format_ns_chg_log(struct nofuse_queue *ep,
 	}
 
 	if (log_len < data_offset) {
-		ctrl_err(ep, "offset %llu beyond log pag size %d",
+		ctrl_err(ep, "offset %lu beyond log pag size %d",
 			 data_offset, log_len);
 		log_len = 0;
 	} else {
@@ -720,8 +722,8 @@ static int format_ns_chg_log(struct nofuse_queue *ep,
 			log_len = data_len;
 		memcpy(data, log_buf + data_offset, log_len);
 	}
-	ctrl_info(ep, "ns changed entries %ld offset %llu len %d",
-		  len / sizeof(u32), data_offset, log_len);
+	ctrl_info(ep, "ns changed entries %ld offset %lu len %d",
+		  len / sizeof(uint32_t), data_offset, log_len);
 	free(log_buf);
 	ep->ctrl->aen_masked &= ~NVME_AEN_CFG_NS_ATTR;
 	return data_len;
@@ -731,7 +733,7 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
 	int ret = 0, log_len;
-	u64 offset = le64toh(cmd->get_log_page.lpo);
+	uint64_t offset = le64toh(cmd->get_log_page.lpo);
 
 	ctrl_info(ep, "nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
 		  cmd->get_log_page.opcode, cmd->get_log_page.lid,
@@ -789,7 +791,7 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		       struct nvme_command *cmd)
 {
-	u32 nsid = le32toh(cmd->rw.nsid);
+	uint32_t nsid = le32toh(cmd->rw.nsid);
 
 	qe->ns = find_namespace(ep->ctrl->subsysnqn, nsid);
 	if (!qe->ns) {
@@ -807,7 +809,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
-	ctrl_info(ep, "nsid %u tag %#x ccid %#x read pos %llu len %llu",
+	ctrl_info(ep, "nsid %u tag %#x ccid %#x read pos %"PRIu64" len %"PRIu64,
 		  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	return qe->ns->ops->ns_read(ep, qe);
@@ -816,8 +818,8 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_command *cmd)
 {
-	u8 sgl_type = cmd->rw.dptr.sgl.type;
-	u32 nsid = le32toh(cmd->rw.nsid);
+	uint8_t sgl_type = cmd->rw.dptr.sgl.type;
+	uint32_t nsid = le32toh(cmd->rw.nsid);
 	int ret;
 
 	qe->ns = find_namespace(ep->ctrl->subsysnqn, nsid);
@@ -832,7 +834,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		ctrl_info(ep, "nsid %u tag %#x ccid %#x inline write pos %llu len %llu",
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x inline write pos %"PRIu64" len %"PRIu64,
 			   nsid, qe->tag, qe->ccid,
 			   qe->data_pos, qe->data_len);
 		ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
@@ -852,7 +854,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (ret) {
 		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else
-		ctrl_info(ep, "nsid %u tag %#x ccid %#x write pos %llu len %llu",
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x write pos %"PRIu64" len %"PRIu64,
 			  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	return ret;
@@ -861,8 +863,8 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 {
 	struct ep_qe *qe;
-	u32 len;
-	u16 ccid;
+	uint32_t len;
+	uint16_t ccid;
 	int ret;
 
 	len = le32toh(cmd->common.dptr.sgl.length);

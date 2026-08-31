@@ -8,8 +8,6 @@
 #ifndef __NVMET_H__
 #define __NVMET_H__
 
-#define unlikely __glibc_unlikely
-
 #include <sys/types.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -32,7 +30,6 @@
 #include <openssl/ssl.h>
 #endif
 
-#include "utils.h"
 #include "nvme.h"
 #include "tcp.h"
 
@@ -42,8 +39,8 @@ extern bool ep_debug;
 extern bool port_debug;
 extern bool fuse_debug;
 
-extern struct linked_list device_linked_list;
-extern struct linked_list port_linked_list;
+extern struct list_head device_linked_list;
+extern struct list_head port_linked_list;
 
 #define NVME_NR_AEN_COMMANDS	4
 #define NVMF_AQ_DEPTH		32
@@ -83,10 +80,10 @@ struct ep_qe {
 	struct iovec iovec;
 	struct nvme_completion resp;
 	void *data;
-	u64 data_len;
-	u64 data_pos;
-	u64 data_remaining;
-	u64 iovec_offset;
+	uint64_t data_len;
+	uint64_t data_pos;
+	uint64_t data_remaining;
+	uint64_t iovec_offset;
 	int ccid;
 	int opcode;
 	bool busy;
@@ -96,7 +93,7 @@ struct ep_qe {
 enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
 
 struct nofuse_queue {
-	struct linked_list node;
+	struct list_node node;
 	pthread_t pthread;
 	struct io_uring uring;
 	struct io_ops *io_ops;
@@ -104,7 +101,7 @@ struct nofuse_queue {
 	struct nofuse_port *port;
 	struct nofuse_ctrl *ctrl;
 	struct ep_qe *qes;
-	u32 qes_map[NVMF_SQ_DEPTH / 8];
+	uint32_t qes_map[NVMF_SQ_DEPTH / 8];
 	unsigned int qes_map_index;
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
@@ -129,7 +126,7 @@ struct nofuse_queue {
 };
 
 struct nofuse_ctrl {
-	struct linked_list node;
+	struct list_node node;
 	pthread_mutex_t ctrl_mutex;
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
@@ -139,18 +136,18 @@ struct nofuse_ctrl {
 	int kato_countdown;
 	int num_queues;
 	int max_queues;
-	u32 aen_enabled;
-	u32 aen_masked;
-	u32 aen_pending;
-	u64 csts;
-	u64 cc;
+	uint32_t aen_enabled;
+	uint32_t aen_masked;
+	uint32_t aen_pending;
+	uint64_t csts;
+	uint64_t cc;
 };
 
 struct nofuse_namespace {
-	struct linked_list node;
+	struct list_node node;
 	struct ns_ops *ops;
 	char subsysnqn[MAX_NQN_SIZE + 1];
-	u32 nsid;
+	uint32_t nsid;
 	int fd;
 	size_t size;
 	unsigned int blksize;
@@ -158,10 +155,10 @@ struct nofuse_namespace {
 };
 
 struct nofuse_port {
-	struct linked_list node;
+	struct list_node node;
 	pthread_t pthread;
 	struct xp_ops *ops;
-	struct linked_list ep_list;
+	struct list_head ep_list;
 	pthread_mutex_t ep_mutex;
 	int portid;
 	int listenfd;
@@ -225,7 +222,7 @@ struct nofuse_port {
 	} while (0)
 
 static inline void set_response(struct nvme_completion *resp,
-				u16 ccid, u16 status, bool dnr)
+				uint16_t ccid, uint16_t status, bool dnr)
 {
 	if (!status)
 		dnr = false;
@@ -238,20 +235,20 @@ static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)
 	ctrl->kato_countdown = ctrl->kato;
 }
 
-static inline u32 aen_pending(struct nofuse_ctrl *ctrl)
+static inline uint32_t aen_pending(struct nofuse_ctrl *ctrl)
 {
-	u32 pending;
+	uint32_t pending;
 
 	pending = ctrl->aen_pending & ~ctrl->aen_masked;
 	return pending;
 }
 
-void raise_aen(const char *subsysnqn, u16 cntlid, int level);
+void raise_aen(const char *subsysnqn, uint16_t cntlid, int level);
 
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int send_aen(struct nofuse_queue *ep, int type);
-int connect_queue(struct nofuse_queue *ep, u16 cntlid,
+int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);
 struct nofuse_queue *create_queue(int conn, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
@@ -273,10 +270,11 @@ int stop_port(struct nofuse_port *port);
 int add_ana_group(int portid, int ana_grpid, int ana_state);
 int del_ana_group(int portid, int ana_grpid);
 
-struct nofuse_namespace *find_namespace(const char *subsysnqn, u32 nsid);
-int add_namespace(const char *subsysnqn, u32 nsid);
-int del_namespace(const char *subsysnqn, u32 nsid);
-int enable_namespace(const char *subsysnqn, u32 nsid);
-int disable_namespace(const char *subsysnqn, u32 nsid);
+struct nofuse_namespace *find_namespace(const char *subsysnqn, uint32_t nsid);
+int add_namespace(const char *subsysnqn, uint32_t nsid);
+int del_namespace(const char *subsysnqn, uint32_t nsid);
+int enable_namespace(const char *subsysnqn, uint32_t nsid);
+int disable_namespace(const char *subsysnqn, uint32_t nsid);
 
+int nofuse_init(const char *traddr, int trsvcid);
 #endif

@@ -12,14 +12,16 @@
 #include <arpa/inet.h>
 #include <sys/poll.h>
 
+#include "sheep.h"
 #include "nvmet.h"
 #include "ops.h"
 #include "configdb.h"
 
-LINKED_LIST(ctrl_linked_list);
+LIST_HEAD(ctrl_linked_list);
+
 pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int connect_queue(struct nofuse_queue *ep, u16 cntlid,
+int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl = NULL;
@@ -122,7 +124,7 @@ int connect_queue(struct nofuse_queue *ep, u16 cntlid,
 	ctrl->cntlid = cntlid;
 	ctrl->kato_countdown = RETRY_COUNT;
 	pthread_mutex_init(&ctrl->ctrl_mutex, NULL);
-	INIT_LINKED_LIST(&ctrl->node);
+	INIT_LIST_NODE(&ctrl->node);
 	list_add(&ctrl->node, &ctrl_linked_list);
 out_unlock:
 	pthread_mutex_unlock(&ctrl_list_mutex);
@@ -439,7 +441,7 @@ struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 	ep->qid = -1;
 	ep->recv_state = RECV_PDU;
 	ep->io_ops = tcp_register_io_ops();
-	INIT_LINKED_LIST(&ep->node);
+	INIT_LIST_NODE(&ep->node);
 
 	ret = start_queue(ep, conn);
 	if (ret) {
@@ -496,7 +498,7 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 	pthread_mutex_unlock(&port->ep_mutex);
 }
 
-void raise_aen(const char *subsysnqn, u16 cntlid, int level)
+void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 {
 	const char *aen_type = NULL;
 	struct nofuse_ctrl *ctrl;

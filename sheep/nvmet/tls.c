@@ -17,6 +17,7 @@
 #include <zlib.h>
 #include <keyutils.h>
 
+#include "sheep.h"
 #include "nvmet.h"
 #include "tls.h"
 #include "ops.h"

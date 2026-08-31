@@ -1487,7 +1487,7 @@ static inline bool nvme_is_write(struct nvme_command *cmd)
 	 *
 	 * Why can't we simply have a Fabrics In and Fabrics out command?
 	 */
-	if (unlikely(nvme_is_fabrics(cmd)))
+	if (nvme_is_fabrics(cmd))
 		return cmd->fabrics.fctype & 1;
 	return cmd->common.opcode & 1;
 }

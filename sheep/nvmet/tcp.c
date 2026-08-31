@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "sheep.h"
 #include "nvmet.h"
 #include "tcp.h"
 #include "ops.h"
@@ -142,7 +143,7 @@ static void tcp_destroy_queue(struct nofuse_queue *ep)
 
 static struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep,
 				     union nvme_tcp_pdu *pdu,
-				     u16 ccid, u64 pos, u64 len)
+				     uint16_t ccid, off_t pos, size_t len)
 {
 	int m, i = 0, j, cid;
 	struct ep_qe *qe = NULL;
@@ -203,7 +204,7 @@ retry:
 	return qe;
 }
 
-static struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, u16 tag)
+static struct ep_qe *tcp_get_tag(struct nofuse_queue *ep, uint16_t tag)
 {
 	if (tag >= ep->qsize || !ep->qes[tag].busy)
 		return NULL;
@@ -386,7 +387,7 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 		goto out_free;
 	}
 	len = icreq->hdr.hlen - hdr_len;
-	ret = ep->io_ops->io_read(ep, (u8 *)icreq + hdr_len, len);
+	ret = ep->io_ops->io_read(ep, (uint8_t *)icreq + hdr_len, len);
 	if (ret < 0) {
 		tcp_err(ep, "icreq read error %d", errno);
 		ret = -errno;
@@ -484,14 +485,15 @@ static int tcp_wait_for_connection(struct nofuse_port *port)
 	return ret;
 }
 
-static int tcp_rma_read(struct nofuse_queue *ep, void *buf, u64 _len)
+static int tcp_rma_read(struct nofuse_queue *ep, void *buf, size_t _len)
 {
-	int len = 0, offset = 0;
+	int len = 0;
+	off_t offset = 0;
 
 	while (offset < _len) {
-		tcp_info(ep, "recv %llu data bytes",
+		tcp_info(ep, "recv %lu data bytes",
 			_len - offset);
-		len = ep->io_ops->io_read(ep, (u8 *)buf + offset,
+		len = ep->io_ops->io_read(ep, (uint8_t *)buf + offset,
 					  _len - offset);
 		if (len < 0) {
 			tcp_err(ep, "recv returned %d", errno);
@@ -513,7 +515,7 @@ static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
-	tcp_info(ep, "c2h data cid %x offset %llu len %lu/%llu",
+	tcp_info(ep, "c2h data cid %x offset %"PRIu64" len %lu/%"PRIu64,
 		  qe->ccid, qe->data_pos, qe->iovec.iov_len,
 		  qe->data_remaining);
 
@@ -536,8 +538,8 @@ static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 		 pdu->hdr.hlen, pdu->hdr.plen);
 
 	while (send_pdu_len < pdu->hdr.hlen) {
-		u8 *data = (u8 *)pdu + send_pdu_len;
-		u64 data_len = pdu->hdr.hlen - send_pdu_len;
+		uint8_t *data = (uint8_t *)pdu + send_pdu_len;
+		uint64_t data_len = pdu->hdr.hlen - send_pdu_len;
 
 		len = ep->io_ops->io_write(ep, data, data_len);
 		if (len < 0) {
@@ -552,7 +554,7 @@ static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 		tcp_info(ep, "c2h hdr wrote %d bytes", len);
 	}
 	while (qe->iovec.iov_len) {
-		u8 *data = qe->iovec.iov_base;
+		uint8_t *data = qe->iovec.iov_base;
 
 		len = ep->io_ops->io_write(ep, data, qe->iovec.iov_len);
 		if (len < 0) {
@@ -574,7 +576,7 @@ static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 	return 0;
 }
 
-static int tcp_send_r2t(struct nofuse_queue *ep, u16 tag)
+static int tcp_send_r2t(struct nofuse_queue *ep, uint16_t tag)
 {
 	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
 	struct ep_qe *qe;
@@ -586,7 +588,7 @@ static int tcp_send_r2t(struct nofuse_queue *ep, u16 tag)
 		return -EINVAL;
 	}
 
-	tcp_info(ep, "r2t cid %#x ttag %#x offset %llu len %lu",
+	tcp_info(ep, "r2t cid %#x ttag %#x offset %"PRIu64" len %lu",
 		 qe->ccid, qe->tag, qe->iovec_offset,
 		 qe->iovec.iov_len);
 
@@ -616,8 +618,8 @@ static int tcp_send_r2t(struct nofuse_queue *ep, u16 tag)
 	return 0;
 }
 
-static int tcp_send_c2h_term(struct nofuse_queue *ep, u16 fes, u8 pdu_offset,
-			     u8 parm_offset, bool hdr_digest,
+static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_offset,
+			     uint8_t parm_offset, bool hdr_digest,
 			     union nvme_tcp_pdu *pdu, int pdu_len)
 {
 	struct nvme_tcp_term_pdu *term_pdu = &ep->send_pdu->term;
@@ -697,10 +699,10 @@ static int tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 
 static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 {
-	u16 ttag = le16toh(pdu->data.ttag);
-	u32 data_offset = le32toh(pdu->data.data_offset);
-	u32 data_len = le32toh(pdu->data.data_length);
-	u8 *data;
+	uint16_t ttag = le16toh(pdu->data.ttag);
+	uint32_t data_offset = le32toh(pdu->data.data_offset);
+	uint32_t data_len = le32toh(pdu->data.data_length);
+	uint8_t *data;
 	struct ep_qe *qe;
 	int ret;
 
@@ -714,14 +716,14 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 	if (data_offset != qe->iovec_offset) {
-		tcp_err(ep, "h2c offset mismatch, is %u exp %llu",
+		tcp_err(ep, "h2c offset mismatch, is %u exp %"PRIu64,
 			 data_offset, qe->iovec_offset);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 				offsetof(struct nvme_tcp_data_pdu, data_offset),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 	if (data_len > qe->iovec.iov_len) {
-		tcp_err(ep, "h2c len overflow, is %u exp %llu",
+		tcp_err(ep, "h2c len overflow, is %u exp %"PRIu64,
 			 data_len, qe->data_remaining);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_PDU_SEQ_ERR,
 				offsetof(struct nvme_tcp_data_pdu, data_offset),
@@ -754,7 +756,7 @@ out_rsp:
 
 static int tcp_read_msg(struct nofuse_queue *ep)
 {
-	u8 *msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
+	uint8_t *msg = (uint8_t *)ep->recv_pdu + ep->recv_pdu_len;
 	int len, msg_len;
 
 	if (ep->recv_pdu_len < sizeof(struct nvme_tcp_hdr)) {
@@ -790,7 +792,7 @@ static int tcp_read_msg(struct nofuse_queue *ep)
 	}
 	msg_len = ep->recv_pdu->common.hlen - ep->recv_pdu_len;
 	if (msg_len) {
-		msg = (u8 *)ep->recv_pdu + ep->recv_pdu_len;
+		msg = (uint8_t *)ep->recv_pdu + ep->recv_pdu_len;
 
 		tcp_info(ep, "read %u pdu bytes", msg_len);
 		len = ep->io_ops->io_read(ep, msg, msg_len);
@@ -840,9 +842,10 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 	return handle_request(ep, &pdu->cmd.cmd);
 }
 
-static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len)
+static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
+			 size_t data_len)
 {
-	tcp_info(ep, "write cid %x offset %llu len %llu",
+	tcp_info(ep, "write cid %x offset %"PRIu64" len %lu",
 		  qe->ccid, qe->data_pos, data_len);
 
 	qe->data_remaining = data_len;
@@ -867,9 +870,9 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe, u64 data_len
 static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	int ret;
-	u8 type, level = NVME_AER_NOTICE;
-	u16 log_page;
-	u32 result, pending;
+	uint8_t type, level = NVME_AER_NOTICE;
+	uint16_t log_page;
+	uint32_t result, pending;
 
 	if (!ep->ctrl)
 		return 0;

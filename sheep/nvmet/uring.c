@@ -10,6 +10,7 @@
 #include <sys/eventfd.h>
 #include <pthread.h>
 
+#include "sheep.h"
 #include "nvmet.h"
 #include "nvme.h"
 #include "ops.h"

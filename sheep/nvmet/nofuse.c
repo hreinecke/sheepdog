@@ -19,11 +19,12 @@
 #include <ifaddrs.h>
 #include <getopt.h>
 
+#include "sheep.h"
 #include "nvmet.h"
 #include "ops.h"
 #include "tls.h"
 
-LINKED_LIST(device_linked_list);
+LIST_HEAD(device_linked_list);
 
 int stopped;
 bool tcp_debug;
@@ -41,6 +42,18 @@ struct nofuse_context {
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 
+struct nofuse_namespace *find_namespace(const char *subsysnqn, uint32_t nsid)
+{
+	struct nofuse_namespace *ns;
+
+	list_for_each_entry(ns, &device_linked_list, node) {
+		if (!strcmp(ns->subsysnqn, subsysnqn) &&
+		    ns->nsid == nsid)
+			return ns;
+	}
+	return NULL;
+}
+
 static void free_ports(void)
 {
 	struct nofuse_port *port, *_port;
@@ -49,7 +62,7 @@ static void free_ports(void)
 		del_port(port);
 }
 
-int init_nvmet(const char *traddr, int trsvcid)
+int nofuse_init(const char *traddr, int trsvcid)
 {
 	int tls_keyring;
 	int ret = 1;
