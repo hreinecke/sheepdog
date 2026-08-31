@@ -808,6 +808,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
+	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * ns.blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
@@ -833,6 +834,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 	}
 
+	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * ns.blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;

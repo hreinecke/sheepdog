@@ -114,6 +114,8 @@ struct request_iocb {
 	int result;
 };
 
+typedef void (*local_req_cb_t)(struct request *req);
+
 struct request {
 	struct sd_req rq;
 	struct sd_rsp rp;
@@ -131,6 +133,15 @@ struct request {
 	refcnt_t refcnt;
 	bool local;
 	int local_req_efd;
+
+	/*
+	 * When set, put_request() calls local_done(req) instead of
+	 * signalling local_req_efd, and frees req itself afterwards.
+	 * Used by exec_local_req_cb() to submit a local request without
+	 * blocking the calling thread until it completes.
+	 */
+	local_req_cb_t local_done;
+	void *local_done_arg;
 
 	uint64_t local_oid;
 
@@ -525,6 +536,11 @@ int sd_read_object(uint64_t oid, char *data, unsigned int datalen,
 		   uint64_t offset);
 int sd_read_object_fwd(uint64_t oid, char *data, unsigned int datalen,
 		   uint64_t offset);
+void sd_write_object_async(uint64_t oid, char *data, unsigned int datalen,
+			   uint64_t offset, bool create,
+			   local_req_cb_t done, void *arg);
+void sd_read_object_async(uint64_t oid, char *data, unsigned int datalen,
+			  uint64_t offset, local_req_cb_t done, void *arg);
 int sd_remove_object(uint64_t oid);
 int sd_dec_object_refcnt(uint64_t data_oid, uint32_t generation,
 			 uint32_t refcnt);
@@ -532,6 +548,8 @@ int sd_dec_object_refcnt(uint64_t data_oid, uint32_t generation,
 struct request_iocb *local_req_init(void);
 int exec_local_req(struct sd_req *rq, void *data);
 int exec_local_req_async(struct sd_req *rq, void *, struct request_iocb *);
+void exec_local_req_cb(struct sd_req *rq, void *data,
+		       local_req_cb_t done, void *arg);
 int local_req_wait(struct request_iocb *iocb);
 
 void local_request_init(void);

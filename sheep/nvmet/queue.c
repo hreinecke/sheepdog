@@ -11,6 +11,7 @@
 #include <inttypes.h>
 #include <arpa/inet.h>
 #include <sys/poll.h>
+#include <sys/eventfd.h>
 
 #include "sheep.h"
 #include "nvmet.h"
@@ -208,6 +209,36 @@ static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 	return sqe;
 }
 
+/*
+ * A completed VDI read/write is handed back to this queue's own
+ * io_uring loop via ep->io_evtfd, so that ep/qes_map state is only
+ * ever touched from ep->pthread. &ep->io_evtfd is used as the sqe
+ * user_data so the cqe dispatch can tell it apart from the socket
+ * poll (data == ep) and I/O completions (data == a struct ep_qe *).
+ */
+static struct io_uring_sqe *queue_submit_io_evtfd_poll(struct nofuse_queue *ep)
+{
+	struct io_uring_sqe *sqe;
+	int ret;
+
+	sqe = io_uring_get_sqe(&ep->uring);
+	if (!sqe) {
+		ep_err(ep, "qid %d failed to get io evtfd poll sqe", ep->qid);
+		return NULL;
+	}
+
+	io_uring_prep_poll_add(sqe, ep->io_evtfd, POLLIN);
+	io_uring_sqe_set_data(sqe, &ep->io_evtfd);
+
+	ret = io_uring_submit(&ep->uring);
+	if (ret <= 0) {
+		ep_err(ep, "qid %d submit io evtfd poll sqe failed, error %d",
+		       ep->qid, ret);
+		return NULL;
+	}
+	return sqe;
+}
+
 static int queue_submit_cancel(struct nofuse_queue *ep)
 {
 	struct io_uring_sqe *sqe;
@@ -295,6 +326,8 @@ static void pop_free(void *arg)
 	pthread_mutex_lock(&port->ep_mutex);
 	list_del(&ep->node);
 	pthread_mutex_unlock(&port->ep_mutex);
+	close(ep->io_evtfd);
+	pthread_mutex_destroy(&ep->io_done_lock);
 	free(ep);
 }
 
@@ -302,6 +335,7 @@ void *queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
+	struct io_uring_sqe *io_evtfd_sqe = NULL;
 	sigset_t set;
 	int ret;
 
@@ -336,6 +370,11 @@ void *queue_thread(void *arg)
 			if (!pollin_sqe)
 				break;
 		}
+		if (!io_evtfd_sqe) {
+			io_evtfd_sqe = queue_submit_io_evtfd_poll(ep);
+			if (!io_evtfd_sqe)
+				break;
+		}
 
 		ret = io_uring_wait_cqe_timeout(&ep->uring, &cqe, &ts);
 		if (ret < 0)
@@ -366,6 +405,23 @@ void *queue_thread(void *arg)
 					ep->recv_pdu_len = 0;
 					ep->recv_state = RECV_PDU;
 				}
+			}
+		} else if (cqe_data == &ep->io_evtfd) {
+			LIST_HEAD(done_list);
+			struct ep_qe *qe, *next;
+			eventfd_t val;
+
+			io_evtfd_sqe = NULL;
+			eventfd_read(ep->io_evtfd, &val);
+
+			pthread_mutex_lock(&ep->io_done_lock);
+			list_splice_init(&ep->io_done_list, &done_list);
+			pthread_mutex_unlock(&ep->io_done_lock);
+
+			ret = 0;
+			list_for_each_entry_safe(qe, next, &done_list, io_node) {
+				list_del(&qe->io_node);
+				ret = handle_data(ep, qe, qe->io_res);
 			}
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
@@ -442,11 +498,18 @@ struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 	ep->recv_state = RECV_PDU;
 	ep->io_ops = tcp_register_io_ops();
 	INIT_LIST_NODE(&ep->node);
+	INIT_LIST_HEAD(&ep->io_done_list);
+	pthread_mutex_init(&ep->io_done_lock, NULL);
+	ep->io_evtfd = eventfd(0, EFD_NONBLOCK);
+	if (ep->io_evtfd < 0) {
+		fprintf(stderr, "ep %d: failed to create io eventfd", conn);
+		goto out;
+	}
 
 	ret = start_queue(ep, conn);
 	if (ret) {
 		fprintf(stderr, "ep %d: failed to start queue", conn);
-		goto out;
+		goto out_close_evtfd;
 	}
 
 	ep_info(ep, "queue started");
@@ -454,7 +517,10 @@ struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 	list_add(&ep->node, &port->ep_list);
 	pthread_mutex_unlock(&port->ep_mutex);
 	return ep;
+out_close_evtfd:
+	close(ep->io_evtfd);
 out:
+	pthread_mutex_destroy(&ep->io_done_lock);
 	free(ep);
 	close(conn);
 	return NULL;

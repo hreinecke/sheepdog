@@ -586,6 +586,24 @@ int sd_write_object_fwd(uint64_t oid, char *data, unsigned int datalen,
 				 SD_FLAG_CMD_FWD);
 }
 
+void sd_write_object_async(uint64_t oid, char *data, unsigned int datalen,
+			   uint64_t offset, bool create,
+			   local_req_cb_t done, void *arg)
+{
+	struct sd_req hdr;
+
+	if (create)
+		sd_init_req(&hdr, SD_OP_CREATE_AND_WRITE_OBJ);
+	else
+		sd_init_req(&hdr, SD_OP_WRITE_OBJ);
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.data_length = datalen;
+	hdr.obj.oid = oid;
+	hdr.obj.offset = offset;
+
+	exec_local_req_cb(&hdr, data, done, arg);
+}
+
 static int __sd_read_object(uint64_t oid, char *data, unsigned int datalen,
 			    uint64_t offset, uint16_t flags)
 {
@@ -615,6 +633,19 @@ int sd_read_object_fwd(uint64_t oid, char *data, unsigned int datalen,
 		       uint64_t offset)
 {
 	return __sd_read_object(oid, data, datalen, offset, SD_FLAG_CMD_FWD);
+}
+
+void sd_read_object_async(uint64_t oid, char *data, unsigned int datalen,
+			  uint64_t offset, local_req_cb_t done, void *arg)
+{
+	struct sd_req hdr;
+
+	sd_init_req(&hdr, SD_OP_READ_OBJ);
+	hdr.data_length = datalen;
+	hdr.obj.oid = oid;
+	hdr.obj.offset = offset;
+
+	exec_local_req_cb(&hdr, data, done, arg);
 }
 
 int sd_remove_object(uint64_t oid)

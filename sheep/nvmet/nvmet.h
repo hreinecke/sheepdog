@@ -83,6 +83,9 @@ struct ep_qe {
 	uint64_t data_pos;
 	uint64_t data_remaining;
 	uint64_t iovec_offset;
+	uint32_t vid;
+	int io_res;
+	struct list_node io_node;
 	int ccid;
 	int opcode;
 	bool busy;
@@ -115,6 +118,9 @@ struct nofuse_queue {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
+	int io_evtfd;
+	struct list_head io_done_list;
+	pthread_mutex_t io_done_lock;
 #ifdef _GNUTLS
 	gnutls_session_t session;
 	gnutls_psk_server_credentials_t psk_cred;

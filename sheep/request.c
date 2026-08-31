@@ -696,6 +696,29 @@ out:
 	return ret;
 }
 
+/*
+ * Exec the request locally and asynchronously.
+ *
+ * Unlike exec_local_req(), this returns immediately without blocking
+ * the calling thread. 'done' is invoked from put_request() (which
+ * always runs on the main thread) once the request completes; req is
+ * valid for the duration of that call (req->rp holds the result,
+ * req->data the I/O buffer) and is freed by put_request() right
+ * after 'done' returns, so 'done' must not free it itself.
+ */
+worker_fn void exec_local_req_cb(struct sd_req *rq, void *data,
+				 local_req_cb_t done, void *arg)
+{
+	struct request *req;
+
+	req = alloc_local_request(data, rq->data_length);
+	req->rq = *rq;
+	req->local_done = done;
+	req->local_done_arg = arg;
+
+	submit_local_request(req);
+}
+
 worker_fn struct request_iocb *local_req_init(void)
 {
 	struct request_iocb *iocb = xzalloc(sizeof(*iocb));
@@ -819,9 +842,13 @@ main_fn void put_request(struct request *req)
 
 	stat_request_end(req);
 
-	if (req->local)
-		eventfd_xwrite(req->local_req_efd, 1);
-	else {
+	if (req->local) {
+		if (req->local_done) {
+			req->local_done(req);
+			free_local_request(req);
+		} else
+			eventfd_xwrite(req->local_req_efd, 1);
+	} else {
 		if (ci->conn.dead) {
 			/*
 			 * free_request should be called prior to
