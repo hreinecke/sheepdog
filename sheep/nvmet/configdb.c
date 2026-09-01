@@ -289,10 +289,13 @@ static const char *init_sql[NUM_TABLES] = {
 	"napg.s_id = NEW.subsys_id AND napg.nsid = NEW.nsid; END;",
 	/* ports */
 	"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
-	"addr_trtype CHAR(32) NOT NULL, addr_adrfam CHAR(32) DEFAULT '', "
-	"addr_treq char(32), "
-	"addr_traddr CHAR(255) NOT NULL, addr_trsvcid CHAR(32) DEFAULT '', "
-	"addr_tsas CHAR(255) DEFAULT '', "
+	"addr_trtype CHAR(32) DEFAULT 'tcp', "
+	"addr_adrfam CHAR(32) DEFAULT 'ipv4', "
+	"addr_treq char(32) DEFAULT 'not specified', "
+	"addr_bindaddr CHAR(255) DEFAULT '0.0.0.0', "
+	"addr_traddr CHAR(255) DEFAULT '127.0.0.1', "
+	"addr_trsvcid CHAR(32) DEFAULT '4420', "
+	"addr_tsas CHAR(255) DEFAULT 'none', "
 	"ctime TIME, atime TIME, mtime TIME, "
 	"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
 	/* port_addr_idx */
@@ -843,7 +846,8 @@ int configdb_del_ctrl(const char *subsysnqn, int cntlid)
 	return ret;
 }
 
-int configdb_add_port(unsigned int portid)
+int configdb_add_port(unsigned int portid, const char *traddr,
+		      const char *adrfam, unsigned int trsvcid)
 {
 	char *sql;
 	int ret;
@@ -854,8 +858,9 @@ int configdb_add_port(unsigned int portid)
 	}
 
 	ret = asprintf(&sql,
-		       "INSERT INTO ports (id, addr_trtype, addr_traddr, addr_adrfam, addr_tsas, addr_treq, ctime)"
-		       " VALUES ('%d', 'tcp', '127.0.0.1', '%s', 'none', 'not specified', CURRENT_TIMESTAMP);", portid, ADRFAM_STR_IPV4);
+		       "INSERT INTO ports (id, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
+		       " VALUES ('%d', '%s', '%s', '%u'CURRENT_TIMESTAMP);",
+		       portid, traddr, adrfam, trsvcid);
 	if (ret < 0)
 		return ret;
 

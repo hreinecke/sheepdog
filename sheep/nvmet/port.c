@@ -21,6 +21,7 @@ static void *run_port(void *arg);
 struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
 {
 	struct nofuse_port *port;
+	const char *adrfam = "ipv4";
 	int ret;
 
 	port = malloc(sizeof(*port));
@@ -29,7 +30,13 @@ struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
 	memset(port, 0, sizeof(*port));
 	port->listenfd = -1;
 	port->portid = id;
-	ret = configdb_add_port(id);
+	if (traddr) {
+		if (strcmp(traddr, "127.0.0.1"))
+			traddr = NULL;
+		else if (strchr(traddr, ':'))
+			adrfam = "ipv6";
+	}
+	ret = configdb_add_port(id, traddr, adrfam, trsvcid);
 	if (ret < 0) {
 		port_err(port, "cannot register port, error %d", ret);
 		free(port);

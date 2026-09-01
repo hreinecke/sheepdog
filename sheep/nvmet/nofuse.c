@@ -100,7 +100,6 @@ static int register_ana_groups(unsigned int agid)
 
 	rb_for_each_entry(vnode, &vinfo->vroot, rb) {
 		int zone = vnode->node->zone;
-		int ana_state = NVME_ANA_NONOPTIMIZED;
 
 		ret = configdb_add_ana_group(zone);
 		if (ret < 0)

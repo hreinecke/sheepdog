@@ -249,14 +249,14 @@ static int tcp_init_listener(struct nofuse_port *port)
 	int listenfd;
 	int ret, reuse = 1;
 	struct addrinfo *ai, hints;
-	char traddr[256];
+	char bindaddr[256];
 	char trsvcid[32];
 	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
-	ret = configdb_get_port_attr(port->portid, "addr_traddr", traddr);
+	ret = configdb_get_port_attr(port->portid, "addr_bindaddr", bindaddr);
 	if (ret < 0) {
-		port_err(port, "failed to get traddr, error %d", ret);
+		port_err(port, "failed to get bindaddr, error %d", ret);
 		return ret;
 	}
 	ret = configdb_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
@@ -278,7 +278,7 @@ static int tcp_init_listener(struct nofuse_port *port)
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
 
-	ret = getaddrinfo(traddr, trsvcid, &hints, &ai);
+	ret = getaddrinfo(bindaddr, trsvcid, &hints, &ai);
 	if (ret != 0) {
 		port_err(port, "getaddrinfo() failed: %s",
 			  gai_strerror(ret));
@@ -307,7 +307,7 @@ static int tcp_init_listener(struct nofuse_port *port)
 	ret = bind(listenfd, ai->ai_addr, ai->ai_addrlen);
 	if (ret < 0) {
 		port_err(port, "socket %s:%s bind error %d",
-			  traddr, trsvcid, errno);
+			  bindaddr, trsvcid, errno);
 		ret = -errno;
 		goto err_close;
 	}
@@ -321,7 +321,7 @@ static int tcp_init_listener(struct nofuse_port *port)
 		ret = -errno;
 		goto err_close;
 	}
-	port_info(port, "listening on %s:%s", traddr, trsvcid);
+	port_info(port, "listening on %s:%s", bindaddr, trsvcid);
 	port->listenfd = listenfd;
 	return 0;
 err_close:

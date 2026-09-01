@@ -20,9 +20,6 @@ services:
       context: ../
       dockerfile: Dockerfile.sheepdog
     command: echo sheep container ready
-  ioutgt-build:
-    image: ioutgt-sheepdog
-    build: https://github.com/hreinecke/ioutgt.git#sheepdog
 EOF
 
 for i in $(seq ${NUM_NODES}); do
@@ -53,14 +50,10 @@ for i in $(seq ${NUM_NODES}); do
     echo "      - SHEEP_VNODES=\${SHEEP_VNODES}"
     echo "      - SHEEP_ZONE=\${SHEEP_ZONE:-${node}}"
     echo "      - SHEEP_JOURNAL=\${SHEEP_JOURNAL}"
+    echo "      - SHEEP_TRADDR=127.0.0.1"
+    echo "      - SHEEP_TRSVCID=${disc_port}"
     echo "      - VALGRIND=\${VALGRIND}"
     echo "    command: \${VALGRIND} /usr/sbin/sheep -f"
-    echo "  target${node}:"
-    echo "    image: ioutgt-sheepdog"
-    echo "    network_mode: service:sheep${node}"
-    echo "    security_opt:"
-    echo "      - seccomp=unconfined"
-    echo "    command: /usr/sbin/ioutgt-nvme-tcp --io-threads 4 --listen 0.0.0.0:${disc_port} --backend sheepdog:\${SHEEP${node}_IP}:7000 --portaddr 127.0.0.1:${disc_port}"
 done
 
 echo
