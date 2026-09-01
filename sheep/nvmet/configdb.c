@@ -209,7 +209,7 @@ static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
 	"CREATE TABLE hosts ( "
 	"nqn VARCHAR(223) UNIQUE NOT NULL, genctr INTEGER DEFAULT 0, "
-	"ctime TIME, atime TIME, mtime TIME );",
+	"ctime TIME );",
 	/* subsystems */
 	"CREATE TABLE subsystems ( "
 	"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
@@ -218,7 +218,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"attr_version VARCHAR(256), attr_type INT DEFAULT 3, "
 	"attr_qid_max INT, attr_vid INT UNIQUE NOT NULL, "
 	"attr_cntlid_min INT DEFAULT 1, attr_cntlid_max INT DEFAULT 65519, "
-	"cntlid_next INT DEFAULT 1, ctime TIME, atime TIME, mtime TIME, "
+	"cntlid_next INT DEFAULT 1, ctime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
 	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
 	/* ana_groups */
@@ -248,8 +248,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
 	"device_size INT, device_enable INT DEFAULT 0, "
 	"ana_group_id INT, "
-	"nsid INTEGER NOT NULL, subsys_id INTEGER, "
-	"ctime TIME, atime TIME, mtime TIME, "
+	"nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, "
 	"UNIQUE (subsys_id, nsid), "
 	"CHECK (device_enable = 0 OR device_enable = 1), "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
@@ -295,8 +294,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"addr_bindaddr CHAR(255) DEFAULT '0.0.0.0', "
 	"addr_traddr CHAR(255) DEFAULT '127.0.0.1', "
 	"addr_trsvcid CHAR(32) DEFAULT '4420', "
-	"addr_tsas CHAR(255) DEFAULT 'none', "
-	"ctime TIME, atime TIME, mtime TIME, "
+	"addr_tsas CHAR(255) DEFAULT 'none', ctime TIME, "
 	"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
 	/* port_addr_idx */
 	"CREATE UNIQUE INDEX port_addr_idx ON "
@@ -304,14 +302,14 @@ static const char *init_sql[NUM_TABLES] = {
 	/* ana_port_group */
 	"CREATE TABLE ana_port_group ( "
 	"ana_group_id INT, ana_state INT DEFAULT '1', port_id INTEGER, "
-	"chgcnt INT DEFAULT '0', ctime TIME, atime TIME, mtime TIME, "
+	"chgcnt INT DEFAULT '0', ctime TIME, "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (port_id) REFERENCES ports(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* host_subsys */
 	"CREATE TABLE host_subsys ( host_id INTEGER, subsys_id INTEGER, "
-	"ctime TIME, atime TIME, mtime TIME, "
+	"ctime TIME, "
 	"FOREIGN KEY (host_id) REFERENCES hosts(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (subsys_id) REFERENCES subsys(oid) "
@@ -322,7 +320,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"WHERE oid = NEW.host_id; END;",
 	/* subsys_port */
 	"CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
-	"ctime TIME, atime TIME, mtime TIME, "
+	"ctime TIME, "
 	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (port_id) REFERENCES ports(id) "
@@ -403,8 +401,8 @@ int configdb_add_host(const char *nqn)
 	int ret;
 
 	ret = asprintf(&sql,
-		"INSERT INTO hosts (nqn, ctime, mtime) "
-		"VALUES ('%s', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);",
+		"INSERT INTO hosts (nqn, ctime) "
+		"VALUES ('%s', CURRENT_TIMESTAMP);",
 		nqn);
 	if (ret < 0)
 		return ret;
@@ -434,7 +432,7 @@ int configdb_add_subsys(const char *subsysnqn, uint32_t subsys_id, int type)
 	char serial[32];
 	int ret, allow_any = 0;
 
-	sprintf(serial, "SHEEPDOG%06lx", subsys_id);
+	sprintf(serial, "SHEEPDOG%06x", subsys_id);
 	if (type == NVME_NQN_CUR)
 		allow_any = 1;
 	ret = asprintf(&sql,
@@ -520,8 +518,7 @@ int configdb_set_subsys_attr(const char *nqn, const char *attr,
 			return -EINVAL;
 	}
 	ret = asprintf(&sql,
-		"UPDATE subsystems SET %s = '%s', mtime = CURRENT_TIMESTAMP "
-		"WHERE nqn = '%s';",
+		"UPDATE subsystems SET %s = '%s' WHERE nqn = '%s';",
 		attr, buf, nqn);
 	if (ret < 0)
 		return ret;
@@ -620,7 +617,7 @@ int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
 	if (ret < 0)
 		return ret;
 	ret = raise_ns_chg_aen(subsys_id, nsid);
-	sql_exec_simple("SELECT * FROM ns_changed;");
+	sql_exec_simple("SELECT * FROM namespaces;");
 	return ret;
 }
 
@@ -673,7 +670,7 @@ int configdb_set_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 	if (!strcmp(attr, "enable"))
 		attr = "device_enable";
 	ret = asprintf(&sql,
-		       "UPDATE namespaces SET %s = '%s', mtime = CURRENT_TIMESTAMP FROM "
+		       "UPDATE namespaces SET %s = '%s' FROM "
 		       "(SELECT n.nsid AS nsid, s.nqn AS nqn, s.attr_vid AS vid "
 		       "FROM namespaces AS n "
 		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id) AS sel "
@@ -914,8 +911,8 @@ int configdb_set_port_attr(unsigned int port, const char *attr,
 	}
 
 	ret = asprintf(&sql,
-		       "UPDATE ports SET %s = '%s', mtime = CURRENT_TIMESTAMP "
-		       "WHERE id = '%d';", attr, value, port);
+		       "UPDATE ports SET %s = '%s' WHERE id = '%d';",
+		       attr, value, port);
 	if (ret < 0) {
 		return ret;
 	}
@@ -1028,8 +1025,6 @@ int configdb_add_ana_port_group(unsigned int portid)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
-
-	sql_exec_simple("SELECT * FROM ana_port_group;");
 
 	raise_ana_port_chg_aen(portid);
 	return ret;
@@ -1722,7 +1717,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 
 		parm.buffer = (uint8_t *)grp_desc;
 		ret = asprintf(&sql,
-			       "SELECT ap.ana_state, ap.chgcnt, count(ns.nsid) AS num "
+			       "SELECT ap.ana_state, ap.chgcnt, count(n.nsid) AS num "
 			       "FROM ana_port_group AS ap "
 			       "INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
 			       "INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
