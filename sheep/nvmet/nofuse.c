@@ -34,27 +34,29 @@ bool port_debug;
 struct nofuse_context {
 	char *traddr;
 	char *dbname;
-	struct sd_node *node_list;
+	struct rb_root vroot;
+	struct rb_root nroot;
 	int nr_nodes;
 	int trsvcid;
 	int debug;
 	int help;
 };
 
+struct nofuse_context *this_ctx;
+
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 struct sd_node *cur_nodes;
 
-static int lookup_nodes(struct sd_node **node_list)
+static int lookup_nodes(struct nofuse_context *ctx)
 {
 	int ret;
-	unsigned int size, max_nodes = 16, nr_nodes;
+	unsigned int size, nr_nodes;
 	struct sd_node *buf = NULL;
 	struct sd_node *ent;
 	struct sd_req req;
 	struct sd_rsp *rsp = (struct sd_rsp *)&req;
 
-retry:
-	size = sizeof(*ent) * max_nodes;
+	size = sizeof(*ent) * SD_MAX_NODES;
 	buf = xzalloc(size);
 	sd_init_req(&req, SD_OP_GET_NODE_LIST);
 	req.data_length = size;
@@ -64,11 +66,6 @@ retry:
 		goto out;
 
 	if (rsp->result != SD_RES_SUCCESS) {
-		if (rsp->result == SD_RES_BUFFER_SMALL) {
-			free(buf);
-			max_nodes *= 2;
-			goto retry;
-		}
 		sd_err("Failed to get node list: %s",
 		       sd_strerror(rsp->result));
 		ret = -1;
@@ -80,11 +77,19 @@ retry:
 	if (nr_nodes == 0)
 		sd_warn("There are no active sheep daemons");
 
-	*node_list = buf;
-	return nr_nodes;
+	for (int i = i; i < nr_nodes; i++ ) {
+		struct sd_node *n = xmalloc(sizeof*n);
+
+		*n = buf[i];
+		rb_insert(&ctx->nroot, n, rb, node_cmp);
+	}
+	if (sys->cinfo.flags & SD_CLUSTER_FLAG_DISKMODE)
+		disks_to_vnodes(&ctx->nroot, &ctx->vroot);
+	else
+		nodes_to_vnodes(&ctx->nroot, &ctx->vroot);
 out:
 	free(buf);
-	return -1;
+	return ret < 0 ? ret : nr_nodes;
 }
 
 int lookup_namespace(struct nofuse_ctrl *ctrl, uint32_t nsid,
@@ -128,10 +133,10 @@ out:
 static int register_ana_groups(struct nofuse_context *ctx,
 			       unsigned int agid)
 {
-	int i, ret = 0;
+	int ret = 0;
+	struct sd_node *node;
 
-	for (i = 0; i < ctx->nr_nodes; i++) {
-		struct sd_node *node = ctx->node_list + i;
+	rb_for_each_entry(node, &ctx->nroot, rb) {
 		int grpid = node->zone + 1;
 
 		ret = configdb_add_ana_group(grpid);
@@ -172,14 +177,13 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 			     struct sd_inode_header *inode)
 {
-	struct vnode_info *vinfo = get_vnode_info();
 	struct sd_vnode *vnode;
 	uint64_t oid;
 	char value[64];
 	int ret;
 
 	oid = vid_to_vdi_oid(nsid);
-	vnode = oid_to_first_vnode(oid, &vinfo->vroot);
+	vnode = oid_to_first_vnode(oid, &this_ctx->vroot);
 
 	sd_debug("register namespace %06x ('%s')",
 		 nsid, inode->name);
@@ -345,7 +349,7 @@ static void *nofuse_main(void *arg)
 		goto out_pop;
 	}
 
-	ret = lookup_nodes(&ctx->node_list);
+	ret = lookup_nodes(ctx);
 	if (ret < 0) {
 		sd_err("failed to get node list");
 		goto out_pop;
@@ -402,23 +406,25 @@ out_pop:
 
 int nofuse_init(const char *traddr, int trsvcid)
 {
-	struct nofuse_context *ctx;
 	sd_thread_t t;
 	int err;
 
-	ctx = malloc(sizeof(struct nofuse_context));
-	if (!ctx)
+	this_ctx = malloc(sizeof(struct nofuse_context));
+	if (!this_ctx)
 		return 1;
-	memset(ctx, 0, sizeof(struct nofuse_context));
-	ctx->dbname = strdup("nofuse.sqlite");
-	ctx->traddr = strdup(traddr);
-	ctx->trsvcid = trsvcid;
-	ctx->dbname = strdup("nofuse.sqlite");
+	memset(this_ctx, 0, sizeof(struct nofuse_context));
+	this_ctx->dbname = strdup("nofuse.sqlite");
+	this_ctx->traddr = strdup(traddr);
+	this_ctx->trsvcid = trsvcid;
+	this_ctx->dbname = strdup("nofuse.sqlite");
+	INIT_RB_ROOT(&this_ctx->nroot);
+	INIT_RB_ROOT(&this_ctx->vroot);
 
-	err = sd_thread_create("nofuse", &t, nofuse_main, ctx);
+	err = sd_thread_create("nofuse", &t, nofuse_main, this_ctx);
 	if (err) {
 		sd_err("failed to create nofuse thread: %s", strerror(err));
-		nofuse_cleanup(ctx);
+		nofuse_cleanup(this_ctx);
+		this_ctx = NULL;
 		return -1;
 	}
 
@@ -436,5 +442,5 @@ void nofuse_exit(void)
 		del_port(port);
 	}
 
-	configdb_close("nofuse.sqlite");
+	nofuse_cleanup(this_ctx);
 }
