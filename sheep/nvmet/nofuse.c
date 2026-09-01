@@ -102,14 +102,10 @@ static int register_ana_groups(unsigned int agid)
 		int zone = vnode->node->zone;
 		int ana_state = NVME_ANA_NONOPTIMIZED;
 
-		if (zone == agid)
-			ana_state = NVME_ANA_OPTIMIZED;
+		ret = configdb_add_ana_group(zone);
+		if (ret < 0)
+			sd_warn("cannot register ANA group %u", zone);
 
-		ret = configdb_add_ana_group(zone, zone, ana_state);
-		if (ret < 0) {
-			sd_warn("cannot register ANA group %u",
-				vnode->node->zone);
-		}
 	}
 	return ret;
 }
@@ -265,16 +261,17 @@ static void *nofuse_main(void *arg)
 		goto out_close;
 	}
 
+	ret = register_ana_groups(agid);
+	if (ret < 0) {
+		sd_err("failed to register ANA groups for port %d", agid);
+		goto out_close;
+	}
+
 	sd_debug("register nvmet port traddr '%s' trsvcid '%d'",
 		 ctx->traddr, ctx->trsvcid);
 	port = add_port(agid, ctx->traddr, ctx->trsvcid);
 	if (!port) {
 		sd_err("failed to add nvmet port");
-		goto out_close;
-	}
-	ret = register_ana_groups(agid);
-	if (ret < 0) {
-		sd_err("failed to register ANA groups for port %d", agid);
 		goto out_close;
 	}
 

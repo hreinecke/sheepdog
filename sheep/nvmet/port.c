@@ -18,7 +18,7 @@ LIST_HEAD(port_linked_list);
 
 static void *run_port(void *arg);
 
-struct nofuse_port *add_port(unsigned int id, const char *ifaddr, int portnum)
+struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
 {
 	struct nofuse_port *port;
 	int ret;
@@ -35,19 +35,20 @@ struct nofuse_port *add_port(unsigned int id, const char *ifaddr, int portnum)
 		free(port);
 		return NULL;
 	}
-	if (ifaddr && strcmp(ifaddr, "127.0.0.1")) {
-		if (strchr(ifaddr, ':'))
+	if (traddr && strcmp(traddr, "127.0.0.1")) {
+		if (strchr(traddr, ':'))
 			configdb_set_port_attr(port->portid, "addr_adrfam",
 					    "ipv6");
-		configdb_set_port_attr(port->portid, "addr_traddr", ifaddr);
+		configdb_set_port_attr(port->portid, "addr_traddr", traddr);
 	}
-	if (portnum) {
-		char trsvcid[5];
+	if (trsvcid) {
+		char value[5];
 
-		sprintf(trsvcid, "%d", portnum);
-		configdb_set_port_attr(port->portid, "addr_trsvcid", trsvcid);
+		sprintf(value, "%d", trsvcid);
+		configdb_set_port_attr(port->portid, "addr_trsvcid", value);
 	}
-	ret = configdb_add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
+	
+	ret = configdb_add_ana_port_group(port->portid);
 	if (ret < 0) {
 		port_err(port, "cannot add ana group to port, error %d", ret);
 		configdb_del_port(port->portid);
@@ -112,7 +113,7 @@ int del_port(struct nofuse_port *port)
 		port_err(port, "port still running");
 		return -EBUSY;
 	}
-	ret = configdb_del_ana_group(port->portid, 1);
+	ret = configdb_del_ana_port_group(port->portid, 1);
 	if (ret < 0) {
 		port_err(port, "cannot delete ana group from port, error %d",
 			  ret);
@@ -120,23 +121,13 @@ int del_port(struct nofuse_port *port)
 	}
 	ret = configdb_del_port(port->portid);
 	if (ret < 0) {
-		configdb_add_ana_group(port->portid, 1, NVME_ANA_OPTIMIZED);
+		configdb_add_ana_port_group(port->portid);
 		return ret;
 	}
 	pthread_mutex_destroy(&port->ep_mutex);
 	list_del(&port->node);
 	free(port);
 	return 0;
-}
-
-int add_ana_group(int portid, int ana_grpid, int ana_state)
-{
-	return configdb_add_ana_group(portid, ana_grpid, ana_state);
-}
-
-int del_ana_group(int portid, int ana_grpid)
-{
-	return configdb_del_ana_group(portid, ana_grpid);
 }
 
 static int start_listener(struct nofuse_port *port)

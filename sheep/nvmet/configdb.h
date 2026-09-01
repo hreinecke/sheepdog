@@ -36,13 +36,15 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, uint32_t nsid,
 			       int ana_grpid);
 int configdb_del_namespace(const char *subsysnqn, uint32_t nsid);
 
-int configdb_add_ana_group(unsigned int portid, int grpid, int ana_state);
-int configdb_count_ana_groups(const char *port, int *num);
-int configdb_get_ana_group(unsigned int portid, const char *ana_grpid,
-			int *ana_state);
-int configdb_set_ana_group(unsigned int portid, const char *ana_grpid,
-			int ana_state);
-int configdb_del_ana_group(unsigned int portid, int grpid);
+int configdb_add_ana_group(unsigned int grpid);
+int configdb_del_ana_group(unsigned int grpid);
+
+int configdb_add_ana_port_group(unsigned int portid);
+int configdb_get_ana_port_group(unsigned int portid, const char *ana_grpid,
+				int *ana_state);
+int configdb_set_ana_port_group(unsigned int portid, const char *ana_grpid,
+				int ana_state);
+int configdb_del_ana_port_group(unsigned int portid, int grpid);
 
 int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn);
 int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts);

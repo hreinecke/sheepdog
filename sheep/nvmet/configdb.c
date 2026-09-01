@@ -19,25 +19,25 @@ static sqlite3 *configdb_db;
 
 #define COMMIT_TRANSACTION \
 	_ret = sql_exec_simple("COMMIT TRANSACTION;");	\
-	if (_ret) {						\
-		fprintf(stderr, "%s: commit failed, "		\
-			"database inconsistent.\n", __func__);	\
+	if (_ret) {					\
+		sd_err("%s: commit failed, "		\
+		       "database inconsistent.", __func__);	\
 		return _ret;					\
 	}
 
 #define ROLLBACK_TRANSACTION \
 	_ret = sql_exec_simple("ROLLBACK TRANSACTION;");	\
 	if (_ret) {						\
-		fprintf(stderr, "%s: rollback failed, "		\
-			"database inconsistent.\n", __func__);	\
+		sd_err("%s: rollback failed, "			\
+		       "database inconsistent.", __func__);	\
 		return _ret;					\
 	}
 
 static int sql_exec_error(int ret, const char *sql, char *errmsg)
 {
 	if (ret != SQLITE_OK) {
-		fprintf(stderr, "SQL error executing %s\n", sql);
-		fprintf(stderr, "SQL error: %s\n", errmsg);
+		sd_err("SQL error executing %s", sql);
+		sd_err("SQL error: %s", errmsg);
 		sqlite3_free(errmsg);
 		ret = (ret == SQLITE_BUSY) ? -EBUSY : -EINVAL;
 	} else
@@ -47,18 +47,22 @@ static int sql_exec_error(int ret, const char *sql, char *errmsg)
 
 static int sql_simple_cb(void *unused, int argc, char **argv, char **colname)
 {
-	   int i;
+	int i, off = 0;
+	char *line;
 
-	   for (i = 0; i < argc; i++) {
-		   printf("%s ", colname[i]);
-	   }
-	   printf("\n");
-	   for (i = 0; i < argc; i++) {
-		   printf("%s ",
-			  argv[i] ? argv[i] : "NULL");
-	   }
-	   printf("\n");
-	   return 0;
+	line = malloc(1024);
+	for (i = 0; i < argc; i++) {
+		off += sprintf(line + off, "%s ", colname[i]);
+	}
+	sd_debug("%s", line);
+	off = 0;
+	for (i = 0; i < argc; i++) {
+		off += sprintf(line + off, "%s ",
+			       argv[i] ? argv[i] : "NULL");
+	}
+	sd_debug("%s", line);
+	free(line);
+	return 0;
 }
 
 static int sql_exec_simple(const char *sql)
@@ -91,8 +95,8 @@ static int sql_int_value_cb(void *argp, int argc, char **argv, char **colname)
 		char *eptr = NULL;
 
 		if (strcmp(parm->col, colname[i])) {
-			printf("%s: ignore col %s\n", __func__,
-			       colname[i]);
+			sd_warn("%s: ignore col %s", __func__,
+				colname[i]);
 			continue;
 		}
 		if (!argv[i]) {
@@ -127,8 +131,8 @@ static int sql_exec_int(const char *sql, const char *col, int *value)
 		parm.done = -ret;
 	}
 	if (parm.done < 0)
-		fprintf(stderr, "value error for '%s': %s\n", col,
-			strerror(-parm.done));
+		sd_err("value error for '%s': %s", col,
+		       strerror(-parm.done));
 	else if (parm.done > 0) {
 		if (value)
 			*value = parm.val;
@@ -158,8 +162,8 @@ static int sql_str_value_cb(void *argp, int argc, char **argv, char **colname)
 
 	for (i = 0; i < argc; i++) {
 		if (strcmp(parm->col, colname[i])) {
-			printf("%s: ignore col %s\n", __func__,
-			       colname[i]);
+			sd_warn("%s: ignore col %s", __func__,
+				colname[i]);
 			continue;
 		}
 		if (parm->val) {
@@ -190,8 +194,8 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 		parm.done = ret;
 	}
 	if (parm.done < 0)
-		fprintf(stderr, "value error for '%s': %s\n", col,
-			strerror(-parm.done));
+		sd_err("value error for '%s': %s", col,
+		       strerror(-parm.done));
 	else if (parm.done > 0)
 		parm.done = 0;
 	else
@@ -675,7 +679,7 @@ int configdb_set_namespace_attr(const char *subsysnqn, uint32_t nsid,
 	if (ret < 0)
 		goto rollback;
 	if (sqlite3_changes(configdb_db) == 0) {
-		printf("%s: no rows modified\n", __func__);
+		sd_warn("%s: no rows modified", __func__);
 		goto done;
 	}
 done:
@@ -736,8 +740,8 @@ int configdb_set_namespace_anagrp(const char *subsysnqn, uint32_t nsid,
 	if (ret < 0)
 		goto rollback;
 	if (new_ana_grpid != ana_grpid) {
-		printf("%s: ana group id %d should be %d\n",
-		       __func__, new_ana_grpid, ana_grpid);
+		sd_warn("%s: ana group id %d should be %d",
+			__func__, new_ana_grpid, ana_grpid);
 		ret = -ENOENT;
 	}
 	COMMIT_TRANSACTION;
@@ -776,7 +780,7 @@ int configdb_del_namespace(const char *subsysnqn, uint32_t nsid)
 	if (ret < 0)
 		goto rollback;
 	if (sqlite3_changes(configdb_db) == 0) {
-		printf("%s: no rows deleted\n", __func__);
+		sd_warn("%s: no rows deleted", __func__);
 		ret = -ENOENT;
 		goto done;
 	}
@@ -845,7 +849,7 @@ int configdb_add_port(unsigned int portid)
 	int ret;
 
 	if (!portid) {
-		fprintf(stderr, "no port id specified\n");
+		sd_err("no port id specified");
 		return -EINVAL;
 	}
 
@@ -960,7 +964,36 @@ static int raise_ana_port_chg_aen(unsigned int portid)
 	return ret;
 }
 
-int configdb_add_ana_group(unsigned int portid, int grpid, int ana_state)
+int configdb_add_ana_group(unsigned int grpid)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, "INSERT INTO ana_goups (id) VALUES ('%d');",
+		       grpid);
+
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
+int configdb_del_ana_group(unsigned int grpid)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, "DELETE FROM ana_goups WHERE id = '%d';",
+		       grpid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
+	free(sql);
+	return ret;
+}
+
+int configdb_add_ana_port_group(unsigned int portid)
 {
 	char *sql;
 	int ret;
@@ -969,35 +1002,32 @@ int configdb_add_ana_group(unsigned int portid, int grpid, int ana_state)
 		       "INSERT INTO ana_port_group (ana_group_id, port_id, ana_state, ctime) "
 		       "SELECT ag.id, p.id, '%d', CURRENT_TIMESTAMP "
 		       "FROM ports AS p, ana_groups AS ag "
-		       "WHERE p.id = '%d' AND ag.id = '%d';",
-		       ana_state, portid, grpid);
+		       "WHERE p.id = '%d' AND ag.id = p.id;",
+		       NVME_ANA_OPTIMIZED, portid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
 	free(sql);
+
+	ret = asprintf(&sql,
+		       "INSERT INTO ana_port_group (ana_group_id, port_id, ana_state, ctime) "
+		       "SELECT ag.id, p.id, '%d', CURRENT_TIMESTAMP "
+		       "FROM ports AS p, ana_groups AS ag "
+		       "WHERE p.id = '%d' AND ag.id != p.id;",
+		       NVME_ANA_NONOPTIMIZED, portid);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_simple(sql);
+	free(sql);
+
+	sql_exec_simple("SELECT * FROM ana_port_group;");
+
 	raise_ana_port_chg_aen(portid);
 	return ret;
 }
 
-int configdb_count_ana_groups(const char *port, int *num)
-{
-	char *sql;
-	int ret;
-
-	ret = asprintf(&sql,
-		       "SELECT count(ap.oid) AS num FROM ana_port_group AS ap "
-		       "INNER JOIN ports AS p ON p.id = ap.port_id "
-		       "WHERE p.id = '%s';", port);
-	if (ret < 0)
-		return ret;
-	ret = sql_exec_int(sql, "num", num);
-	free(sql);
-
-	return ret;
-}
-
-int configdb_get_ana_group(unsigned int portid, const char *ana_grpid,
-			   int *ana_state)
+int configdb_get_ana_port_group(unsigned int portid, const char *ana_grpid,
+				int *ana_state)
 {
 	int ret;
 	char *sql;
@@ -1015,8 +1045,8 @@ int configdb_get_ana_group(unsigned int portid, const char *ana_grpid,
 	return ret;
 }
 
-int configdb_set_ana_group(unsigned int portid, const char *ana_grpid,
-			   int ana_state)
+int configdb_set_ana_port_group(unsigned int portid, const char *ana_grpid,
+				int ana_state)
 {
 	int ret;
 	char *sql;
@@ -1039,7 +1069,7 @@ int configdb_set_ana_group(unsigned int portid, const char *ana_grpid,
 	return 0;
 }
 
-int configdb_del_ana_group(unsigned int portid, int grpid)
+int configdb_del_ana_port_group(unsigned int portid, int grpid)
 {
 	char *sql;
 	int ret;
@@ -1261,8 +1291,8 @@ int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 	ret = sql_exec_int(sql, "subsys_num", &num);
 	free(sql);
 	if (!ret && num > 0) {
-		printf("host %s allowed from subsys %s\n",
-		       hostnqn, subsysnqn);
+		sd_debug("host %s allowed from subsys %s",
+			 hostnqn, subsysnqn);
 		return num;
 	}
 	ret = asprintf(&sql,
@@ -1281,8 +1311,8 @@ int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 	if (ret < 0)
 		return ret;
 	if (num > 0)
-		printf("any host allowed from subsys %s\n",
-		       subsysnqn);
+		sd_debug("any host allowed from subsys %s",
+			 subsysnqn);
 	return num;
 }
 
@@ -1299,7 +1329,7 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 	struct nvmf_disc_rsp_page_entry *entry;
 
 	if (!argp) {
-		fprintf(stderr, "%s: Invalid parameter\n", __func__);
+		sd_err("%s: Invalid parameter", __func__);
 		return 0;
 	}
 	if (!parm->buffer)
@@ -1397,7 +1427,7 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 					NVMF_TCP_SECTYPE_NONE;
 			}
 		} else {
-			fprintf(stderr, "skip discovery type '%s'\n",
+			sd_warn("skip discovery type '%s'",
 				colname[i]);
 		}
 	}
@@ -1414,8 +1444,8 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 			entry->adrfam = NVMF_ADDR_FAMILY_IP4;
 	}
 	if (!strlen(entry->traddr)) {
-		fprintf(stderr, "Empty discovery record (%d, %d)\n",
-			entry->portid, entry->trtype);
+		sd_err("Empty discovery record (%d, %d)",
+		       entry->portid, entry->trtype);
 		return 0;
 	}
 next:
@@ -1456,18 +1486,18 @@ int configdb_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len)
 		       "WHERE h.nqn LIKE '%s';", hostnqn);
 	if (ret < 0)
 		return ret;
-	printf("Display disc entries for %s\n", hostnqn);
+	sd_debug("Display disc entries for %s", hostnqn);
 	ret = sqlite3_exec(configdb_db, sql, sql_disc_entry_cb,
 			   &parm, &errmsg);
 	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
-	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
+	sd_debug("disc entries: cur %d len %d", parm.cur, parm.len);
 
-	printf("Display disc entries for any host\n");
+	sd_debug("Display disc entries for any host");
 	ret = sqlite3_exec(configdb_db, any_disc_entry_sql,
 			   sql_disc_entry_cb, &parm, &errmsg);
 	ret = sql_exec_error(ret, any_disc_entry_sql, errmsg);
-	printf("disc entries: cur %d len %d\n", parm.cur, parm.len);
+	sd_debug("disc entries: cur %d len %d", parm.cur, parm.len);
 	return parm.cur;
 }
 
@@ -1558,7 +1588,7 @@ static int ns_list_cb(void *argp, int argc, char **argv, char **col)
 	int i;
 
 	if (!argp) {
-		fprintf(stderr, "%s: Invalid parameter\n", __func__);
+		sd_warn("%s: Invalid parameter", __func__);
 		return 0;
 	}
 
@@ -1575,8 +1605,8 @@ static int ns_list_cb(void *argp, int argc, char **argv, char **col)
 
 			_nsid = strtoul(argv[i], &eptr, 10);
 			if (argv[i] == eptr) {
-				printf("%s: parsing error on 'nsid'\n",
-				       __func__);
+				sd_warn("%s: parsing error on 'nsid'",
+					__func__);
 				_nsid = 0;
 				continue;
 			}
@@ -1620,7 +1650,7 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 	unsigned int ana_state = 0xff, chgcnt = 0, num = 0;
 
 	if (!argp) {
-		fprintf(stderr, "%s: Invalid parameter\n", __func__);
+		sd_err("%s: Invalid parameter", __func__);
 		return 0;
 	}
 
@@ -1634,8 +1664,8 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 		if (!strcmp(col[i], "ana_state")) {
 			ana_state = strtoul(argv[i], &eptr, 10);
 			if (argv[i] == eptr) {
-				printf("%s: parsing error on 'state'\n",
-				       __func__);
+				sd_warn("%s: parsing error on 'state'",
+					__func__);
 				ana_state = 0xff;
 				continue;
 			}
@@ -1643,16 +1673,16 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 		if (!strcmp(col[i], "chgcnt")) {
 			chgcnt = strtoul(argv[i], &eptr, 10);
 			if (argv[i] == eptr) {
-				printf("%s: parsing error on 'chgcnt'\n",
-				       __func__);
+				sd_warn("%s: parsing error on 'chgcnt'",
+					__func__);
 				continue;
 			}
 		}
 		if (!strcmp(col[i], "num")) {
 			num = strtoul(argv[i], &eptr, 10);
 			if (argv[i] == eptr) {
-				printf("%s: parsing error on 'nsid'\n",
-				       __func__);
+				sd_warn("%s: parsing error on 'nsid'",
+					__func__);
 				num = 0;
 				continue;
 			}
@@ -1704,8 +1734,8 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			continue;
 
 		grp_desc->grpid = htole16(grpid);
-		printf("%s: grpid %u %d nsids state %d\n",
-		       __func__, grpid, nnsids, grp_desc->state);
+		sd_debug("%s: grpid %u %d nsids state %d",
+			 __func__, grpid, nnsids, grp_desc->state);
 
 		parm.len -= sizeof(struct nvme_ana_group_desc);
 		parm.buffer = (uint8_t *)grp_desc->nsids;
@@ -1735,7 +1765,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			break;
 	}
 	hdr->ngrps = htole16(ngrps);
-	printf("%s: %d ana groups\n", __func__, ngrps);
+	sd_debug("%s: %d ana groups", __func__, ngrps);
 	return parm.len;
 }
 
@@ -1788,32 +1818,19 @@ rollback:
 
 int configdb_open(const char *filename)
 {
-	int ret, i;
+	int ret;
 
 	ret = sqlite3_open(filename, &configdb_db);
 	if (ret) {
-		fprintf(stderr, "Can't open database: %s\n",
-			sqlite3_errmsg(configdb_db));
+		sd_err("Can't open database: %s",
+		       sqlite3_errmsg(configdb_db));
 		sqlite3_close(configdb_db);
 		return -ENOENT;
 	}
 	ret = configdb_init();
 	if (ret) {
-		fprintf(stderr, "Can't initialize database, error %d\n", ret);
+		sd_err("Can't initialize database, error %d", ret);
 		sqlite3_close(configdb_db);
-	}
-	for (i = 0; i < MAX_ANAGRPID; i++) {
-		char *sql;
-
-		ret = asprintf(&sql,
-			       "INSERT INTO ana_groups (id) VALUES ('%d');",
-			       i + 1);
-		if (ret < 0)
-			break;
-		ret = sql_exec_simple(sql);
-		free(sql);
-		if (ret < 0)
-			break;
 	}
 	return ret;
 }
