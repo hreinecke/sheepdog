@@ -26,6 +26,7 @@
 
 #ifdef HAVE_NVMET
 extern int nofuse_init(const char *traddr, int trsvcid);
+extern void nofuse_exit(void);
 #endif
 
 #define EPOLL_SIZE 4096
@@ -1402,6 +1403,9 @@ cleanup_pid_file:
 		unlink(pid_file);
 
 cleanup_journal:
+	#ifdef HAVE_NVMET
+	nofuse_exit();
+	#endif
 	if (uatomic_is_true(&sys->use_journal)) {
 		sd_info("cleaning journal file");
 		clean_journal_file(jpath);

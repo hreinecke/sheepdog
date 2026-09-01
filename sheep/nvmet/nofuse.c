@@ -335,3 +335,17 @@ int nofuse_init(const char *traddr, int trsvcid)
 
 	return 0;
 }
+
+void nofuse_exit(void)
+{
+	struct nofuse_port *port, *_port;
+
+	stopped = 1;
+
+	list_for_each_entry_safe(port, _port, &port_linked_list, node) {
+		stop_port(port);
+		del_port(port);
+	}
+
+	configdb_close("nofuse.sqlite");
+}

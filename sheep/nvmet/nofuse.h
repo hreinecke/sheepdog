@@ -280,4 +280,5 @@ int enable_namespace(const char *subsysnqn, uint32_t nsid);
 int disable_namespace(const char *subsysnqn, uint32_t nsid);
 
 int nofuse_init(const char *traddr, int trsvcid);
+void nofuse_exit(void);
 #endif
