@@ -216,7 +216,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
 	"attr_version VARCHAR(256), attr_type INT DEFAULT 3, "
-	"attr_qid_max INT, attr_pi_enable INT, "
+	"attr_qid_max INT, attr_vid INT UNIQUE NOT NULL, "
 	"attr_cntlid_min INT DEFAULT 1, attr_cntlid_max INT DEFAULT 65519, "
 	"cntlid_next INT DEFAULT 1, ctime TIME, atime TIME, mtime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
@@ -428,20 +428,24 @@ int configdb_del_host(const char *nqn)
 	return ret;
 }
 
-int configdb_add_subsys(const char *subsysnqn, int type)
+int configdb_add_subsys(const char *subsysnqn, uint32_t subsys_id, int type)
 {
 	char *sql;
+	char serial[32];
 	int ret, allow_any = 0;
 
+	sprintf(serial, "SHEEPDOG%06lx", subsys_id);
 	if (type == NVME_NQN_CUR)
 		allow_any = 1;
 	ret = asprintf(&sql,
 		       "INSERT INTO subsystems "
-		       "(nqn, attr_model, attr_version, attr_ieee_oui, attr_firmware, "
+		       "(nqn, attr_vid, attr_model, attr_serial, "
+		       "attr_version, attr_ieee_oui, attr_firmware, "
 		       "attr_allow_any_host, attr_type, attr_qid_max, ctime) "
-		       "VALUES ('%s', 'nofuse', '2.4', '851255', '%s', "
-		       "'%d', '%d', '%d', CURRENT_TIMESTAMP);",
-		       subsysnqn, firmware_rev, allow_any, type, NVMF_NUM_QUEUES);
+		       "VALUES ('%s', '%d', 'sheepdog', '%s', '2.4', "
+		       "'851255', '%s', '%d', '%d', '%d', CURRENT_TIMESTAMP);",
+		       subsysnqn, subsys_id, serial, firmware_rev, allow_any,
+		       type, NVMF_NUM_QUEUES);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -529,14 +533,14 @@ int configdb_set_subsys_attr(const char *nqn, const char *attr,
 	return ret;
 }
 
-int configdb_del_subsys(const char *nqn)
+int configdb_del_subsys(uint32_t subsys_id)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql,
-		       "DELETE FROM subsystems WHERE nqn = '%s';",
-		       nqn);
+		       "DELETE FROM subsystems WHERE attr_vid = '%d';",
+		       subsys_id);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -571,7 +575,7 @@ static int raise_aen_cb(void *argp, int argc, char **argv, char **col)
 	return 0;
 }
 
-static int raise_ns_chg_aen(const char *subsysnqn, int nsid)
+static int raise_ns_chg_aen(uint32_t subsys_id, uint32_t nsid)
 {
 	char *sql, *errmsg;
 	int type = NVME_AER_NOTICE_NS_CHANGED;
@@ -581,8 +585,8 @@ static int raise_ns_chg_aen(const char *subsysnqn, int nsid)
 		       "SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
 		       "INNER JOIN subsystems AS s ON c.subsys_id = s.oid "
 		       "INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
-		       "WHERE s.nqn = '%s' AND n.nsid = '%d';",
-		       subsysnqn, nsid);
+		       "WHERE s.attr_vid = '%d' AND n.nsid = '%d';",
+		       subsys_id, nsid);
 	if (ret < 0)
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, raise_aen_cb, &type, &errmsg);
@@ -591,8 +595,8 @@ static int raise_ns_chg_aen(const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int configdb_add_namespace(const char *subsysnqn, uint32_t subsys_id,
-			   uint32_t nsid, uuid_t uuid, uint32_t agid)
+int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
+			   uuid_t uuid, uint32_t agid)
 {
 	char *sql;
 	char uuid_str[65], nguid_str[33];
@@ -606,8 +610,8 @@ int configdb_add_namespace(const char *subsysnqn, uint32_t subsys_id,
 		       "subsys_id, ana_group_id, ctime) "
 		       "SELECT '%s', '%s', '%u', s.oid, ag.id, CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
-		       "WHERE s.nqn = '%s' AND s.attr_type == '2' AND ag.id = '%u';",
-		       uuid_str, nguid_str, nsid, subsysnqn, agid);
+		       "WHERE s.attr_vid = '%d' AND s.attr_type == '2' AND ag.id = '%u';",
+		       uuid_str, nguid_str, nsid, subsys_id, agid);
 	if (ret < 0)
 		return ret;
 
@@ -615,7 +619,7 @@ int configdb_add_namespace(const char *subsysnqn, uint32_t subsys_id,
 	free(sql);
 	if (ret < 0)
 		return ret;
-	ret = raise_ns_chg_aen(subsysnqn, nsid);
+	ret = raise_ns_chg_aen(subsys_id, nsid);
 	sql_exec_simple("SELECT * FROM ns_changed;");
 	return ret;
 }
@@ -637,7 +641,7 @@ int configdb_count_namespaces(const char *subsysnqn, int *num)
 	return ret;
 }
 
-int configdb_get_namespace_attr(const char *subsysnqn, uint32_t nsid,
+int configdb_get_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 				const char *attr, char *buf)
 {
 	int ret;
@@ -648,8 +652,8 @@ int configdb_get_namespace_attr(const char *subsysnqn, uint32_t nsid,
 	ret = asprintf(&sql,
 		       "SELECT ns.%s FROM namespaces AS n "
 		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
-		       "WHERE s.nqn = '%s' AND n.nsid = '%u';",
-		       attr, subsysnqn, nsid);
+		       "WHERE s.attr_vid = '%d' AND n.nsid = '%u';",
+		       attr, subsys_id, nsid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_str(sql, attr, buf);
@@ -657,7 +661,7 @@ int configdb_get_namespace_attr(const char *subsysnqn, uint32_t nsid,
 	return ret;
 }
 
-int configdb_set_namespace_attr(const char *subsysnqn, uint32_t nsid,
+int configdb_set_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 				const char *attr, const char *buf)
 {
 	int ret, _ret;
@@ -670,11 +674,11 @@ int configdb_set_namespace_attr(const char *subsysnqn, uint32_t nsid,
 		attr = "device_enable";
 	ret = asprintf(&sql,
 		       "UPDATE namespaces SET %s = '%s', mtime = CURRENT_TIMESTAMP FROM "
-		       "(SELECT n.nsid AS nsid, s.nqn AS nqn "
+		       "(SELECT n.nsid AS nsid, s.nqn AS nqn, s.attr_vid AS vid "
 		       "FROM namespaces AS n "
 		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id) AS sel "
-		       "WHERE sel.nqn = '%s' AND sel.nsid = '%u';",
-		       attr, buf, subsysnqn, nsid);
+		       "WHERE sel.vid = '%d' AND sel.nsid = '%u';",
+		       attr, buf, subsys_id, nsid);
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_simple(sql);
@@ -688,7 +692,7 @@ int configdb_set_namespace_attr(const char *subsysnqn, uint32_t nsid,
 done:
 	COMMIT_TRANSACTION;
 	if (!ret)
-		raise_ns_chg_aen(subsysnqn, nsid);
+		raise_ns_chg_aen(subsys_id, nsid);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;
@@ -763,7 +767,7 @@ rollback:
 	return ret;
 }
 
-int configdb_del_namespace(const char *subsysnqn, uint32_t nsid)
+int configdb_del_namespace(uint32_t subsys_id, uint32_t nsid)
 {
 	int ret, _ret;
 	char *sql;
@@ -773,8 +777,8 @@ int configdb_del_namespace(const char *subsysnqn, uint32_t nsid)
 		return ret;
 	ret = asprintf(&sql,
 		       "DELETE FROM namespaces AS n WHERE n.subsys_id IN "
-		       "(SELECT oid FROM subsystems WHERE nqn = '%s') AND "
-		       "n.nsid = '%u';", subsysnqn, nsid);
+		       "(SELECT oid FROM subsystems WHERE attr_vid = '%d') AND "
+		       "n.nsid = '%u';", subsys_id, nsid);
 	if (ret < 0)
 		goto rollback;
 
@@ -790,7 +794,7 @@ int configdb_del_namespace(const char *subsysnqn, uint32_t nsid)
 done:
 	COMMIT_TRANSACTION;
 	if (!ret)
-		raise_ns_chg_aen(subsysnqn, nsid);
+		raise_ns_chg_aen(subsys_id, nsid);
 	return ret;
 rollback:
 	ROLLBACK_TRANSACTION;

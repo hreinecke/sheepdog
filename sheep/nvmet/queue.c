@@ -119,6 +119,22 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 			ctrl->max_queues = tmp;
 		}
 	}
+	ret = configdb_get_subsys_attr(nqn, "attr_vid", value);
+	if (ret < 0) {
+		ep_err(ep, "error fetching attr_vid");
+		ctrl->subsys_vid = 0;
+	} else {
+		unsigned long tmp;
+		char *eptr = NULL;
+
+		tmp = strtoul(value, &eptr, 10);
+		if (tmp == ULONG_MAX || value == eptr) {
+			ep_err(ep, "invalid attr_vid value '%s'", value);
+			ctrl->subsys_vid = NVMF_NUM_QUEUES;
+		} else {
+			ctrl->subsys_vid = tmp;
+		}
+	}
 	ep_info(ep, "using %d queues", ctrl->max_queues);
 	strcpy(ctrl->hostnqn, hostnqn);
 	strcpy(ctrl->subsysnqn, nqn);

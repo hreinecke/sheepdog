@@ -702,4 +702,12 @@ void free_request(struct request *req);
 void xio_send_reply(struct client_info *ci);
 #endif
 
+#ifdef HAVE_NVMET
+int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn);
+int nvmet_unregister_subsystem(uint32_t subsys_id);
+int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
+			     struct sd_inode_header *inode);
+int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid);
+#endif
+
 #endif

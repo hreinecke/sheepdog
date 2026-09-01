@@ -16,25 +16,25 @@ int configdb_count_table(const char *tbl, int *num);
 int configdb_add_host(const char *nqn);
 int configdb_del_host(const char *nqn);
 
-int configdb_add_subsys(const char *nqn, int type);
+int configdb_add_subsys(const char *nqn, uint32_t id, int type);
 int configdb_get_discovery_nqn(char *nqn);
 int configdb_set_discovery_nqn(const char *nqn);
 int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf);
 int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf);
-int configdb_del_subsys(const char *nqn);
+int configdb_del_subsys(uint32_t id);
 
-int configdb_add_namespace(const char *subsysnqn, uint32_t subsys_id,
-			   uint32_t nsid, uuid_t uuid, uint32_t agid);
+int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
+			   uuid_t uuid, uint32_t agid);
 int configdb_count_namespaces(const char *subsysnqn, int *num);
-int configdb_get_namespace_attr(const char *subsysnqn, uint32_t nsid,
-			     const char *attr, char *buf);
-int configdb_set_namespace_attr(const char *subsysnqn, uint32_t nsid,
-			     const char *attr, const char *buf);
+int configdb_get_namespace_attr(uint32_t subsys_id, uint32_t nsid,
+				const char *attr, char *buf);
+int configdb_set_namespace_attr(uint32_t subsys_id, uint32_t nsid,
+				const char *attr, const char *buf);
 int configdb_get_namespace_anagrp(const char *subsysnqn, uint32_t nsid,
 			       int *ana_grpid);
 int configdb_set_namespace_anagrp(const char *subsysnqn, uint32_t nsid,
 			       int ana_grpid);
-int configdb_del_namespace(const char *subsysnqn, uint32_t nsid);
+int configdb_del_namespace(uint32_t subsys_id, uint32_t nsid);
 
 int configdb_add_ana_group(unsigned int grpid);
 int configdb_del_ana_group(unsigned int grpid);

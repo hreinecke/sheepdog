@@ -109,24 +109,88 @@ static int register_ana_groups(unsigned int agid)
 	return ret;
 }
 
+int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
+{
+	int ret;
+	char value[8];
+
+	sd_debug("register subsystem '%s' (%06x)", subsysnqn, subsys_id);
+	ret = configdb_add_subsys(subsysnqn, subsys_id, NVME_NQN_NVM);
+	if (ret < 0) {
+		sd_warn("Failed to register subsystem '%s'", subsysnqn);
+		return ret;
+	}
+	sprintf(value, "1");
+	ret = configdb_set_subsys_attr(subsysnqn,
+				       "attr_allow_any_host", value);
+	if (ret) {
+		sd_warn("failed to set 'attr_allow_any_host'");
+		configdb_del_subsys(subsys_id);
+	}
+	return ret;
+}
+
+int nvmet_unregister_subsystem(uint32_t subsys_id)
+{
+	sd_debug("unregister subsystem %06x", subsys_id);
+	return configdb_del_subsys(subsys_id);
+}
+
+int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
+			     struct sd_inode_header *inode)
+{
+	struct vnode_info *vinfo = get_vnode_info();
+	struct sd_vnode *vnode;
+	uint64_t oid;
+	char value[64];
+	int ret;
+
+	oid = vid_to_vdi_oid(nsid);
+	vnode = oid_to_first_vnode(oid, &vinfo->vroot);
+
+	sd_debug("register namespace %06x ('%s')",
+		 nsid, inode->name);
+	ret = configdb_add_namespace(subsys_id, nsid, inode->uuid,
+				     vnode->node->zone + 1);
+	if (ret < 0) {
+		sd_warn("Failed to add namespace '%06x'", nsid);
+		return ret;
+	}
+	sprintf(value, "%lx", inode->vdi_size);
+	ret = configdb_set_namespace_attr(subsys_id, nsid,
+					  "device_size", value);
+	return ret;
+}
+
+int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
+{
+	sd_debug("unregister namespace %06x", nsid);
+	return configdb_del_namespace(subsys_id, nsid);
+}
+
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
 
-static void register_namespaces(char *subsysnqn, unsigned int subsys_id,
-				unsigned int agid, unsigned long *vdi_inuse,
+static void register_namespaces(char *subsysnqn, uint32_t subsys_id,
+				unsigned long *vdi_inuse,
 				unsigned long *vdi_deleted)
 {
+	struct vnode_info *vinfo = get_vnode_info();
 	unsigned long nsid;
 	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
 
 	FOR_EACH_VDI(nsid, vdi_inuse) {
+		struct sd_vnode *vnode;
 		char vdi_size[64];
 		uint64_t oid;
+		uint32_t agid;
 		int ret;
 
 		if (test_bit(nsid, vdi_deleted))
 			continue;
 
 		oid = vid_to_vdi_oid(nsid);
+		vnode = oid_to_first_vnode(oid, &vinfo->vroot);
+		agid = vnode->node->zone + 1;
 		ret = sd_read_object(oid, (char *)inode,
 				     SD_INODE_HEADER_SIZE, 0);
 		if (ret != SD_RES_SUCCESS) {
@@ -143,14 +207,14 @@ static void register_namespaces(char *subsysnqn, unsigned int subsys_id,
 
 		sd_debug("register namespace %06lx ('%s')",
 			 nsid, inode->name);
-		ret = configdb_add_namespace(subsysnqn, subsys_id,
-					     nsid, inode->uuid, agid);
+		ret = configdb_add_namespace(subsys_id, nsid,
+					     inode->uuid, agid);
 		if (ret < 0) {
 			sd_warn("Failed to add namespace '%06lx'", nsid);
 			continue;
 		}
 		sprintf(vdi_size, "%lx", inode->vdi_size);
-		ret = configdb_set_namespace_attr(subsysnqn, nsid,
+		ret = configdb_set_namespace_attr(subsys_id, nsid,
 					       "device_size", vdi_size);
 	}
 	free(inode);
@@ -189,7 +253,6 @@ static int register_subsystems(unsigned int agid)
 
 	FOR_EACH_VDI(nr, vdi_inuse) {
 		uint64_t oid;
-		char value[20];
 
 		if (test_bit(nr, vdi_deleted))
 			continue;
@@ -210,17 +273,12 @@ static int register_subsystems(unsigned int agid)
 		if (!vdi_is_acl(inode))
 			continue;
 
-		sd_debug("register subsystem '%s'", inode->name);
-		ret = configdb_add_subsys(inode->name, NVME_NQN_NVM);
-		if (ret < 0)
-			sd_warn("Failed add subsyste '%s'", inode->name);
-		sprintf(value, "SHEEPDOG%06lx", nr);
-		ret = configdb_set_subsys_attr(inode->name,
-					       "attr_serial", value);
-		sprintf(value, "1");
-		ret = configdb_set_subsys_attr(inode->name,
-					       "attr_allow_any_host", value);
-		register_namespaces(inode->name, nr, agid,
+		ret = nvmet_register_subsystem(nr, inode->name);
+		if (ret < 0) {
+			sd_warn("Failed add subsystem '%s'", inode->name);
+			continue;
+		}
+		register_namespaces(inode->name, nr,
 				   vdi_inuse, vdi_deleted);
 	}
 out:
@@ -280,7 +338,7 @@ static void *nofuse_main(void *arg)
 		goto out_close;
 	}
 
-	ret = configdb_add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
+	ret = configdb_add_subsys(NVME_DISC_SUBSYS_NAME, 0, NVME_NQN_CUR);
 	if (ret < 0) {
 		sd_err("failed to create default discovery subsystem");
 		goto out_close;
@@ -301,9 +359,11 @@ static void *nofuse_main(void *arg)
 	ret = start_port(port);
 	if (ret) {
 		sd_err("failed to start nvmet port");
+		goto out_close;
 	}
 
 	return NULL;
+
 out_close:
 	configdb_close(ctx->dbname);
 out_pop:

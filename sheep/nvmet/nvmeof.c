@@ -443,7 +443,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 	uint8_t *desc_list_save = desc_list;
 
 	memset(desc_list, 0, len);
-	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_vid, nsid,
 					  "device_uuid", uid_str);
 	if (ret < 0)
 		return ret;
@@ -466,7 +466,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 		ctrl_info(ep, "no space for nguid");
 		goto parse_eui64;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_vid, nsid,
 					  "device_nguid", uid_str);
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
@@ -490,7 +490,7 @@ parse_eui64:
 		ctrl_info(ep, "no space for eu64");
 		goto done;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsysnqn, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_vid, nsid,
 					  "device_eui64", uid_str);
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
