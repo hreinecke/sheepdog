@@ -27,12 +27,14 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 {
 	struct nofuse_ctrl *ctrl = NULL;
 	char nqn[MAX_NQN_SIZE + 1], value[16];
+	bool is_discovery = false;
 	int ret = 0;
 
 	if (!strcmp(subsysnqn, NVME_DISC_SUBSYS_NAME)) {
 		ret = configdb_get_discovery_nqn(nqn);
 		if (ret < 0)
 			strcpy(nqn, subsysnqn);
+		is_discovery = true;
 	} else
 		strcpy(nqn, subsysnqn);
 
@@ -73,7 +75,8 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		goto out_unlock;
 	}
 
-	if (configdb_check_allowed_host(hostnqn, nqn, ep->port->portid) <= 0) {
+	if (!is_discovery &&
+	    configdb_check_allowed_host(hostnqn, nqn, ep->port->portid) <= 0) {
 		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
 		       hostnqn, nqn);
 		ret = -EPERM;

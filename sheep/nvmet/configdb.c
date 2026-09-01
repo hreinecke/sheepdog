@@ -262,7 +262,7 @@ static const char *init_sql[NUM_TABLES] = {
 	/* subsys_ctrl view */
 	"CREATE VIEW subsys_ctrl AS "
 	"SELECT s.oid AS subsys_id, s.nqn AS subsys_nqn, "
-	"c.id AS ctrl_id, c.cntlid AS cntlid "
+	"c.oid AS ctrl_id, c.cntlid AS cntlid "
 	"FROM controllers AS c "
 	"INNER JOIN subsystems AS s ON c.subsys_id = s.oid;"
 	/* subsys_ns_add trigger */
@@ -670,7 +670,7 @@ int configdb_set_namespace_attr(const char *subsysnqn, uint32_t nsid,
 		attr = "device_enable";
 	ret = asprintf(&sql,
 		       "UPDATE namespaces SET %s = '%s', mtime = CURRENT_TIMESTAMP FROM "
-		       "(SELECT ns.nsid AS nsid, s.nqn AS nqn "
+		       "(SELECT n.nsid AS nsid, s.nqn AS nqn "
 		       "FROM namespaces AS n "
 		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id) AS sel "
 		       "WHERE sel.nqn = '%s' AND sel.nsid = '%u';",
@@ -859,7 +859,7 @@ int configdb_add_port(unsigned int portid, const char *traddr,
 
 	ret = asprintf(&sql,
 		       "INSERT INTO ports (id, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
-		       " VALUES ('%d', '%s', '%s', '%u'CURRENT_TIMESTAMP);",
+		       " VALUES ('%d', '%s', '%s', '%u', CURRENT_TIMESTAMP);",
 		       portid, traddr, adrfam, trsvcid);
 	if (ret < 0)
 		return ret;
@@ -974,7 +974,7 @@ int configdb_add_ana_group(unsigned int grpid)
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, "INSERT INTO ana_goups (id) VALUES ('%d');",
+	ret = asprintf(&sql, "INSERT INTO ana_groups (id) VALUES ('%d');",
 		       grpid);
 
 	if (ret < 0)
@@ -989,7 +989,7 @@ int configdb_del_ana_group(unsigned int grpid)
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, "DELETE FROM ana_goups WHERE id = '%d';",
+	ret = asprintf(&sql, "DELETE FROM ana_groups WHERE id = '%d';",
 		       grpid);
 	if (ret < 0)
 		return ret;

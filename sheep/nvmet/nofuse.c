@@ -82,11 +82,11 @@ out:
 static int get_local_zone(void)
 {
 	struct vnode_info *vinfo = get_vnode_info();
-	struct sd_vnode *vnode;
+	struct sd_node *node;
 
-	rb_for_each_entry(vnode, &vinfo->vroot, rb) {
-		if (vnode_is_local(vnode)) {
-			return vnode->node->zone;
+	rb_for_each_entry(node, &vinfo->nroot, rb) {
+		if (node_is_local(node)) {
+			return node->zone;
 		}
 	}
 	return -1;
@@ -95,15 +95,15 @@ static int get_local_zone(void)
 static int register_ana_groups(unsigned int agid)
 {
 	struct vnode_info *vinfo = get_vnode_info();
-	struct sd_vnode *vnode;
+	struct sd_node *node;
 	int ret = 0;
 
-	rb_for_each_entry(vnode, &vinfo->vroot, rb) {
-		int zone = vnode->node->zone;
+	rb_for_each_entry(node, &vinfo->nroot, rb) {
+		int grpid = node->zone + 1;
 
-		ret = configdb_add_ana_group(zone);
+		ret = configdb_add_ana_group(grpid);
 		if (ret < 0)
-			sd_warn("cannot register ANA group %u", zone);
+			sd_warn("cannot register ANA group %u", grpid);
 
 	}
 	return ret;
@@ -219,7 +219,7 @@ static int register_subsystems(unsigned int agid)
 					       "attr_serial", value);
 		sprintf(value, "1");
 		ret = configdb_set_subsys_attr(inode->name,
-					       "attr_allow_any", value);
+					       "attr_allow_any_host", value);
 		register_namespaces(inode->name, nr, agid,
 				   vdi_inuse, vdi_deleted);
 	}
@@ -259,6 +259,12 @@ static void *nofuse_main(void *arg)
 		sd_err("failed to find local node");
 		goto out_close;
 	}
+	/*
+	 * Zones are 0-based, but ana_groups.id (and the port id
+	 * below) must be nonzero, so shift into that id space here
+	 * once, consistently, for every use of 'agid' below.
+	 */
+	agid += 1;
 
 	ret = register_ana_groups(agid);
 	if (ret < 0) {
