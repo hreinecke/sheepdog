@@ -357,7 +357,8 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 	hdr_len = sizeof(struct nvme_tcp_hdr);
 	ret = recv(ep->sockfd, icreq, hdr_len, MSG_PEEK);
 	if (ret < 0) {
-		tcp_err(ep, "icreq header peek error %d", errno);
+		if (errno != EAGAIN)
+			tcp_err(ep, "icreq header peek error %d", errno);
 		return -errno;
 	}
 
