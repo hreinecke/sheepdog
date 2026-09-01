@@ -127,6 +127,7 @@ static int cluster_new_vdi(struct request *req)
 	rsp->vdi.vdi_id = vid;
 	rsp->vdi.copies = iocb.nr_copies;
 	rsp->vdi.block_size_shift = iocb.block_size_shift;
+	rsp->vdi.vdi_flags = iocb.vdi_flags;
 
 	return ret;
 }

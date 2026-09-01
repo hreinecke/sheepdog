@@ -2326,6 +2326,7 @@ int vdi_delete(const struct vdi_iocb *iocb, struct request *req)
 	if (ret != SD_RES_SUCCESS)
 		goto out;
 
+	req->rp.vdi.vdi_flags = info.vdi_flags;
 	ret = start_deletion(req, info.vid);
 out:
 	return ret;
