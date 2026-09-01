@@ -293,13 +293,19 @@ nodes_to_vnodes(struct rb_root *nroot, struct rb_root *vroot)
 		node_to_vnodes(n, vroot);
 }
 
-static inline void nodes_to_buffer(struct rb_root *nroot, void *buffer)
+static inline int nodes_to_buffer(struct rb_root *nroot,
+				   void *buffer, size_t buffer_len)
 {
 	struct sd_node *n, *buf = buffer;
+	size_t remaining = buffer_len;
 
 	rb_for_each_entry(n, nroot, rb) {
+		if (sizeof(*n) < remaining)
+			return SD_RES_BUFFER_SMALL;
 		memcpy(buf++, n, sizeof(*n));
+		remaining -= sizeof(*n);
 	}
+	return SD_RES_SUCCESS;
 }
 
 #define MAX_NODE_STR_LEN 256

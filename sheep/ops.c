@@ -620,6 +620,7 @@ static int cluster_force_recover_work(struct request *req)
 {
 	struct vnode_info *old_vnode_info;
 	uint32_t epoch = sys_epoch();
+	int ret;
 
 	/*
 	 * We should manually recover the cluster when
@@ -645,11 +646,12 @@ static int cluster_force_recover_work(struct request *req)
 
 	req->rp.epoch = epoch;
 	req->rp.data_length = sizeof(struct sd_node) * old_vnode_info->nr_nodes;
-	nodes_to_buffer(&old_vnode_info->nroot, req->data);
+	ret = nodes_to_buffer(&old_vnode_info->nroot, req->data,
+			      req->rp.data_length);
 
 	put_vnode_info(old_vnode_info);
 
-	return SD_RES_SUCCESS;
+	return ret;
 }
 
 static int cluster_force_recover_main(const struct sd_req *req,

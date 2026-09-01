@@ -265,8 +265,13 @@ int local_get_node_list(const struct sd_req *req, struct sd_rsp *rsp,
 	struct vnode_info *cur_vinfo = get_vnode_info();
 
 	if (cur_vinfo) {
+		int ret;
+
 		nr_nodes = cur_vinfo->nr_nodes;
-		nodes_to_buffer(&cur_vinfo->nroot, data);
+		ret = nodes_to_buffer(&cur_vinfo->nroot, data,
+				      req->data_length);
+		if (ret != SD_RES_SUCCESS)
+			return ret;
 		rsp->data_length = nr_nodes * sizeof(struct sd_node);
 		rsp->node.nr_nodes = nr_nodes;
 
@@ -760,7 +765,8 @@ int inc_and_log_epoch(void)
 	if (cur_vinfo) {
 		/* update cluster info to the latest state */
 		sys->cinfo.nr_nodes = cur_vinfo->nr_nodes;
-		nodes_to_buffer(&cur_vinfo->nroot, sys->cinfo.nodes);
+		nodes_to_buffer(&cur_vinfo->nroot, sys->cinfo.nodes,
+				sizeof(struct sd_node) * SD_MAX_NODES);
 
 		put_vnode_info(cur_vinfo);
 	} else

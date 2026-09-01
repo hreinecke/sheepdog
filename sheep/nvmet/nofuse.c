@@ -34,12 +34,58 @@ bool port_debug;
 struct nofuse_context {
 	char *traddr;
 	char *dbname;
+	struct sd_node *node_list;
+	int nr_nodes;
 	int trsvcid;
 	int debug;
 	int help;
 };
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
+struct sd_node *cur_nodes;
+
+static int lookup_nodes(struct sd_node **node_list)
+{
+	int ret;
+	unsigned int size, max_nodes = 16, nr_nodes;
+	struct sd_node *buf = NULL;
+	struct sd_node *ent;
+	struct sd_req req;
+	struct sd_rsp *rsp = (struct sd_rsp *)&req;
+
+retry:
+	size = sizeof(*ent) * max_nodes;
+	buf = xzalloc(size);
+	sd_init_req(&req, SD_OP_GET_NODE_LIST);
+	req.data_length = size;
+
+	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
+	if (ret < 0)
+		goto out;
+
+	if (rsp->result != SD_RES_SUCCESS) {
+		if (rsp->result == SD_RES_BUFFER_SMALL) {
+			free(buf);
+			max_nodes *= 2;
+			goto retry;
+		}
+		sd_err("Failed to get node list: %s",
+		       sd_strerror(rsp->result));
+		ret = -1;
+		goto out;
+	}
+
+	size = rsp->data_length;
+	nr_nodes = size / sizeof(*ent);
+	if (nr_nodes == 0)
+		sd_warn("There are no active sheep daemons");
+
+	*node_list = buf;
+	return nr_nodes;
+out:
+	free(buf);
+	return -1;
+}
 
 int lookup_namespace(struct nofuse_ctrl *ctrl, uint32_t nsid,
 		     struct nofuse_namespace *ns)
@@ -79,26 +125,13 @@ out:
 	return ret;
 }
 
-static int get_local_zone(void)
+static int register_ana_groups(struct nofuse_context *ctx,
+			       unsigned int agid)
 {
-	struct vnode_info *vinfo = get_vnode_info();
-	struct sd_node *node;
+	int i, ret = 0;
 
-	rb_for_each_entry(node, &vinfo->nroot, rb) {
-		if (node_is_local(node)) {
-			return node->zone;
-		}
-	}
-	return -1;
-}
-
-static int register_ana_groups(unsigned int agid)
-{
-	struct vnode_info *vinfo = get_vnode_info();
-	struct sd_node *node;
-	int ret = 0;
-
-	rb_for_each_entry(node, &vinfo->nroot, rb) {
+	for (i = 0; i < ctx->nr_nodes; i++) {
+		struct sd_node *node = ctx->node_list + i;
 		int grpid = node->zone + 1;
 
 		ret = configdb_add_ana_group(grpid);
@@ -312,19 +345,15 @@ static void *nofuse_main(void *arg)
 		goto out_pop;
 	}
 
-	agid = get_local_zone();
-	if (agid < 0) {
-		sd_err("failed to find local node");
-		goto out_close;
+	ret = lookup_nodes(&ctx->node_list);
+	if (ret < 0) {
+		sd_err("failed to get node list");
+		goto out_pop;
 	}
-	/*
-	 * Zones are 0-based, but ana_groups.id (and the port id
-	 * below) must be nonzero, so shift into that id space here
-	 * once, consistently, for every use of 'agid' below.
-	 */
-	agid += 1;
+	ctx->nr_nodes = ret;
+	agid = sys->this_node.zone + 1;
 
-	ret = register_ana_groups(agid);
+	ret = register_ana_groups(ctx, agid);
 	if (ret < 0) {
 		sd_err("failed to register ANA groups for port %d", agid);
 		goto out_close;

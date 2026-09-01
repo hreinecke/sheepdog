@@ -1417,8 +1417,8 @@ static void prepare_object_list(struct work *work)
 	struct recovery_list_work *rlw = container_of(rw,
 						      struct recovery_list_work,
 						      base);
-	int nr_nodes = rw->cur_vinfo->nr_nodes;
-	int start = random() % nr_nodes, i, end = nr_nodes;
+	int nr_nodes = rw->cur_vinfo->nr_nodes, nodes_len;
+	int start = random() % nr_nodes, i, end = nr_nodes, ret;
 	uint64_t *oids;
 	struct sd_node *nodes;
 
@@ -1428,9 +1428,13 @@ static void prepare_object_list(struct work *work)
 	sd_debug("%u", rw->epoch);
 	wait_get_vdis_done();
 
-	nodes = xmalloc(sizeof(struct sd_node) * nr_nodes);
-	nodes_to_buffer(&rw->cur_vinfo->nroot, nodes);
-
+	nodes_len = sizeof(struct sd_node) * nr_nodes;
+	nodes = xmalloc(nodes_len);
+	ret = nodes_to_buffer(&rw->cur_vinfo->nroot, nodes, nodes_len);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("cancelling recovery, node buffer too small");
+		goto out;
+	}
 	if (sys->cinfo.flags & SD_CLUSTER_FLAG_AVOID_DISKFULL
 	    && check_diskfull_possibility(rw->epoch,
 					  rw->cur_vinfo, nr_nodes, nodes)) {
