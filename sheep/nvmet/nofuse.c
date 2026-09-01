@@ -79,13 +79,93 @@ out:
 	return ret;
 }
 
+static int get_local_zone(void)
+{
+	struct vnode_info *vinfo = get_vnode_info();
+	struct sd_vnode *vnode;
+
+	rb_for_each_entry(vnode, &vinfo->vroot, rb) {
+		if (vnode_is_local(vnode)) {
+			return vnode->node->zone;
+		}
+	}
+	return -1;
+}
+
+static int register_ana_groups(unsigned int agid)
+{
+	struct vnode_info *vinfo = get_vnode_info();
+	struct sd_vnode *vnode;
+	int ret = 0;
+
+	rb_for_each_entry(vnode, &vinfo->vroot, rb) {
+		int zone = vnode->node->zone;
+		int ana_state = NVME_ANA_NONOPTIMIZED;
+
+		if (zone == agid)
+			ana_state = NVME_ANA_OPTIMIZED;
+
+		ret = configdb_add_ana_group(zone, zone, ana_state);
+		if (ret < 0) {
+			sd_warn("cannot register ANA group %u",
+				vnode->node->zone);
+		}
+	}
+	return ret;
+}
+
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
 
-static int register_subsystems(void)
+static void register_namespaces(char *subsysnqn, unsigned int subsys_id,
+				unsigned int agid, unsigned long *vdi_inuse,
+				unsigned long *vdi_deleted)
+{
+	unsigned long nsid;
+	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
+
+	FOR_EACH_VDI(nsid, vdi_inuse) {
+		char vdi_size[64];
+		uint64_t oid;
+		int ret;
+
+		if (test_bit(nsid, vdi_deleted))
+			continue;
+
+		oid = vid_to_vdi_oid(nsid);
+		ret = sd_read_object(oid, (char *)inode,
+				     SD_INODE_HEADER_SIZE, 0);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to read inode header");
+			continue;
+		}
+
+		/* this VDI has been deleted, and no need to handle it */
+		if (inode->name[0] == '\0')
+			continue;
+		/* We are only interested in VDIs */
+		if (vdi_is_acl(inode))
+			continue;
+
+		sd_debug("register namespace %06lx ('%s')",
+			 nsid, inode->name);
+		ret = configdb_add_namespace(subsysnqn, subsys_id,
+					     nsid, inode->uuid, agid);
+		if (ret < 0) {
+			sd_warn("Failed to add namespace '%06lx'", nsid);
+			continue;
+		}
+		sprintf(vdi_size, "%lx", inode->vdi_size);
+		ret = configdb_set_namespace_attr(subsysnqn, nsid,
+					       "device_size", vdi_size);
+	}
+	free(inode);
+}
+
+static int register_subsystems(unsigned int agid)
 {
 	int ret;
 	unsigned long nr;
-	struct sd_inode *i = xmalloc(sizeof(*i));
+	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
 	struct sd_req req;
 	struct sd_rsp *rsp = (struct sd_rsp *)&req;
 	static DECLARE_BITMAP(vdi_inuse, SD_NR_VDIS);
@@ -114,13 +194,14 @@ static int register_subsystems(void)
 
 	FOR_EACH_VDI(nr, vdi_inuse) {
 		uint64_t oid;
+		char value[20];
 
 		if (test_bit(nr, vdi_deleted))
 			continue;
 
 		oid = vid_to_vdi_oid(nr);
 
-		ret = sd_read_object(oid, (char *)i,
+		ret = sd_read_object(oid, (char *)inode,
 				     SD_INODE_HEADER_SIZE, 0);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("Failed to read inode header");
@@ -128,20 +209,27 @@ static int register_subsystems(void)
 		}
 
 		/* this VDI has been deleted, and no need to handle it */
-		if (i->header.name[0] == '\0')
+		if (inode->name[0] == '\0')
 			continue;
 		/* We are only interested in ACL VDIs */
-		if (!vdi_is_acl(&i->header))
+		if (!vdi_is_acl(inode))
 			continue;
 
-		ret = configdb_add_subsys(i->header.name, NVME_NQN_NVM);
+		sd_debug("register subsystem '%s'", inode->name);
+		ret = configdb_add_subsys(inode->name, NVME_NQN_NVM);
 		if (ret < 0)
-			sd_warn("Failed add subsyste '%s'", i->header.name);
-		else
-			sd_debug("registered subsystem '%s'", i->header.name);
+			sd_warn("Failed add subsyste '%s'", inode->name);
+		sprintf(value, "SHEEPDOG%06lx", nr);
+		ret = configdb_set_subsys_attr(inode->name,
+					       "attr_serial", value);
+		sprintf(value, "1");
+		ret = configdb_set_subsys_attr(inode->name,
+					       "attr_allow_any", value);
+		register_namespaces(inode->name, nr, agid,
+				   vdi_inuse, vdi_deleted);
 	}
 out:
-	free(i);
+	free(inode);
 	return ret;
 }
 
@@ -158,7 +246,7 @@ static void *nofuse_main(void *arg)
 {
 	struct nofuse_context *ctx = arg;
 	int tls_keyring;
-	int ret;
+	int ret, agid;
 	struct nofuse_port *port;
 
 	pthread_detach(pthread_self());
@@ -170,23 +258,35 @@ static void *nofuse_main(void *arg)
 		sd_err("Failed to open configdb");
 		goto out_pop;
 	}
+
+	agid = get_local_zone();
+	if (agid < 0) {
+		sd_err("failed to find local node");
+		goto out_close;
+	}
+
+	sd_debug("register nvmet port traddr '%s' trsvcid '%d'",
+		 ctx->traddr, ctx->trsvcid);
+	port = add_port(agid, ctx->traddr, ctx->trsvcid);
+	if (!port) {
+		sd_err("failed to add nvmet port");
+		goto out_close;
+	}
+	ret = register_ana_groups(agid);
+	if (ret < 0) {
+		sd_err("failed to register ANA groups for port %d", agid);
+		goto out_close;
+	}
+
 	ret = configdb_add_subsys(NVME_DISC_SUBSYS_NAME, NVME_NQN_CUR);
 	if (ret < 0) {
 		sd_err("failed to create default discovery subsystem");
 		goto out_close;
 	}
 
-	ret = register_subsystems();
+	ret = register_subsystems(agid);
 	if (ret < 0) {
 		sd_err("failed to register ACL VDIs");
-		goto out_close;
-	}
-
-	sd_debug("register nvmet port traddr '%s' trsvcid '%d'",
-		 ctx->traddr, ctx->trsvcid);
-	port = add_port(1, ctx->traddr, ctx->trsvcid);
-	if (!port) {
-		sd_err("failed to add nvmet port");
 		goto out_close;
 	}
 

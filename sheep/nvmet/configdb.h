@@ -23,7 +23,8 @@ int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf);
 int configdb_set_subsys_attr(const char *nqn, const char *attr, const char *buf);
 int configdb_del_subsys(const char *nqn);
 
-int configdb_add_namespace(const char *subsysnqn, uint32_t nsid, uint32_t agid);
+int configdb_add_namespace(const char *subsysnqn, uint32_t subsys_id,
+			   uint32_t nsid, uuid_t uuid, uint32_t agid);
 int configdb_count_namespaces(const char *subsysnqn, int *num);
 int configdb_get_namespace_attr(const char *subsysnqn, uint32_t nsid,
 			     const char *attr, char *buf);

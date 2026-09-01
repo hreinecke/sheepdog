@@ -242,7 +242,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE TABLE namespaces ( "
 	"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
 	"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-	"device_path VARCHAR(256), device_enable INT DEFAULT 0, "
+	"device_size INT, device_enable INT DEFAULT 0, "
 	"ana_group_id INT, "
 	"nsid INTEGER NOT NULL, subsys_id INTEGER, "
 	"ctime TIME, atime TIME, mtime TIME, "
@@ -432,7 +432,7 @@ int configdb_add_subsys(const char *subsysnqn, int type)
 		       "INSERT INTO subsystems "
 		       "(nqn, attr_model, attr_version, attr_ieee_oui, attr_firmware, "
 		       "attr_allow_any_host, attr_type, attr_qid_max, ctime) "
-		       "VALUES ('%s', 'nofuse', '2.0', '851255', '%s', "
+		       "VALUES ('%s', 'nofuse', '2.4', '851255', '%s', "
 		       "'%d', '%d', '%d', CURRENT_TIMESTAMP);",
 		       subsysnqn, firmware_rev, allow_any, type, NVMF_NUM_QUEUES);
 	if (ret < 0)
@@ -584,29 +584,23 @@ static int raise_ns_chg_aen(const char *subsysnqn, int nsid)
 	return ret;
 }
 
-int configdb_add_namespace(const char *subsysnqn, uint32_t nsid, uint32_t agid)
+int configdb_add_namespace(const char *subsysnqn, uint32_t subsys_id,
+			   uint32_t nsid, uuid_t uuid, uint32_t agid)
 {
 	char *sql;
-	uuid_t uuid;
-	char uuid_str[65], nguid_str[33], eui64_str[33];
-	unsigned int nguid1, nguid2;
+	char uuid_str[65], nguid_str[33];
 	int ret;
 
-	uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_str);
-	memcpy(&nguid1, &uuid[8], 4);
-	memcpy(&nguid2, &uuid[12], 4);
-	sprintf(nguid_str, "%08x%08x%s",
-		nguid1, nguid2, NOFUSE_NGUID_PREFIX);
-	sprintf(eui64_str, "0efd37%hhx%08x",
-		uuid[11], nguid2);
+	sprintf(nguid_str, "%08x000efd3700000000%08x",
+		subsys_id, nsid);
 	ret = asprintf(&sql, "INSERT INTO namespaces "
-		       "(device_uuid, device_nguid, device_eui64, nsid, "
+		       "(device_uuid, device_nguid, nsid, "
 		       "subsys_id, ana_group_id, ctime) "
-		       "SELECT '%s', '%s', '%s', '%u', s.oid, ag.id, CURRENT_TIMESTAMP "
+		       "SELECT '%s', '%s', '%u', s.oid, ag.id, CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
 		       "WHERE s.nqn = '%s' AND s.attr_type == '2' AND ag.id = '%u';",
-		       uuid_str, nguid_str, eui64_str, nsid, subsysnqn, agid);
+		       uuid_str, nguid_str, nsid, subsysnqn, agid);
 	if (ret < 0)
 		return ret;
 
