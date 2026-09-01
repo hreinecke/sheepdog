@@ -18,7 +18,7 @@
 #include <keyutils.h>
 
 #include "sheep.h"
-#include "nvmet.h"
+#include "nofuse.h"
 #include "tls.h"
 #include "ops.h"
 

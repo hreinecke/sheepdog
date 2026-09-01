@@ -11,7 +11,7 @@
 #include <errno.h>
 
 #include "sheep.h"
-#include "nvmet.h"
+#include "nofuse.h"
 #include "configdb.h"
 #include "firmware.h"
 

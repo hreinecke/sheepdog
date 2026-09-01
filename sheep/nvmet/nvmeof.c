@@ -13,7 +13,7 @@
 #include <arpa/inet.h>
 
 #include "sheep.h"
-#include "nvmet.h"
+#include "nofuse.h"
 #include "ops.h"
 #include "nvme.h"
 #include "tcp.h"

@@ -19,7 +19,7 @@
 #include <sys/eventfd.h>
 
 #include "sheep_priv.h"
-#include "nvmet.h"
+#include "nofuse.h"
 #include "nvme.h"
 #include "ops.h"
 

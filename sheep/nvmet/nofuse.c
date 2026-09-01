@@ -20,10 +20,16 @@
 #include <getopt.h>
 
 #include "sheep_priv.h"
-#include "nvmet.h"
+#include "nofuse.h"
 #include "ops.h"
 #include "tls.h"
 #include "configdb.h"
+
+int stopped;
+bool tcp_debug;
+bool cmd_debug;
+bool ep_debug;
+bool port_debug;
 
 struct nofuse_context {
 	char *traddr;
@@ -32,12 +38,6 @@ struct nofuse_context {
 	int debug;
 	int help;
 };
-
-int stopped;
-bool tcp_debug;
-bool cmd_debug;
-bool ep_debug;
-bool port_debug;
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 

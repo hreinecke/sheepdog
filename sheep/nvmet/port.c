@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #include "sheep.h"
-#include "nvmet.h"
+#include "nofuse.h"
 #include "ops.h"
 #include "configdb.h"
 
