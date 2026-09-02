@@ -146,19 +146,20 @@ static struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep,
 				     uint16_t ccid, off_t pos, size_t len)
 {
 	int m, i = 0, j, cid;
+	int ngroups = (ep->qsize + 7) / 8;
+	int last_group_size = ep->qsize % 8 ? ep->qsize % 8 : 8;
 	struct ep_qe *qe = NULL;
 
 	m = ep->qes_map_index;
 retry:
-	for (j = 0; j < ep->qsize / 8; j++) {
+	for (j = 0; j < ngroups; j++) {
 		i = ffs(ep->qes_map[m] & 0xff);
-		if (m == (ep->qsize / 8) - 1 &&
-		    i > ep->qsize % 8)
+		if (m == ngroups - 1 && i > last_group_size)
 			i = 0;
 		if (i != 0)
 			break;
 		m++;
-		if (m == ep->qsize / 8)
+		if (m == ngroups)
 			m = 0;
 	}
 	if (!i) {
