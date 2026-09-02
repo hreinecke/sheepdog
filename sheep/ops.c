@@ -1645,17 +1645,6 @@ static int cluster_alter_vdi_acl_work(struct request *req)
 		       sd_strerror(ret));
 		return SD_RES_VDI_WRITE;
 	}
-#ifdef HAVE_NVMET
-	if (new_acl) {
-		ret = nvmet_register_namespace(new_acl, vid, &inode);
-		if (ret < 0)
-			ret = SD_RES_SYSTEM_ERROR;
-	} else {
-		ret = nvmet_unregister_namespace(old_acl, vid);
-		if (ret < 0)
-			ret = SD_RES_SYSTEM_ERROR;
-	}
-#endif
 	return ret;
 }
 
@@ -1663,8 +1652,24 @@ static int cluster_alter_vdi_acl_main(const struct sd_req *req,
 				      struct sd_rsp *rsp, void *data,
 				      const struct sd_node *sender)
 {
-	return vdi_alter_acl(req->vdi_state.old_vid, req->vdi_state.old_acl,
-			     req->vdi_state.acl);
+	int ret = vdi_alter_acl(req->vdi_state.old_vid, req->vdi_state.old_acl,
+				req->vdi_state.acl);
+#ifdef HAVE_NVMET
+	/*
+	 * This runs on the main thread of every node (see the
+	 * SD_OP_TYPE_CLUSTER contract above), so it cannot call
+	 * nvmet_register_namespace()/nvmet_unregister_namespace()
+	 * itself -- those block on cluster round-trips (sd_read_object()),
+	 * which would deadlock waiting for a response that only this same
+	 * main thread's event loop can ever deliver. Hand it off to the
+	 * nofuse thread's own event loop instead.
+	 */
+	if (ret == SD_RES_SUCCESS)
+		nvmet_notify_acl_change(req->vdi_state.old_vid,
+					req->vdi_state.old_acl,
+					req->vdi_state.acl);
+#endif
+	return ret;
 }
 
 static int local_vdi_state_checkpoint_ctl(const struct sd_req *req,

@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/eventfd.h>
+#include <poll.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <ifaddrs.h>
@@ -43,9 +45,61 @@ struct nofuse_context {
 	int trsvcid;
 	int debug;
 	int help;
+	sd_thread_t thread;
+	int event_evtfd;
+	struct list_head event_list;
+	struct sd_mutex event_lock;
 };
 
 struct nofuse_context *this_ctx;
+
+/* Queued via nvmet_notify_acl_change(), drained by nofuse_main()'s loop. */
+struct nvmet_acl_event {
+	struct list_node node;
+	uint32_t vid;
+	uint32_t old_acl;
+	uint32_t new_acl;
+};
+
+void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl, uint32_t new_acl)
+{
+	struct nvmet_acl_event *ev;
+
+	if (!this_ctx)
+		return;
+
+	ev = xmalloc(sizeof(*ev));
+	ev->vid = vid;
+	ev->old_acl = old_acl;
+	ev->new_acl = new_acl;
+
+	sd_mutex_lock(&this_ctx->event_lock);
+	list_add_tail(&ev->node, &this_ctx->event_list);
+	sd_mutex_unlock(&this_ctx->event_lock);
+
+	eventfd_write(this_ctx->event_evtfd, 1);
+}
+
+static void process_acl_event(struct nvmet_acl_event *ev)
+{
+	if (ev->new_acl) {
+		struct sd_inode_header inode;
+		int ret;
+
+		ret = sd_read_object(vid_to_vdi_oid(ev->vid), (char *)&inode,
+				     sizeof(inode), 0);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("failed to read inode of VDI %"PRIx32
+			       " for nvmet: %s", ev->vid, sd_strerror(ret));
+			return;
+		}
+		if (nvmet_register_namespace(ev->new_acl, ev->vid, &inode) < 0)
+			sd_err("failed to register namespace %"PRIx32
+			       " with nvmet", ev->vid);
+	} else if (nvmet_unregister_namespace(ev->old_acl, ev->vid) < 0)
+		sd_err("failed to unregister namespace %"PRIx32
+		       " with nvmet", ev->vid);
+}
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 struct sd_node *cur_nodes;
@@ -400,6 +454,15 @@ out:
 static void nofuse_cleanup(void *arg)
 {
 	struct nofuse_context *ctx = arg;
+	struct nvmet_acl_event *ev, *next;
+
+	list_for_each_entry_safe(ev, next, &ctx->event_list, node) {
+		list_del(&ev->node);
+		free(ev);
+	}
+	if (ctx->event_evtfd >= 0)
+		close(ctx->event_evtfd);
+	sd_destroy_mutex(&ctx->event_lock);
 
 	rb_destroy(&ctx->nroot, struct sd_vnode, rb);
 	rb_destroy(&ctx->vroot, struct sd_node, rb);
@@ -414,9 +477,7 @@ static void *nofuse_main(void *arg)
 	struct nofuse_context *ctx = arg;
 	int tls_keyring;
 	int ret, agid;
-	struct nofuse_port *port;
-
-	pthread_detach(pthread_self());
+	struct nofuse_port *port = NULL;
 
 	pthread_cleanup_push(nofuse_cleanup, arg);
 
@@ -473,9 +534,54 @@ static void *nofuse_main(void *arg)
 		goto out_close;
 	}
 
-	return NULL;
+	/*
+	 * Stay alive to process ACL-change events queued by
+	 * nvmet_notify_acl_change() (called from the main thread of
+	 * every node via cluster_alter_vdi_acl_main()); that thread
+	 * cannot do this work itself since it involves blocking
+	 * cluster round-trips (sd_read_object()).
+	 */
+	while (!stopped) {
+		struct pollfd pfd = { .fd = ctx->event_evtfd, .events = POLLIN };
+		struct nvmet_acl_event *ev, *next;
+		LIST_HEAD(pending);
+		eventfd_t val;
+
+		ret = poll(&pfd, 1, 1000);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			sd_err("nofuse event poll failed: %m");
+			break;
+		}
+		if (ret == 0)
+			continue;
+
+		eventfd_read(ctx->event_evtfd, &val);
+
+		sd_mutex_lock(&ctx->event_lock);
+		list_splice_init(&ctx->event_list, &pending);
+		sd_mutex_unlock(&ctx->event_lock);
+
+		list_for_each_entry_safe(ev, next, &pending, node) {
+			list_del(&ev->node);
+			process_acl_event(ev);
+			free(ev);
+		}
+	}
 
 out_close:
+	/*
+	 * Port and configdb teardown both happen here, in this thread
+	 * (reached both by falling out of the loop above and by the
+	 * earlier 'goto out_close' error paths), so that nofuse_exit()
+	 * (running on the main sheep thread) never touches configdb
+	 * concurrently with this thread's own configdb_close() below.
+	 */
+	if (port) {
+		stop_port(port);
+		del_port(port);
+	}
 	configdb_close(ctx->dbname);
 out_pop:
 	pthread_cleanup_pop(1);
@@ -484,7 +590,6 @@ out_pop:
 
 int nofuse_init(const char *traddr, int trsvcid)
 {
-	sd_thread_t t;
 	int err;
 
 	this_ctx = malloc(sizeof(struct nofuse_context));
@@ -499,8 +604,18 @@ int nofuse_init(const char *traddr, int trsvcid)
 	INIT_RB_ROOT(&this_ctx->vroot);
 	INIT_RB_ROOT(&this_ctx->ns_root);
 	sd_init_mutex(&this_ctx->ns_lock);
+	INIT_LIST_HEAD(&this_ctx->event_list);
+	sd_init_mutex(&this_ctx->event_lock);
+	this_ctx->event_evtfd = eventfd(0, EFD_NONBLOCK);
+	if (this_ctx->event_evtfd < 0) {
+		sd_err("failed to create nofuse event eventfd: %m");
+		nofuse_cleanup(this_ctx);
+		this_ctx = NULL;
+		return -1;
+	}
 
-	err = sd_thread_create("nofuse", &t, nofuse_main, this_ctx);
+	err = sd_thread_create("nofuse", &this_ctx->thread, nofuse_main,
+			       this_ctx);
 	if (err) {
 		sd_err("failed to create nofuse thread: %s", strerror(err));
 		nofuse_cleanup(this_ctx);
@@ -513,14 +628,18 @@ int nofuse_init(const char *traddr, int trsvcid)
 
 void nofuse_exit(void)
 {
-	struct nofuse_port *port, *_port;
-
 	stopped = 1;
 
-	list_for_each_entry_safe(port, _port, &port_linked_list, node) {
-		stop_port(port);
-		del_port(port);
-	}
+	/*
+	 * nofuse_main() tears down the port and configdb itself, in its
+	 * own thread, once it notices 'stopped'; doing that here instead
+	 * would race with it accessing the same configdb connection.
+	 * Just signal and wait for that, then it frees this_ctx via its
+	 * own pthread_cleanup_pop().
+	 */
+	if (!this_ctx)
+		return;
 
-	nofuse_cleanup(this_ctx);
+	eventfd_write(this_ctx->event_evtfd, 1);
+	sd_thread_join(this_ctx->thread, NULL);
 }

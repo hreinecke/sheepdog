@@ -708,6 +708,14 @@ int nvmet_unregister_subsystem(uint32_t subsys_id);
 int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 			     struct sd_inode_header *inode);
 int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid);
+/*
+ * Queues (vid, old_acl, new_acl) for the nofuse thread's own event
+ * loop to pick up and pass to nvmet_register_namespace()/
+ * nvmet_unregister_namespace(); safe to call from the main thread,
+ * unlike those two (which block on cluster round-trips).
+ */
+void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl,
+			     uint32_t new_acl);
 #endif
 
 #endif
