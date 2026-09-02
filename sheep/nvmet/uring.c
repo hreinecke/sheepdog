@@ -55,7 +55,15 @@ static void uring_io_done(struct request *req)
 {
 	struct uring_io_ctx *ctx = req->local_done_arg;
 
-	if (req->rp.result != SD_RES_SUCCESS)
+	if (req->rp.result == SD_RES_NO_OBJ && req->rq.opcode == SD_OP_READ_OBJ) {
+		/*
+		 * Sheepdog VDIs are sparse: an object that was never
+		 * written simply doesn't exist yet. Reading it isn't a
+		 * failure, it just means the LBA range reads as zero
+		 * (same convention as e.g. dog_vdi_read()).
+		 */
+		memset(req->data, 0, req->data_length);
+	} else if (req->rp.result != SD_RES_SUCCESS)
 		ctx->failed = true;
 
 	if (--ctx->pending == 0) {
