@@ -618,7 +618,7 @@ int configdb_add_namespace(uint64_t oid, struct nofuse_namespace *ns)
 	uuid_unparse(ns->uuid, uuid_str);
 	sprintf(nguid_str, "%08x000efd37%"PRIx64,
 		ns->subsys_id, oid);
-	ret = asprintf(&sql, "INSERT OR IGNORE INTO namespaces "
+	ret = asprintf(&sql, "INSERT INTO namespaces "
 		       "(device_uuid, device_nguid, nsid, subsys_id, "
 		       "ana_group_id, device_size, device_blksize, "
 		       "device_readonly, device_enable, ctime) "
