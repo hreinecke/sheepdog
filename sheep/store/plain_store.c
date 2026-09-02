@@ -21,6 +21,18 @@ struct store_cache_entry {
 	void *map;
 	char *path;
 	int fd;
+	/*
+	 * Number of outstanding holders. The cache itself (i.e. being
+	 * linked into store_cache_root) counts as one holder, so a live,
+	 * unremoved entry never drops to 0. Each store_cache_lookup()/
+	 * _by_oid() call adds one on behalf of its caller, released via a
+	 * matching store_cache_put(); removing the entry from the tree
+	 * (store_cache_remove()/_by_oid()) drops the cache's own reference.
+	 * Cleanup/free only happens once the count reaches 0, so a
+	 * concurrent reader/writer that is still using an entry's fd/map is
+	 * never left holding a freed or torn-down entry.
+	 */
+	refcnt_t refcnt;
 };
 
 static struct rb_root store_cache_root = RB_ROOT;
@@ -49,14 +61,25 @@ static void store_cache_cleanup(struct store_cache_entry *entry)
 	}
 }
 
+/* Releases a reference obtained from store_cache_lookup()/_by_oid(). */
+static void store_cache_put(struct store_cache_entry *entry)
+{
+	if (refcount_dec(&entry->refcnt) == 0) {
+		store_cache_cleanup(entry);
+		free(entry);
+	}
+}
+
 static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
 {
 	struct store_cache_entry *entry, key = { .oid = oid };
 
 	sd_mutex_lock(&store_cache_lock);
 	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
-	if (entry)
+	if (entry) {
 		sys->cache_stat.nr_cache_hits++;
+		refcount_inc(&entry->refcnt);
+	}
 	sd_mutex_unlock(&store_cache_lock);
 	return entry;
 }
@@ -72,6 +95,7 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 	new->fd = -1;
 	new->size = get_store_objsize(oid);
 	new->map = MAP_FAILED;
+	refcount_set(&new->refcnt, 1); /* the cache's own reference */
 	entry = rb_insert(&store_cache_root, new, node, store_cache_cmp);
 	if (entry) {
 		sys->cache_stat.nr_cache_hits++;
@@ -80,20 +104,42 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 		sys->cache_stat.nr_cache_entries++;
 		entry = new;
 	}
+	refcount_inc(&entry->refcnt); /* reference for this caller */
 	sd_mutex_unlock(&store_cache_lock);
 	return entry;
 }
 
+/*
+ * Evicts entry from the cache and releases the caller's own reference to
+ * it (i.e. the caller must have obtained entry via store_cache_lookup()
+ * and must not touch it again afterwards). Cleanup/free is deferred if
+ * another thread is concurrently holding its own reference.
+ */
 static void store_cache_remove(struct store_cache_entry *entry)
 {
 	sd_mutex_lock(&store_cache_lock);
 	rb_erase(&entry->node, &store_cache_root);
 	sys->cache_stat.nr_cache_entries--;
 	sd_mutex_unlock(&store_cache_lock);
-	store_cache_cleanup(entry);
-	free(entry);
+
+	/*
+	 * Drop the cache's own reference; this caller's own reference
+	 * (from the store_cache_lookup() that produced entry) is still
+	 * outstanding at this point, so this can never be the one to drop
+	 * the count to 0.
+	 */
+	refcount_dec(&entry->refcnt);
+	store_cache_put(entry);
 }
 
+/*
+ * Evicts the entry for oid from the cache, if any, and returns it still
+ * holding a reference on the caller's behalf (the cache's own reference
+ * is transferred to the caller, so the refcount is unchanged). The
+ * caller must release it with store_cache_put() when done -- typically
+ * right away, which is safe: cleanup/free is deferred if some other
+ * thread still holds a concurrent reference via store_cache_lookup().
+ */
 static struct store_cache_entry *store_cache_remove_by_oid(uint64_t oid)
 {
 	struct store_cache_entry *entry, key = { .oid = oid };
@@ -190,9 +236,13 @@ bool default_exist(uint64_t oid, uint8_t ec_index)
 		 */
 		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
 			store_cache_cleanup(entry);
-		else
+		else {
+			store_cache_put(entry);
 			return true;
+		}
 	}
+	if (entry)
+		store_cache_put(entry);
 	ret = get_store_path(oid, ec_index, &path);
 	if (ret < 0)
 		return false;
@@ -344,6 +394,8 @@ do_mmap:
 out_remove:
 	if (ret != SD_RES_SUCCESS)
 		store_cache_remove(entry);
+	else
+		store_cache_put(entry);
 
 	return ret;
 }
@@ -388,9 +440,15 @@ int default_cleanup(void)
 	sd_mutex_lock(&store_cache_lock);
 	rb_for_each_entry(entry, &store_cache_root, node) {
 		rb_erase(&entry->node, &store_cache_root);
-		store_cache_cleanup(entry);
-		free(entry);
 		sys->cache_stat.nr_cache_entries--;
+		/* Drop the cache's own reference; leave cleanup/free to
+		 * whichever concurrent holder releases the last one. */
+		if (refcount_dec(&entry->refcnt) == 0) {
+			sd_mutex_unlock(&store_cache_lock);
+			store_cache_cleanup(entry);
+			free(entry);
+			sd_mutex_lock(&store_cache_lock);
+		}
 	}
 	sd_mutex_unlock(&store_cache_lock);
 
@@ -564,7 +622,9 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 		if (ret == SD_RES_SUCCESS)
 			ret = default_read_from_path(entry, iocb);
 		store_cache_remove(entry);
+		return ret;
 	}
+	store_cache_put(entry);
 	return ret;
 }
 
@@ -580,10 +640,8 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	uint64_t offset = iocb->offset;
 
 	sd_debug("%016"PRIx64, oid);
-	if (entry) {
-		store_cache_cleanup(entry);
-		free(entry);
-	}
+	if (entry)
+		store_cache_put(entry);
 	ret = get_store_path(oid, iocb->ec_index, &path);
 	if (ret < 0)
 		return SD_RES_NO_MEM;
@@ -702,10 +760,8 @@ int default_link(uint64_t oid, uint32_t tgt_epoch)
 	sd_debug("try link %016"PRIx64" from snapshot with epoch %d", oid,
 		 tgt_epoch);
 
-	if (entry) {
-		store_cache_cleanup(entry);
-		free(entry);
-	}
+	if (entry)
+		store_cache_put(entry);
 
 	ret = get_default_store_path(oid, &path);
 	if (ret < 0)
@@ -819,10 +875,8 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 	 * to checking the live path on disk.
 	 */
 	entry = store_cache_remove_by_oid(oid);
-	if (entry) {
-		store_cache_cleanup(entry);
-		free(entry);
-	}
+	if (entry)
+		store_cache_put(entry);
 
 	sd_debug("moved object %016"PRIx64, oid);
 	free(path);
@@ -865,8 +919,7 @@ int default_remove_object(uint64_t oid, uint8_t ec_index)
 	if (entry) {
 		path = entry->path;
 		entry->path = NULL;
-		store_cache_cleanup(entry);
-		free(entry);
+		store_cache_put(entry);
 	}
 	if (!path) {
 		ret = get_store_path(oid, ec_index, &path);
@@ -1011,6 +1064,7 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 		ret = get_default_store_path(oid, &entry->path);
 		if (ret < 0) {
 			entry->path = NULL;
+			store_cache_put(entry);
 			return SD_RES_NO_MEM;
 		}
 	}
@@ -1019,14 +1073,17 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 		if (get_object_sha1(entry->path, sha1) == 0) {
 			sd_debug("use cached sha1 digest %s",
 				 sha1_to_hex(sha1));
+			store_cache_put(entry);
 			return SD_RES_SUCCESS;
 		}
 	}
 
 	length = get_store_objsize(oid);
 	ret = posix_memalign((void **)&buf, getpagesize(), length);
-	if (ret)
+	if (ret) {
+		store_cache_put(entry);
 		return SD_RES_NO_MEM;
+	}
 
 	iocb.epoch = epoch;
 	iocb.buf = buf;
@@ -1048,6 +1105,7 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 	if (is_readonly_obj)
 		set_object_sha1(entry->path, sha1);
 
+	store_cache_put(entry);
 	return SD_RES_SUCCESS;
 }
 
