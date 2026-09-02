@@ -297,15 +297,15 @@ static inline int nodes_to_buffer(struct rb_root *nroot,
 				   void *buffer, size_t buffer_len)
 {
 	struct sd_node *n, *buf = buffer;
-	size_t remaining = buffer_len;
+	size_t len = 0;
 
 	rb_for_each_entry(n, nroot, rb) {
-		if (sizeof(*n) < remaining)
-			return SD_RES_BUFFER_SMALL;
+		if (len + sizeof(*n) > buffer_len)
+			return len + sizeof(*n) - buffer_len;
 		memcpy(buf++, n, sizeof(*n));
-		remaining -= sizeof(*n);
+		len += sizeof(*n);
 	}
-	return SD_RES_SUCCESS;
+	return len;
 }
 
 #define MAX_NODE_STR_LEN 256

@@ -270,8 +270,11 @@ int local_get_node_list(const struct sd_req *req, struct sd_rsp *rsp,
 		nr_nodes = cur_vinfo->nr_nodes;
 		ret = nodes_to_buffer(&cur_vinfo->nroot, data,
 				      req->data_length);
-		if (ret != SD_RES_SUCCESS)
-			return ret;
+		if (ret < 0) {
+			sd_warn("response buffer too small, %d bytes missing",
+				-ret);
+			return SD_RES_BUFFER_SMALL;
+		}
 		rsp->data_length = nr_nodes * sizeof(struct sd_node);
 		rsp->node.nr_nodes = nr_nodes;
 
@@ -761,14 +764,19 @@ static main_fn void get_vdis_done(struct work *work)
 int inc_and_log_epoch(void)
 {
 	struct vnode_info *cur_vinfo = get_vnode_info();
+	int ret;
 
 	if (cur_vinfo) {
 		/* update cluster info to the latest state */
 		sys->cinfo.nr_nodes = cur_vinfo->nr_nodes;
-		nodes_to_buffer(&cur_vinfo->nroot, sys->cinfo.nodes,
-				sizeof(struct sd_node) * SD_MAX_NODES);
-
+		ret = nodes_to_buffer(&cur_vinfo->nroot, sys->cinfo.nodes,
+				      sizeof(struct sd_node) * SD_MAX_NODES);
 		put_vnode_info(cur_vinfo);
+		if (ret < 0) {
+			sd_warn("nodes buffer too small, missing %d bytes",
+				-ret);
+			return SD_RES_BUFFER_SMALL;
+		}
 	} else
 		sys->cinfo.nr_nodes = 0;
 

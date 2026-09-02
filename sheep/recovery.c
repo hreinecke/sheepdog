@@ -1431,8 +1431,10 @@ static void prepare_object_list(struct work *work)
 	nodes_len = sizeof(struct sd_node) * nr_nodes;
 	nodes = xmalloc(nodes_len);
 	ret = nodes_to_buffer(&rw->cur_vinfo->nroot, nodes, nodes_len);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("cancelling recovery, node buffer too small");
+	if (ret < 0) {
+		sd_err("cancelling recovery, node buffer missing %d bytes",
+			-ret);
+		ret = SD_RES_BUFFER_SMALL;
 		goto out;
 	}
 	if (sys->cinfo.flags & SD_CLUSTER_FLAG_AVOID_DISKFULL

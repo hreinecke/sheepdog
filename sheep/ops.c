@@ -648,6 +648,10 @@ static int cluster_force_recover_work(struct request *req)
 	req->rp.data_length = sizeof(struct sd_node) * old_vnode_info->nr_nodes;
 	ret = nodes_to_buffer(&old_vnode_info->nroot, req->data,
 			      req->rp.data_length);
+	if (ret < 0) {
+		sd_warn("request buffer too small, %d bytes missing", -ret);
+		ret = SD_RES_BUFFER_SMALL;
+	}
 
 	put_vnode_info(old_vnode_info);
 
