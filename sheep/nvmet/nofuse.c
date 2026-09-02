@@ -134,7 +134,7 @@ static int lookup_nodes(struct nofuse_context *ctx)
 	if (nr_nodes == 0)
 		sd_warn("There are no active sheep daemons");
 
-	for (int i = i; i < nr_nodes; i++ ) {
+	for (int i = 0; i < nr_nodes; i++) {
 		struct sd_node *n = xmalloc(sizeof*n);
 
 		*n = buf[i];
