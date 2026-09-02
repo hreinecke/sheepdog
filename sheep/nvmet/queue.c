@@ -103,9 +103,9 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		free(ctrl);
 		goto out_unlock;
 	}
-	ret = configdb_get_subsys_attr(nqn, "attr_qid_max", value);
+	ret = configdb_get_subsys_attr(nqn, "qid_max", value);
 	if (ret < 0) {
-		ep_err(ep, "error fetching attr_qid_max");
+		ep_err(ep, "error fetching qid_max");
 		ctrl->max_queues = NVMF_NUM_QUEUES;
 	} else {
 		unsigned long tmp;
