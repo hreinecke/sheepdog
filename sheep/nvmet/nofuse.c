@@ -221,7 +221,7 @@ static int register_ana_groups(struct nofuse_context *ctx,
 
 int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 {
-	int ret, nr_zones, cntlid_range, cntlid_min, cntlid_max;
+	int ret, nr_zones;
 	char value[8];
 
 	sd_debug("register subsystem '%s' (%06x)", subsysnqn, subsys_id);
@@ -231,26 +231,30 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 		return ret;
 	}
 	nr_zones = get_zones_nr_from(&this_ctx->nroot);
-	cntlid_range = 65520 / nr_zones;
-	cntlid_min = (sys->this_node.zone * cntlid_range) + 1;
-	cntlid_max = cntlid_min + cntlid_range - 1;
-	if (cntlid_max >= 65520)
-		cntlid_max = 65519;
-	sd_debug("restricting cntlid for subsystem '%s' to %u-%u",
-		 subsysnqn, cntlid_min, cntlid_max);
-	sprintf(value, "%u", cntlid_min);
-	ret = configdb_set_subsys_attr(subsys_id,
-				       "cntlid_min", value);
-	if (ret < 0) {
-		sd_warn("Failed to set 'cntlid_min'");
-		return ret;
-	}
-	sprintf(value, "%u", cntlid_max);
-	ret = configdb_set_subsys_attr(subsys_id,
-				       "cntlid_max", value);
-	if (ret < 0) {
-		sd_warn("Failed to set 'cntlid_max'");
-		return ret;
+	if (nr_zones > 0) {
+		int cntlid_range, cntlid_min, cntlid_max;
+
+		cntlid_range = 65520 / nr_zones;
+		cntlid_min = (sys->this_node.zone * cntlid_range) + 1;
+		cntlid_max = cntlid_min + cntlid_range - 1;
+		if (cntlid_max >= 65520)
+			cntlid_max = 65519;
+		sd_debug("restricting cntlid for subsystem '%s' to %u-%u",
+			 subsysnqn, cntlid_min, cntlid_max);
+		sprintf(value, "%u", cntlid_min);
+		ret = configdb_set_subsys_attr(subsys_id,
+					       "cntlid_min", value);
+		if (ret < 0) {
+			sd_warn("Failed to set 'cntlid_min'");
+			return ret;
+		}
+		sprintf(value, "%u", cntlid_max);
+		ret = configdb_set_subsys_attr(subsys_id,
+					       "cntlid_max", value);
+		if (ret < 0) {
+			sd_warn("Failed to set 'cntlid_max'");
+			return ret;
+		}
 	}
 
 	sprintf(value, "1");
