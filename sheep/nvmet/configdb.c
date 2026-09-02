@@ -245,14 +245,14 @@ static const char *init_sql[NUM_TABLES] = {
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* namespaces */
 	"CREATE TABLE namespaces ( "
-	"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
-	"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-	"device_size INT, device_blksize INT, device_enable INT DEFAULT 0, "
-	"device_readonly INT DEFAULT 0,ana_group_id INT, "
+	"eui64 VARCHAR(256), nguid VARCHAR(256), "
+	"uuid VARCHAR(256) UNIQUE NOT NULL, "
+	"size INT, blksize INT, enable INT DEFAULT 0, "
+	"readonly INT DEFAULT 0,ana_group_id INT, "
 	"nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, "
 	"UNIQUE (subsys_id, nsid), "
-	"CHECK (device_enable = 0 OR device_enable = 1), "
-	"CHECK (device_readonly = 0 OR device_enable = 1), "
+	"CHECK (enable = 0 OR enable = 1), "
+	"CHECK (readonly = 0 OR enable = 1), "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (subsys_id) REFERENCES subsystems(subsys_id) "
@@ -619,9 +619,9 @@ int configdb_add_namespace(uint64_t oid, struct nofuse_namespace *ns)
 	sprintf(nguid_str, "%08x000efd37%"PRIx64,
 		ns->subsys_id, oid);
 	ret = asprintf(&sql, "INSERT INTO namespaces "
-		       "(device_uuid, device_nguid, nsid, subsys_id, "
-		       "ana_group_id, device_size, device_blksize, "
-		       "device_readonly, device_enable, ctime) "
+		       "(uuid, nguid, nsid, subsys_id, "
+		       "ana_group_id, size, blksize, "
+		       "readonly, enable, ctime) "
 		       "SELECT '%s', '%s', '%u', s.subsys_id, ag.id, "
 		       "'%lu', '%u', '%d', '%d', CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
@@ -659,13 +659,13 @@ static int lookup_namespace_cb(void *argp, int argc, char **argv, char **col)
 			continue;
 		PARSE_COL(i, "nsid", ns->nsid);
 		PARSE_COL(i, "ana_group_id", ns->ana_grpid);
-		PARSE_COL(i, "device_size", ns->size);
-		PARSE_COL(i, "device_blksize", ns->blksize);
-		if (!strcmp(col[i], "device_enable")) {
+		PARSE_COL(i, "size", ns->size);
+		PARSE_COL(i, "blksize", ns->blksize);
+		if (!strcmp(col[i], "enable")) {
 			if (!strcmp(argv[i], "1"))
 				ns->enabled = true;
 		}
-		if (!strcmp(col[i], "device_readonly")) {
+		if (!strcmp(col[i], "readonly")) {
 			if (!strcmp(argv[i], "1"))
 				ns->readonly = true;
 		}
@@ -683,8 +683,8 @@ int configdb_lookup_namespace(const char *subsysnqn, uint32_t nsid,
 	char *sql, *errmsg;
 
 	ret = asprintf(&sql,
-		       "SELECT nsid, ana_group_id, device_size, "
-		       "device_readonly, device_blksize FROM namespaces AS n "
+		       "SELECT nsid, ana_group_id, size, "
+		       "readonly, blksize FROM namespaces AS n "
 		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
 		       "WHERE s.nqn = '%s' and n.nsid = '%d';",
 		       subsysnqn, nsid);
@@ -702,8 +702,6 @@ int configdb_get_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 	int ret;
 	char *sql;
 
-	if (!strcmp(attr, "enable"))
-		attr = "device_enable";
 	ret = asprintf(&sql,
 		       "SELECT n.%s FROM namespaces AS n "
 		       "WHERE n.subsys_id = '%d' AND n.nsid = '%u';",
@@ -724,8 +722,6 @@ int configdb_set_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 	ret = sql_exec_simple("BEGIN TRANSACTION;");
 	if (ret < 0)
 		return ret;
-	if (!strcmp(attr, "enable"))
-		attr = "device_enable";
 	ret = asprintf(&sql,
 		       "UPDATE namespaces SET %s = '%s' "
 		       "WHERE subsys_id = '%d' AND nsid = '%u';",
@@ -1686,7 +1682,7 @@ int configdb_identify_active_ns(uint32_t subsys_id,
 
 	ret = asprintf(&sql,
 		       "SELECT n.nsid FROM namespaces AS n "
-		       "WHERE n.subsys_id = '%u' AND n.device_enable = '1' "
+		       "WHERE n.subsys_id = '%u' AND n.enable = '1' "
 		       "ORDER BY n.nsid;", subsys_id);
 	if (ret < 0)
 		return ret;
