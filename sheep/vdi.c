@@ -1121,6 +1121,12 @@ int vdi_alter_acl(uint32_t vid, uint32_t old_acl, uint32_t new_acl)
 		goto out;
 	}
 
+	if (entry->acl == new_acl) {
+		sd_debug("VDI %"PRIx32" already has ACL %"PRIx32,
+			 vid, new_acl);
+		ret = SD_RES_SUCCESS;
+		goto out;
+	}
 	if (entry->acl != old_acl)
 		sd_warn("VDI %"PRIx32" has ACL %"PRIx32", expected %"PRIx32,
 			vid, entry->acl, old_acl);
