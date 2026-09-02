@@ -151,11 +151,11 @@ static struct ep_qe *tcp_acquire_tag(struct nofuse_queue *ep,
 	m = ep->qes_map_index;
 retry:
 	for (j = 0; j < ep->qsize / 8; j++) {
-		i = ffs(ep->qes_map[m]);
+		i = ffs(ep->qes_map[m] & 0xff);
 		if (m == (ep->qsize / 8) - 1 &&
 		    i > ep->qsize % 8)
 			i = 0;
-		if (i != 0 && j )
+		if (i != 0)
 			break;
 		m++;
 		if (m == ep->qsize / 8)
@@ -165,7 +165,7 @@ retry:
 		tcp_err(ep, "qid %d all tags busy", ep->qid);
 		return NULL;
 	}
-	cid = i - 1;
+	cid = m * 8 + i - 1;
 	if (ep->qes[cid].busy) {
 		tcp_err(ep, "qid %d cid %d busy after selection",
 			ep->qid, cid);
@@ -176,7 +176,7 @@ retry:
 			ep->qid, cid, ep->qes[cid].tag);
 		return NULL;
 	}
-	ep->qes_map[m] &= ~(1 << cid);
+	ep->qes_map[m] &= ~(1 << (i - 1));
 	ep->qes_map_index = m;
 	qe = &ep->qes[cid];
 	qe->busy = true;
@@ -240,7 +240,7 @@ static void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 	}
 	qe->iovec.iov_base = NULL;
 	qe->iovec.iov_len = 0;
-	ep->qes_map[qe->tag] |= (1 << qe->tag);
+	ep->qes_map[qe->tag / 8] |= (1 << (qe->tag % 8));
 	tcp_info(ep, "release tag %#x", qe->tag);
 }
 
