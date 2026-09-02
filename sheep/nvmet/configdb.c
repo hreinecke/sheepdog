@@ -608,23 +608,25 @@ static int raise_ns_chg_aen(uint32_t subsys_id, uint32_t nsid)
 	return ret;
 }
 
-int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
-			   uuid_t uuid, uint32_t agid)
+int configdb_add_namespace(uint64_t oid, struct nofuse_namespace *ns)
 {
 	char *sql;
 	char uuid_str[65], nguid_str[33];
 	int ret;
 
-	uuid_unparse(uuid, uuid_str);
-	sprintf(nguid_str, "%08x000efd3700000000%08x",
-		subsys_id, nsid);
+	uuid_unparse(ns->uuid, uuid_str);
+	sprintf(nguid_str, "%08x000efd37%"PRIx64,
+		ns->subsys_id, oid);
 	ret = asprintf(&sql, "INSERT INTO namespaces "
-		       "(device_uuid, device_nguid, nsid, "
-		       "subsys_id, ana_group_id, ctime) "
-		       "SELECT '%s', '%s', '%u', s.oid, ag.id, CURRENT_TIMESTAMP "
+		       "(device_uuid, device_nguid, nsid, subsys_id, "
+		       "ana_group_id, device_size, device_blksize, "
+		       "device_readonly, device_enable, ctime) "
+		       "SELECT '%s', '%s', '%u', s.oid, ag.id, "
+		       "'%lu', '%u', '%d', '%d', CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
 		       "WHERE s.attr_vid = '%d' AND s.attr_type == '2' AND ag.id = '%u';",
-		       uuid_str, nguid_str, nsid, subsys_id, agid);
+		       uuid_str, nguid_str, ns->nsid, ns->size, ns->blksize,
+		       ns->readonly, ns->enabled, ns->subsys_id, ns->ana_grpid);
 	if (ret < 0)
 		return ret;
 
@@ -632,7 +634,7 @@ int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
 	free(sql);
 	if (ret < 0)
 		return ret;
-	ret = raise_ns_chg_aen(subsys_id, nsid);
+	ret = raise_ns_chg_aen(ns->subsys_id, ns->nsid);
 	sql_exec_simple("SELECT * FROM namespaces;");
 	return ret;
 }

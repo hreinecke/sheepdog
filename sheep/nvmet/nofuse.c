@@ -163,7 +163,6 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	struct nofuse_namespace *ns;
 	struct sd_vnode *vnode;
 	uint64_t oid;
-	char value[64];
 	int ret;
 
 	oid = vid_to_vdi_oid(nsid);
@@ -181,34 +180,27 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ns->ana_grpid = vnode->node->zone + 1;
 	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
 
+	ret = configdb_get_subsys_nqn(subsys_id, ns->subsysnqn);
+	if (ret < 0) {
+		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
+		ret = SD_RES_SYSTEM_ERROR;
+		goto out;
+	}
+
 	if (rb_insert(&this_ctx->namespaces, ns, rb, ns_cmp)) {
 		sd_warn("Failed to insert namespace '%06x'", nsid);
-		free(ns);
-		return -1;
+		ret = SD_RES_SYSTEM_ERROR;
+		goto out;
 	}
-	ret = configdb_add_namespace(subsys_id, nsid, ns->uuid,
-				     ns->ana_grpid);
+	ret = configdb_add_namespace(oid, ns);
 	if (ret < 0) {
 		sd_warn("Failed to add namespace '%06x'", nsid);
-		goto out;
-	}
-	sprintf(value, "%lx", inode->vdi_size);
-	ret = configdb_set_namespace_attr(subsys_id, nsid,
-					  "device_size", value);
-	if (ret < 0) {
-		sd_warn("Failed to set namespace '%06x' size", nsid);
-		goto out;
-	}
-
-	ret = configdb_get_subsys_nqn(subsys_id, ns->subsysnqn);
-	if (ret < 0)
-		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
-
-out:
-	if (ret < 0) {
 		rb_erase(&ns->rb, &this_ctx->namespaces);
-		free(ns);
+		ret = SD_RES_SYSTEM_ERROR;
 	}
+ out:
+	if (ret < 0)
+		free(ns);
 	return ret;
 }
 
