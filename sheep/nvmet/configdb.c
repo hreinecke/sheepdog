@@ -246,11 +246,12 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE TABLE namespaces ( "
 	"device_eui64 VARCHAR(256), device_nguid VARCHAR(256), "
 	"device_uuid VARCHAR(256) UNIQUE NOT NULL, "
-	"device_size INT, device_enable INT DEFAULT 0, "
-	"ana_group_id INT, "
+	"device_size INT, device_blksize INT, device_enable INT DEFAULT 0, "
+	"device_readonly INT DEFAULT 0,ana_group_id INT, "
 	"nsid INTEGER NOT NULL, subsys_id INTEGER, ctime TIME, "
 	"UNIQUE (subsys_id, nsid), "
 	"CHECK (device_enable = 0 OR device_enable = 1), "
+	"CHECK (device_readonly = 0 OR device_enable = 1), "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
@@ -621,20 +622,59 @@ int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
 	return ret;
 }
 
-int configdb_count_namespaces(const char *subsysnqn, int *num)
+#define PARSE_COL(i, l, v)				\
+	if (!strcmp(argv[i], l)) {			\
+		(v) = strtoul(argv[i], &e, 10);		\
+		if (argv[i] == e) {			\
+			(v) = 0; goto parse_error;	\
+		}					\
+	}
+
+static int lookup_namespace_cb(void *argp, int argc, char **argv, char **col)
 {
-	char *sql;
+	struct nofuse_namespace *ns = argp;
+	char *e = NULL;
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (!argv[i] || !strlen(argv[i]))
+			continue;
+		PARSE_COL(i, "nsid", ns->nsid);
+		PARSE_COL(i, "ana_group_id", ns->ana_grpid);
+		PARSE_COL(i, "device_size", ns->size);
+		PARSE_COL(i, "device_blksize", ns->blksize);
+		if (!strcmp(col[i], "device_enable")) {
+			if (!strcmp(argv[i], "1"))
+				ns->enabled = true;
+		}
+		if (!strcmp(col[i], "device_readonly")) {
+			if (!strcmp(argv[i], "1"))
+				ns->readonly = true;
+		}
+	}
+	return 0;
+parse_error:
+	sd_err("parsing error on '%s': value '%s'", col[i], argv[i]);
+	return 1;
+}
+
+int configdb_lookup_namespace(const char *subsysnqn, uint32_t nsid,
+			      struct nofuse_namespace *ns)
+{
 	int ret;
+	char *sql, *errmsg;
 
 	ret = asprintf(&sql,
-		       "SELECT count(n.oid) AS num FROM namespaces AS n "
+		       "SELECT nsid, ana_group_id, device_size, "
+		       "device_readonly, device_blksize FROM namespaces AS n "
 		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
-		       "WHERE s.nqn = '%s';", subsysnqn);
+		       "WHERE s.nqn = '%s' and n.nsid = '%d';",
+		       subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
-	ret = sql_exec_int(sql, "num", num);
+	ret = sqlite3_exec(configdb_db, sql, lookup_namespace_cb, ns, &errmsg);
+	ret = sql_exec_error(ret, sql, errmsg);
 	free(sql);
-
 	return ret;
 }
 

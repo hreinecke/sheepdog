@@ -25,7 +25,8 @@ int configdb_del_subsys(uint32_t id);
 
 int configdb_add_namespace(uint32_t subsys_id, uint32_t nsid,
 			   uuid_t uuid, uint32_t agid);
-int configdb_count_namespaces(const char *subsysnqn, int *num);
+int configdb_lookup_namespace(const char *subsysnqn, uint32_t nsid,
+			      struct nofuse_namespace *ns);
 int configdb_get_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 				const char *attr, char *buf);
 int configdb_set_namespace_attr(uint32_t subsys_id, uint32_t nsid,
