@@ -38,6 +38,7 @@ struct nofuse_context {
 	struct rb_root nroot;
 	struct rb_root namespaces;
 	int nr_nodes;
+	unsigned int portid;
 	int trsvcid;
 	int debug;
 	int help;
@@ -147,13 +148,37 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	if (ret) {
 		sd_warn("failed to set 'attr_allow_any_host'");
 		configdb_del_subsys(subsys_id);
+		return ret;
 	}
+	/*
+	 * Without this, the subsystem is never joined to the local
+	 * port in 'subsys_port', so it can never show up in the
+	 * discovery log page (configdb_host_disc_entries() joins
+	 * through subsys_port).
+	 */
+	ret = configdb_add_subsys_port(subsysnqn, this_ctx->portid);
+	if (ret < 0)
+		sd_warn("Failed to add port %u for subsystem '%s'",
+			this_ctx->portid, subsysnqn);
 	return ret;
 }
 
 int nvmet_unregister_subsystem(uint32_t subsys_id)
 {
+	char nqn[MAX_NQN_SIZE + 1];
+	int ret;
+
 	sd_debug("unregister subsystem %06x", subsys_id);
+	ret = configdb_get_subsys_nqn(subsys_id, nqn);
+	if (ret < 0) {
+		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
+		return ret;
+	}
+	/* subsys_port.subsys_id is ON DELETE RESTRICT */
+	ret = configdb_del_subsys_port(nqn, this_ctx->portid);
+	if (ret < 0)
+		sd_warn("Failed to remove port %u for subsystem '%s'",
+			this_ctx->portid, nqn);
 	return configdb_del_subsys(subsys_id);
 }
 
@@ -360,6 +385,7 @@ static void *nofuse_main(void *arg)
 	}
 	ctx->nr_nodes = ret;
 	agid = sys->this_node.zone + 1;
+	ctx->portid = agid;
 
 	ret = register_ana_groups(ctx, agid);
 	if (ret < 0) {
