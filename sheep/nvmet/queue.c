@@ -119,10 +119,12 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 			ctrl->max_queues = tmp;
 		}
 	}
+	ep_info(ep, "using %d queues", ctrl->max_queues);
 	ret = configdb_get_subsys_attr(nqn, "subsys_id", value);
 	if (ret < 0) {
 		ep_err(ep, "error fetching subsys_id");
-		ctrl->subsys_vid = 0;
+		ret = -EBUSY;
+		goto out_unlock;
 	} else {
 		unsigned long tmp;
 		char *eptr = NULL;
@@ -130,12 +132,11 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		tmp = strtoul(value, &eptr, 10);
 		if (tmp == ULONG_MAX || value == eptr) {
 			ep_err(ep, "invalid subsys_id value '%s'", value);
-			ctrl->subsys_vid = NVMF_NUM_QUEUES;
-		} else {
-			ctrl->subsys_vid = tmp;
+			ret = -EBUSY;
+			goto out_unlock;
 		}
+		ctrl->subsys_id = tmp;
 	}
-	ep_info(ep, "using %d queues", ctrl->max_queues);
 	strcpy(ctrl->hostnqn, hostnqn);
 	strcpy(ctrl->subsysnqn, nqn);
 	ep->ctrl = ctrl;
@@ -172,7 +173,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	if (!ctrl->num_queues) {
 		printf("ctrl %u qid %d: deleting controller\n",
 		       ctrl->cntlid, ep->qid);
-		configdb_del_ctrl(ctrl->subsys_vid, ctrl->cntlid);
+		configdb_del_ctrl(ctrl->subsys_id, ctrl->cntlid);
 		list_del(&ctrl->node);
 		free(ctrl);
 	}

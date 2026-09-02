@@ -101,7 +101,7 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 		int ret;
 
 		reg_str = "vs";
-		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys_vid, &id);
+		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys_id, &id);
 		if (ret < 0) {
 			ctrl_info(ep, "%s: failed to identify controller",
 				  __func__);
@@ -337,7 +337,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
 
-	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys_vid, &id);
+	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys_id, &id);
 	if (ret < 0)
 		return ret;
 
@@ -393,7 +393,7 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 	int ret;
 
 	memset(id_buf, 0, len);
-	ret = configdb_identify_active_ns(ep->ctrl->subsys_vid,
+	ret = configdb_identify_active_ns(ep->ctrl->subsys_id,
 					  id_buf, len);
 	if (ret < 0)
 		return ret;
@@ -434,7 +434,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 	uint8_t *desc_list_save = desc_list;
 
 	memset(desc_list, 0, len);
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys_vid, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_id, nsid,
 					  "device_uuid", uid_str);
 	if (ret < 0)
 		return ret;
@@ -457,7 +457,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 		ctrl_info(ep, "no space for nguid");
 		goto parse_eui64;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys_vid, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_id, nsid,
 					  "device_nguid", uid_str);
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
@@ -481,7 +481,7 @@ parse_eui64:
 		ctrl_info(ep, "no space for eu64");
 		goto done;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys_vid, nsid,
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_id, nsid,
 					  "device_eui64", uid_str);
 	if (!ret) {
 		desc = (struct nvme_ns_id_desc *)desc_list;
@@ -649,7 +649,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 	memset(log_buf, 0, log_len);
 	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 
-	len = configdb_ana_log_entries(ep->ctrl->subsys_vid,
+	len = configdb_ana_log_entries(ep->ctrl->subsys_id,
 				       ep->port->portid,
 				       log_buf, log_len);
 	if (len < 0) {
@@ -695,7 +695,7 @@ static int format_ns_chg_log(struct nofuse_queue *ep, void *data,
 		return -ENOMEM;
 	}
 	memset(log_buf, 0, log_len);
-	len = configdb_ns_changed_log_entries(ep->ctrl->subsys_vid,
+	len = configdb_ns_changed_log_entries(ep->ctrl->subsys_id,
 					      ep->ctrl->cntlid,
 					      log_buf, log_len);
 	if (len < 0) {

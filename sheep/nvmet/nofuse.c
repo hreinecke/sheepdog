@@ -36,7 +36,8 @@ struct nofuse_context {
 	char *dbname;
 	struct rb_root vroot;
 	struct rb_root nroot;
-	struct rb_root namespaces;
+	struct rb_root ns_root;
+	struct sd_mutex ns_lock;
 	int nr_nodes;
 	unsigned int portid;
 	int trsvcid;
@@ -97,7 +98,7 @@ out:
 static inline int ns_cmp(const struct nofuse_namespace *a,
 			 const struct nofuse_namespace *b)
 {
-	int cmp = strcmp(a->subsysnqn, b->subsysnqn);
+	int cmp = intcmp(a->subsys_id, b->subsys_id);
 	if (cmp != 0)
 		return cmp;
 	return intcmp(a->nsid, b->nsid);
@@ -107,11 +108,11 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 					  uint32_t nsid)
 {
 	struct nofuse_namespace key = {
+		.subsys_id = ctrl->subsys_id,
 		.nsid = nsid,
 	};
 
-	strcpy(key.subsysnqn, ctrl->subsysnqn);
-	return rb_search(&this_ctx->namespaces, &key, rb, ns_cmp);
+	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
 }
 
 static int register_ana_groups(struct nofuse_context *ctx,
@@ -179,7 +180,7 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 			     struct sd_inode_header *inode)
 {
-	struct nofuse_namespace *ns;
+	struct nofuse_namespace *ns, *new = NULL;
 	struct sd_vnode *vnode;
 	uint64_t oid;
 	int ret;
@@ -199,24 +200,21 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ns->ana_grpid = vnode->node->zone + 1;
 	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
 
-	ret = configdb_get_subsys_nqn(subsys_id, ns->subsysnqn);
-	if (ret < 0) {
-		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
-		goto out;
-	}
-
-	if (rb_insert(&this_ctx->namespaces, ns, rb, ns_cmp)) {
+	sd_mutex_lock(&this_ctx->ns_lock);
+	new = rb_insert(&this_ctx->ns_root, ns, rb, ns_cmp);
+	if (new) {
 		sd_warn("Failed to insert namespace '%06x'", nsid);
 		ret = -1;
 		errno = EBUSY;
-		goto out;
+	} else {
+		ret = configdb_add_namespace(oid, ns);
+		if (ret < 0) {
+			sd_warn("Failed to add namespace '%06x'", nsid);
+			rb_erase(&ns->rb, &this_ctx->ns_root);
+		}
 	}
-	ret = configdb_add_namespace(oid, ns);
-	if (ret < 0) {
-		sd_warn("Failed to add namespace '%06x'", nsid);
-		rb_erase(&ns->rb, &this_ctx->namespaces);
-	}
- out:
+	sd_mutex_unlock(&this_ctx->ns_lock);
+
 	if (ret < 0)
 		free(ns);
 	return ret;
@@ -225,23 +223,32 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
 {
 	struct nofuse_namespace *ns, key = {
+		.subsys_id = subsys_id,
 		.nsid = nsid,
 	};
 	int ret;
 
 	sd_debug("unregister namespace %06x", nsid);
-	ret = configdb_get_subsys_nqn(subsys_id, key.subsysnqn);
-	if (ret < 0)
-		return ret;
-	ns = rb_search(&this_ctx->namespaces, &key, rb, ns_cmp);
-	if (ns)
-		rb_erase(&ns->rb, &this_ctx->namespaces);
-	return configdb_del_namespace(subsys_id, nsid);
+	sd_mutex_lock(&this_ctx->ns_lock);
+	ret = configdb_del_namespace(subsys_id, nsid);
+	if (ret < 0) {
+		sd_warn("Failed to delete namespace '%06x'", nsid);
+	} else {
+		ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+		if (ns)
+			rb_erase(&ns->rb, &this_ctx->ns_root);
+		else {
+			ret = -1;
+			errno = -ENOENT;
+		}
+	}
+	sd_mutex_unlock(&this_ctx->ns_lock);
+	return ret;
 }
 
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
 
-static void register_namespaces(char *subsysnqn, uint32_t subsys_id,
+static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 				unsigned long *vdi_inuse,
 				unsigned long *vdi_deleted)
 {
@@ -335,7 +342,7 @@ static int register_subsystems(unsigned int agid)
 			sd_warn("Failed add subsystem '%s'", inode->name);
 			continue;
 		}
-		register_namespaces(inode->name, nr,
+		register_ns_root(inode->name, nr,
 				   vdi_inuse, vdi_deleted);
 	}
 out:
@@ -349,7 +356,7 @@ static void nofuse_cleanup(void *arg)
 
 	rb_destroy(&ctx->nroot, struct sd_vnode, rb);
 	rb_destroy(&ctx->vroot, struct sd_node, rb);
-	rb_destroy(&ctx->namespaces, struct nofuse_namespace, rb);
+	rb_destroy(&ctx->ns_root, struct nofuse_namespace, rb);
 	free(ctx->traddr);
 	free(ctx->dbname);
 	free(arg);
@@ -443,7 +450,8 @@ int nofuse_init(const char *traddr, int trsvcid)
 	this_ctx->dbname = strdup("nofuse.sqlite");
 	INIT_RB_ROOT(&this_ctx->nroot);
 	INIT_RB_ROOT(&this_ctx->vroot);
-	INIT_RB_ROOT(&this_ctx->namespaces);
+	INIT_RB_ROOT(&this_ctx->ns_root);
+	sd_init_mutex(&this_ctx->ns_lock);
 
 	err = sd_thread_create("nofuse", &t, nofuse_main, this_ctx);
 	if (err) {

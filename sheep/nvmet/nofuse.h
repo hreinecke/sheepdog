@@ -136,7 +136,7 @@ struct nofuse_ctrl {
 	char subsysnqn[MAX_NQN_SIZE + 1];
 	char hostnqn[MAX_NQN_SIZE + 1];
 	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
-	uint32_t subsys_vid;
+	uint32_t subsys_id;
 	int cntlid;
 	int kato;
 	int kato_countdown;
@@ -151,7 +151,6 @@ struct nofuse_ctrl {
 
 struct nofuse_namespace {
 	struct rb_node rb;
-	char subsysnqn[MAX_NQN_SIZE];
 	uuid_t uuid;
 	uint32_t subsys_id;
 	uint32_t nsid;
