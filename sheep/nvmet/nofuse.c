@@ -197,6 +197,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ns->size = inode->vdi_size;
 	ns->blksize = SECTOR_SIZE;
 	ns->readonly = false;
+	ns->enabled = true;
 	ns->ana_grpid = vnode->node->zone + 1;
 	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
 
