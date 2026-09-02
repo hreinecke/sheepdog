@@ -150,10 +150,16 @@ struct nofuse_ctrl {
 };
 
 struct nofuse_namespace {
+	struct rb_node rb;
+	char subsysnqn[MAX_NQN_SIZE];
+	uuid_t uuid;
+	uint32_t subsys_id;
 	uint32_t nsid;
+	uint32_t ana_grpid;
 	size_t size;
 	unsigned int blksize;
 	bool readonly;
+	bool enabled;
 };
 
 struct nofuse_port {
@@ -272,8 +278,8 @@ int stop_port(struct nofuse_port *port);
 int add_ana_group(int portid, int ana_grpid, int ana_state);
 int del_ana_group(int portid, int ana_grpid);
 
-int lookup_namespace(struct nofuse_ctrl *ctrl, uint32_t nsid,
-		     struct nofuse_namespace *ns);
+struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
+					  uint32_t nsid);
 int add_namespace(const char *subsysnqn, uint32_t nsid);
 int del_namespace(const char *subsysnqn, uint32_t nsid);
 int enable_namespace(const char *subsysnqn, uint32_t nsid);

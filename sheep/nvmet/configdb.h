@@ -17,6 +17,7 @@ int configdb_add_host(const char *nqn);
 int configdb_del_host(const char *nqn);
 
 int configdb_add_subsys(const char *nqn, uint32_t id, int type);
+int configdb_get_subsys_nqn(int subsys_id, char *nqn);
 int configdb_get_discovery_nqn(char *nqn);
 int configdb_set_discovery_nqn(const char *nqn);
 int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf);

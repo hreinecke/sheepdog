@@ -474,6 +474,21 @@ int configdb_set_discovery_nqn(const char *nqn)
 	return ret;
 }
 
+int configdb_get_subsys_nqn(int subsys_id, char *nqn)
+{
+	char *sql;
+	int ret;
+
+	ret = asprintf(&sql, "SELECT nqn FROM subsystems "
+		       "WHERE attr_vid = '%d';",
+		       subsys_id);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_str(sql, "nqn", nqn);
+	free(sql);
+	return ret;
+}
+
 int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 {
 	char *sql;

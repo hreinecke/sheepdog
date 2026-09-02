@@ -358,34 +358,25 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 			      uint8_t *id_buf, uint64_t len)
 {
-	struct nofuse_namespace ns;
+	struct nofuse_namespace *ns;
 	struct nvme_id_ns id;
-	int ret, anagrp;
 
-	ret = lookup_namespace(ep->ctrl, nsid, &ns);
-	if (ret < 0)
+	ns = lookup_namespace(ep->ctrl, nsid);
+	if (!ns)
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
-
-	ret = configdb_get_namespace_anagrp(ep->ctrl->subsysnqn, nsid,
-					    &anagrp);
-	if (ret < 0) {
-		ctrl_info(ep, "nsid %u error %d retrieving ana grp",
-			  nsid, ret);
-		anagrp = 0;
-	}
 
 	memset(&id, 0, sizeof(id));
 
-	id.nsze = (uint64_t)ns.size / ns.blksize;
+	id.nsze = (uint64_t)ns->size / ns->blksize;
 	id.ncap = id.nsze;
 	id.nlbaf = 1;
 	id.flbas = 0;
-	if (anagrp > 0) {
+	if (ns->ana_grpid > 0) {
 		id.nmic = 1;
-		id.anagrpid = anagrp;
+		id.anagrpid = ns->ana_grpid;
 	}
 	id.lbaf[0].ds = 12;
-	if (ns.readonly)
+	if (ns->readonly)
 		id.nsattr = 1;
 
 	if (len > sizeof(id))
@@ -793,11 +784,10 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	uint32_t nsid = le32toh(cmd->rw.nsid);
 	struct ns_ops *ns_ops = uring_register_ops();
-	struct nofuse_namespace ns;
-	int ret;
+	struct nofuse_namespace *ns;
 
-	ret = lookup_namespace(ep->ctrl, nsid, &ns);
-	if (ret) {
+	ns = lookup_namespace(ep->ctrl, nsid);
+	if (!ns) {
 		ctrl_err(ep, "invalid nsid %u", nsid);
 		return NVME_SC_INVALID_NS;
 	}
@@ -809,7 +799,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	}
 
 	qe->vid = nsid;
-	qe->data_pos = le64toh(cmd->rw.slba) * ns.blksize;
+	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
@@ -825,17 +815,17 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	uint8_t sgl_type = cmd->rw.dptr.sgl.type;
 	uint32_t nsid = le32toh(cmd->rw.nsid);
 	struct ns_ops *ns_ops = uring_register_ops();
-	struct nofuse_namespace ns;
+	struct nofuse_namespace *ns;
 	int ret;
 
-	ret = lookup_namespace(ep->ctrl, nsid, &ns);
-	if (ret) {
+	ns = lookup_namespace(ep->ctrl, nsid);
+	if (!ns) {
 		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
 	qe->vid = nsid;
-	qe->data_pos = le64toh(cmd->rw.slba) * ns.blksize;
+	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 

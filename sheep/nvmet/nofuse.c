@@ -36,6 +36,7 @@ struct nofuse_context {
 	char *dbname;
 	struct rb_root vroot;
 	struct rb_root nroot;
+	struct rb_root namespaces;
 	int nr_nodes;
 	int trsvcid;
 	int debug;
@@ -92,42 +93,24 @@ out:
 	return ret < 0 ? ret : nr_nodes;
 }
 
-int lookup_namespace(struct nofuse_ctrl *ctrl, uint32_t nsid,
-		     struct nofuse_namespace *ns)
+static inline int ns_cmp(const struct nofuse_namespace *a,
+			 const struct nofuse_namespace *b)
 {
-	struct sd_inode_header *inode;
-	int ret;
+	int cmp = strcmp(a->subsysnqn, b->subsysnqn);
+	if (cmp != 0)
+		return cmp;
+	return intcmp(a->nsid, b->nsid);
+}
 
-	inode = xzalloc(sizeof(*inode));
-	ret = sd_read_object(vid_to_vdi_oid(nsid), (char *)inode,
-			     sizeof(*inode), 0);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("fail to read vdi inode (%" PRIx32 ")", nsid);
-		goto out;
-	}
+struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
+					  uint32_t nsid)
+{
+	struct nofuse_namespace key = {
+		.nsid = nsid,
+	};
 
-	if (inode->name[0] == '\0') {
-		ret = SD_RES_NO_VDI;
-		goto out;
-	}
-	if (inode->vdi_flags & SD_VDI_FLAG_ACL) {
-		ret = SD_RES_NO_VDI;
-		goto out;
-	}
-	if (ctrl->subsys_vid != inode->acl_id) {
-		ret = SD_RES_VDI_DENIED;
-		goto out;
-	}
-	if (!inode->vdi_size) {
-		ret = SD_RES_INVALID_PARMS;
-		goto out;
-	}
-	ns->size = inode->vdi_size;
-	ns->blksize = SECTOR_SIZE;
-	ns->readonly = oid_is_readonly(vid_to_vdi_oid(nsid));
-out:
-	free(inode);
-	return ret;
+	strcpy(key.subsysnqn, ctrl->subsysnqn);
+	return rb_search(&this_ctx->namespaces, &key, rb, ns_cmp);
 }
 
 static int register_ana_groups(struct nofuse_context *ctx,
@@ -177,6 +160,7 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 			     struct sd_inode_header *inode)
 {
+	struct nofuse_namespace *ns;
 	struct sd_vnode *vnode;
 	uint64_t oid;
 	char value[64];
@@ -187,21 +171,61 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 
 	sd_debug("register namespace %06x ('%s')",
 		 nsid, inode->name);
-	ret = configdb_add_namespace(subsys_id, nsid, inode->uuid,
-				     vnode->node->zone + 1);
+
+	ns = xzalloc(sizeof(*ns));
+	ns->subsys_id = subsys_id;
+	ns->nsid = nsid;
+	ns->size = inode->vdi_size;
+	ns->blksize = SECTOR_SIZE;
+	ns->readonly = false;
+	ns->ana_grpid = vnode->node->zone + 1;
+	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
+
+	if (rb_insert(&this_ctx->namespaces, ns, rb, ns_cmp)) {
+		sd_warn("Failed to insert namespace '%06x'", nsid);
+		free(ns);
+		return -1;
+	}
+	ret = configdb_add_namespace(subsys_id, nsid, ns->uuid,
+				     ns->ana_grpid);
 	if (ret < 0) {
 		sd_warn("Failed to add namespace '%06x'", nsid);
-		return ret;
+		goto out;
 	}
 	sprintf(value, "%lx", inode->vdi_size);
 	ret = configdb_set_namespace_attr(subsys_id, nsid,
 					  "device_size", value);
+	if (ret < 0) {
+		sd_warn("Failed to set namespace '%06x' size", nsid);
+		goto out;
+	}
+
+	ret = configdb_get_subsys_nqn(subsys_id, ns->subsysnqn);
+	if (ret < 0)
+		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
+
+out:
+	if (ret < 0) {
+		rb_erase(&ns->rb, &this_ctx->namespaces);
+		free(ns);
+	}
 	return ret;
 }
 
 int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
 {
+	struct nofuse_namespace *ns, key = {
+		.nsid = nsid,
+	};
+	int ret;
+
 	sd_debug("unregister namespace %06x", nsid);
+	ret = configdb_get_subsys_nqn(subsys_id, key.subsysnqn);
+	if (ret < 0)
+		return ret;
+	ns = rb_search(&this_ctx->namespaces, &key, rb, ns_cmp);
+	if (ns)
+		rb_erase(&ns->rb, &this_ctx->namespaces);
 	return configdb_del_namespace(subsys_id, nsid);
 }
 
@@ -211,23 +235,17 @@ static void register_namespaces(char *subsysnqn, uint32_t subsys_id,
 				unsigned long *vdi_inuse,
 				unsigned long *vdi_deleted)
 {
-	struct vnode_info *vinfo = get_vnode_info();
 	unsigned long nsid;
 	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
 
 	FOR_EACH_VDI(nsid, vdi_inuse) {
-		struct sd_vnode *vnode;
-		char vdi_size[64];
 		uint64_t oid;
-		uint32_t agid;
 		int ret;
 
 		if (test_bit(nsid, vdi_deleted))
 			continue;
 
 		oid = vid_to_vdi_oid(nsid);
-		vnode = oid_to_first_vnode(oid, &vinfo->vroot);
-		agid = vnode->node->zone + 1;
 		ret = sd_read_object(oid, (char *)inode,
 				     SD_INODE_HEADER_SIZE, 0);
 		if (ret != SD_RES_SUCCESS) {
@@ -244,15 +262,7 @@ static void register_namespaces(char *subsysnqn, uint32_t subsys_id,
 
 		sd_debug("register namespace %06lx ('%s')",
 			 nsid, inode->name);
-		ret = configdb_add_namespace(subsys_id, nsid,
-					     inode->uuid, agid);
-		if (ret < 0) {
-			sd_warn("Failed to add namespace '%06lx'", nsid);
-			continue;
-		}
-		sprintf(vdi_size, "%lx", inode->vdi_size);
-		ret = configdb_set_namespace_attr(subsys_id, nsid,
-					       "device_size", vdi_size);
+		nvmet_register_namespace(subsys_id, nsid, inode);
 	}
 	free(inode);
 }
@@ -327,6 +337,9 @@ static void nofuse_cleanup(void *arg)
 {
 	struct nofuse_context *ctx = arg;
 
+	rb_destroy(&ctx->nroot, struct sd_vnode, rb);
+	rb_destroy(&ctx->vroot, struct sd_node, rb);
+	rb_destroy(&ctx->namespaces, struct nofuse_namespace, rb);
 	free(ctx->traddr);
 	free(ctx->dbname);
 	free(arg);
@@ -419,6 +432,7 @@ int nofuse_init(const char *traddr, int trsvcid)
 	this_ctx->dbname = strdup("nofuse.sqlite");
 	INIT_RB_ROOT(&this_ctx->nroot);
 	INIT_RB_ROOT(&this_ctx->vroot);
+	INIT_RB_ROOT(&this_ctx->namespaces);
 
 	err = sd_thread_create("nofuse", &t, nofuse_main, this_ctx);
 	if (err) {
