@@ -375,7 +375,12 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 		id.nmic = 1;
 		id.anagrpid = ns->ana_grpid;
 	}
-	id.lbaf[0].ds = 12;
+	/*
+	 * lbaf[0].ds is the LBA size as a power-of-2 exponent; it must
+	 * match ns->blksize, the unit id.nsze above was computed in,
+	 * or the host derives the wrong device capacity.
+	 */
+	id.lbaf[0].ds = __builtin_ctz(ns->blksize);
 	if (ns->readonly)
 		id.nsattr = 1;
 

@@ -178,9 +178,9 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	}
 	sprintf(value, "1");
 	ret = configdb_set_subsys_attr(subsys_id,
-				       "attr_allow_any_host", value);
+				       "allow_any_host", value);
 	if (ret) {
-		sd_warn("failed to set 'attr_allow_any_host'");
+		sd_warn("failed to set 'allow_any_host'");
 		configdb_del_subsys(subsys_id);
 		return ret;
 	}

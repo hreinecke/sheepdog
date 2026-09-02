@@ -213,15 +213,15 @@ static const char *init_sql[NUM_TABLES] = {
 	/* subsystems */
 	"CREATE TABLE subsystems ( "
 	"subsys_id INTEGER PRIMARY KEY, "
-	"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
-	"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
-	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
-	"attr_version VARCHAR(256), attr_type INT DEFAULT 3, "
-	"attr_qid_max INT, "
-	"attr_cntlid_min INT DEFAULT 1, attr_cntlid_max INT DEFAULT 65519, "
+	"nqn VARCHAR(223) UNIQUE NOT NULL, allow_any_host INT DEFAULT 1, "
+	"firmware VARCHAR(256), ieee_oui VARCHAR(256), "
+	"model VARCHAR(256), serial VARCHAR(256), "
+	"version VARCHAR(256), type INT DEFAULT 3, "
+	"qid_max INT, "
+	"cntlid_min INT DEFAULT 1, cntlid_max INT DEFAULT 65519, "
 	"cntlid_next INT DEFAULT 1, ctime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
-	"CHECK (attr_allow_any_host = 0 OR attr_allow_any_host = 1) );",
+	"CHECK (allow_any_host = 0 OR allow_any_host = 1) );",
 	/* ana_groups */
 	"CREATE TABLE ana_groups ( id INTEGER PRIMARY KEY, "
 	"CHECK (id > 0) );"
@@ -434,14 +434,14 @@ int configdb_add_subsys(const char *subsysnqn, uint32_t subsys_id, int type)
 	char serial[32];
 	int ret, allow_any = 0;
 
-	sprintf(serial, "SHEEPDOG%06x", subsys_id);
+	sprintf(serial, "SHEEPDOG%06X", subsys_id);
 	if (type == NVME_NQN_CUR)
 		allow_any = 1;
 	ret = asprintf(&sql,
 		       "INSERT OR IGNORE INTO subsystems "
-		       "(nqn, subsys_id, attr_model, attr_serial, "
-		       "attr_version, attr_ieee_oui, attr_firmware, "
-		       "attr_allow_any_host, attr_type, attr_qid_max, ctime) "
+		       "(nqn, subsys_id, model, serial, "
+		       "version, ieee_oui, firmware, "
+		       "allow_any_host, type, qid_max, ctime) "
 		       "VALUES ('%s', '%d', 'sheepdog', '%s', '2.4', "
 		       "'851255', '%s', '%d', '%d', '%d', CURRENT_TIMESTAMP);",
 		       subsysnqn, subsys_id, serial, firmware_rev, allow_any,
@@ -455,7 +455,7 @@ int configdb_add_subsys(const char *subsysnqn, uint32_t subsys_id, int type)
 
 int configdb_get_discovery_nqn(char *nqn)
 {
-	return sql_exec_str("SELECT nqn FROM subsystems WHERE attr_type = '3';",
+	return sql_exec_str("SELECT nqn FROM subsystems WHERE type = '3';",
 			    "nqn", nqn);
 }
 
@@ -465,7 +465,7 @@ int configdb_set_discovery_nqn(const char *nqn)
 	int ret;
 
 	ret = asprintf(&sql,
-		"UPDATE subsystems SET nqn = '%s' WHERE attr_type = '3';",
+		"UPDATE subsystems SET nqn = '%s' WHERE type = '3';",
 		nqn);
 	if (ret < 0)
 		return ret;
@@ -511,9 +511,9 @@ int configdb_set_subsys_attr(uint32_t subsys_id, const char *attr,
 	char *sql;
 	int ret;
 
-	if (!strcmp(attr, "attr_type"))
+	if (!strcmp(attr, "type"))
 		return -EPERM;
-	if (!strcmp(attr, "attr_qid_max")) {
+	if (!strcmp(attr, "qid_max")) {
 		unsigned long qid_max;
 		char *eptr = NULL;
 
@@ -523,8 +523,8 @@ int configdb_set_subsys_attr(uint32_t subsys_id, const char *attr,
 		if (qid_max > NVMF_NUM_QUEUES)
 			return -EINVAL;
 	}
-	if (!strcmp(attr, "attr_cntlid_min") ||
-	    !strcmp(attr, "attr_cntlid_max")) {
+	if (!strcmp(attr, "cntlid_min") ||
+	    !strcmp(attr, "cntlid_max")) {
 		unsigned long lim;
 		char *eptr = NULL;
 
@@ -625,7 +625,7 @@ int configdb_add_namespace(uint64_t oid, struct nofuse_namespace *ns)
 		       "SELECT '%s', '%s', '%u', s.subsys_id, ag.id, "
 		       "'%lu', '%u', '%d', '%d', CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
-		       "WHERE s.subsys_id = '%d' AND s.attr_type == '2' AND ag.id = '%u';",
+		       "WHERE s.subsys_id = '%d' AND s.type == '2' AND ag.id = '%u';",
 		       uuid_str, nguid_str, ns->nsid, ns->size, ns->blksize,
 		       ns->readonly, ns->enabled, ns->subsys_id, ns->ana_grpid);
 	if (ret < 0)
@@ -1148,7 +1148,7 @@ int configdb_del_ana_port_group(unsigned int portid, int grpid)
 static char raise_disc_chg_aen_sql[] =
 	"SELECT c.cntlid FROM controllers AS c "
 	"INNER JOIN subsystems AS s ON s.oid = c.subsys_id "
-	"WHERE s.attr_type = '3';";
+	"WHERE s.type = '3';";
 
 static int raise_disc_chg_aen(void)
 {
@@ -1169,7 +1169,7 @@ int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn)
 	ret = asprintf(&sql,
 		       "INSERT INTO host_subsys (host_id, subsys_id, ctime) "
 		       "SELECT h.oid, s.oid, CURRENT_TIMESTAMP FROM hosts AS h, subsystems AS s "
-		       "WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.attr_allow_any_host != '1';",
+		       "WHERE h.nqn = '%s' AND s.nqn = '%s' AND s.allow_any_host != '1';",
 		       hostnqn, subsysnqn);
 	if (ret < 0)
 		return ret;
@@ -1355,7 +1355,7 @@ int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 		       "FROM subsys_port AS sp "
 		       "INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 		       "INNER JOIN ports AS p ON sp.port_id = p.id "
-		       "WHERE s.attr_allow_any_host = '1' "
+		       "WHERE s.allow_any_host = '1' "
 		       "AND s.nqn = '%s' AND p.id = '%d';",
 		       subsysnqn, portid);
 	if (ret < 0)
@@ -1510,13 +1510,13 @@ next:
 
 static char any_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, s.attr_type AS subtype, p.addr_trtype AS trtype, "
+	"p.id, s.type AS subtype, p.addr_trtype AS trtype, "
 	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 	"p.addr_treq AS treq, p.addr_tsas AS tsas "
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
-	"WHERE s.attr_allow_any_host = '1';";
+	"WHERE s.allow_any_host = '1';";
 
 int configdb_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len)
 {
@@ -1530,7 +1530,7 @@ int configdb_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len)
 
 	ret = asprintf(&sql,
 		       "SELECT s.nqn AS subsys_nqn, "
-		       "p.id, s.attr_type AS subtype, p.addr_trtype AS trtype, "
+		       "p.id, s.type AS subtype, p.addr_trtype AS trtype, "
 		       "p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
 		       "p.addr_treq AS treq, p.addr_tsas AS tsas "
 		       "FROM subsys_port AS sp "
@@ -1621,10 +1621,10 @@ int configdb_subsys_identify_ctrl(uint32_t subsys_id,
 	char *sql, *errmsg;
 
 	ret = asprintf(&sql,
-		       "SELECT s.nqn, s.attr_firmware AS firmware, "
-		       "s.attr_ieee_oui AS ieee_oui, s.attr_model AS model, "
-		       "s.attr_serial AS serial, s.attr_type AS type, "
-		       "s.attr_version AS version "
+		       "SELECT s.nqn, s.firmware AS firmware, "
+		       "s.ieee_oui AS ieee_oui, s.model AS model, "
+		       "s.serial AS serial, s.type AS type, "
+		       "s.version AS version "
 		       "FROM subsystems AS s WHERE s.subsys_id = '%u';",
 		       subsys_id);
 	if (ret < 0)
