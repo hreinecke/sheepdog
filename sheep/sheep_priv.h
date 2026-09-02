@@ -472,6 +472,7 @@ int get_nodes_epoch(uint32_t epoch, struct vnode_info *cur_vinfo,
 void wait_get_vdis_done(void);
 
 int get_nr_copies(struct vnode_info *vnode_info);
+int get_zones_nr_from(struct rb_root *nroot);
 
 void wakeup_requests_on_epoch(void);
 void wakeup_requests_on_oid(uint64_t oid);

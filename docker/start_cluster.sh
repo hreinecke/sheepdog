@@ -10,7 +10,7 @@ done
 
 $DOG cluster format -l
 $DOG acl create nqn.subsys-1
-$DOG vdi create nqn.ns-1 64M
+$DOG vdi create nqn.ns-1 512M
 $DOG vdi create nqn.ns-2 64M
 $DOG acl add vdi nqn.subsys-1 nqn.ns-1
 $DOG acl add vdi nqn.subsys-1 nqn.ns-2

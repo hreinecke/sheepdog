@@ -100,7 +100,7 @@ enum sd_status sd_string_to_status(const char *str)
 	return SD_STATUS_INVALID;
 }
 
-static int get_zones_nr_from(struct rb_root *nroot)
+int get_zones_nr_from(struct rb_root *nroot)
 {
 	int nr_zones = 0, j;
 	uint32_t zones[SD_MAX_COPIES];
