@@ -95,6 +95,39 @@ out:
 	return ret < 0 ? ret : nr_nodes;
 }
 
+static int register_vdi(uint32_t subsys_id, uint32_t nsid, bool unregister)
+{
+	int ret;
+	struct sd_req req;
+	struct sd_rsp *rsp = (struct sd_rsp *)&req;
+	char *buf;
+
+	buf = xzalloc(256);
+	sprintf(buf, "%s:%u", this_ctx->traddr, this_ctx->trsvcid);
+	sd_init_req(&req, unregister ?
+		    SD_OP_UNREGISTER_VDI : SD_OP_REGISTER_VDI);
+	req.vdi_lock.vid = nsid;
+	req.vdi_lock.acl = subsys_id;
+	req.data_length = 256;
+	req.flags = SD_FLAG_CMD_WRITE;
+
+	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
+	if (ret < 0) {
+		free(buf);
+		return ret;
+	}
+
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to %sregister namespace '%06x': %s",
+		       unregister ? "un" : "",
+		       nsid, sd_strerror(rsp->result));
+		ret = -1;
+		errno = EIO;
+	}
+	free(buf);
+	return ret;
+}
+
 static inline int ns_cmp(const struct nofuse_namespace *a,
 			 const struct nofuse_namespace *b)
 {
@@ -182,6 +215,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 {
 	struct nofuse_namespace *ns, *new = NULL;
 	struct sd_vnode *vnode;
+	bool do_register = false;
 	uint64_t oid;
 	int ret;
 
@@ -220,12 +254,15 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 		if (ret < 0) {
 			sd_warn("Failed to add namespace '%06x'", nsid);
 			rb_erase(&ns->rb, &this_ctx->ns_root);
-		}
+		} else
+			do_register = true;
 	}
 	sd_mutex_unlock(&this_ctx->ns_lock);
 
 	if (ret < 0)
 		free(ns);
+	else if (do_register)
+		ret = register_vdi(subsys_id, nsid, false);
 	return ret;
 }
 
@@ -238,6 +275,7 @@ int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
 	int ret;
 
 	sd_debug("unregister namespace %06x", nsid);
+	ret = register_vdi(subsys_id, nsid, true);
 	sd_mutex_lock(&this_ctx->ns_lock);
 	ret = configdb_del_namespace(subsys_id, nsid);
 	if (ret < 0) {
