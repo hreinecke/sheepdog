@@ -148,8 +148,11 @@ static int post_cluster_new_vdi(const struct sd_req *req, struct sd_rsp *rsp,
 		atomic_set_bit(nr, sys->vdi_inuse);
 
 #ifdef HAVE_NVMET
-	if (rsp->vdi.vdi_flags & SD_VDI_FLAG_ACL)
+	if (rsp->vdi.vdi_flags & SD_VDI_FLAG_ACL) {
 		ret = nvmet_register_subsystem(nr, name);
+		if (ret < 0)
+			ret = SD_RES_SYSTEM_ERROR;
+	}
 #endif
 	return ret;
 }
@@ -208,8 +211,11 @@ static int post_cluster_del_vdi(const struct sd_req *req, struct sd_rsp *rsp,
 	}
 
 #ifdef HAVE_NVMET
-	if (rsp->vdi.vdi_flags & SD_VDI_FLAG_ACL)
+	if (rsp->vdi.vdi_flags & SD_VDI_FLAG_ACL) {
 		ret = nvmet_unregister_subsystem(vid);
+		if (ret < 0)
+			ret = SD_RES_SYSTEM_ERROR;
+	}
 #endif	
 	return ret;
 }
@@ -1640,10 +1646,15 @@ static int cluster_alter_vdi_acl_work(struct request *req)
 		return SD_RES_VDI_WRITE;
 	}
 #ifdef HAVE_NVMET
-	if (new_acl)
+	if (new_acl) {
 		ret = nvmet_register_namespace(new_acl, vid, &inode);
-	else
+		if (ret < 0)
+			ret = SD_RES_SYSTEM_ERROR;
+	} else {
 		ret = nvmet_unregister_namespace(old_acl, vid);
+		if (ret < 0)
+			ret = SD_RES_SYSTEM_ERROR;
+	}
 #endif
 	return ret;
 }

@@ -183,20 +183,19 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ret = configdb_get_subsys_nqn(subsys_id, ns->subsysnqn);
 	if (ret < 0) {
 		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
-		ret = SD_RES_SYSTEM_ERROR;
 		goto out;
 	}
 
 	if (rb_insert(&this_ctx->namespaces, ns, rb, ns_cmp)) {
 		sd_warn("Failed to insert namespace '%06x'", nsid);
-		ret = SD_RES_SYSTEM_ERROR;
+		ret = -1;
+		errno = EBUSY;
 		goto out;
 	}
 	ret = configdb_add_namespace(oid, ns);
 	if (ret < 0) {
 		sd_warn("Failed to add namespace '%06x'", nsid);
 		rb_erase(&ns->rb, &this_ctx->namespaces);
-		ret = SD_RES_SYSTEM_ERROR;
 	}
  out:
 	if (ret < 0)
