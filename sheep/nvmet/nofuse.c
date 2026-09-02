@@ -320,8 +320,8 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 		/* this VDI has been deleted, and no need to handle it */
 		if (inode->name[0] == '\0')
 			continue;
-		/* We are only interested in VDIs */
-		if (vdi_is_acl(inode))
+		/* We are only interested in VDIs which belong to this ACL */
+		if (vdi_is_acl(inode) || inode->acl_id != subsys_id)
 			continue;
 
 		sd_debug("register namespace %06lx ('%s')",
