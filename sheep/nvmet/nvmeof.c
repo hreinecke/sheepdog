@@ -101,7 +101,7 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 		int ret;
 
 		reg_str = "vs";
-		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
+		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys_vid, &id);
 		if (ret < 0) {
 			ctrl_info(ep, "%s: failed to identify controller",
 				  __func__);
@@ -337,7 +337,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
 
-	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsysnqn, &id);
+	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys_vid, &id);
 	if (ret < 0)
 		return ret;
 
@@ -393,7 +393,7 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 	int ret;
 
 	memset(id_buf, 0, len);
-	ret = configdb_identify_active_ns(ep->ctrl->subsysnqn,
+	ret = configdb_identify_active_ns(ep->ctrl->subsys_vid,
 					  id_buf, len);
 	if (ret < 0)
 		return ret;
@@ -649,7 +649,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 	memset(log_buf, 0, log_len);
 	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 
-	len = configdb_ana_log_entries(ep->ctrl->subsysnqn,
+	len = configdb_ana_log_entries(ep->ctrl->subsys_vid,
 				       ep->port->portid,
 				       log_buf, log_len);
 	if (len < 0) {
@@ -695,7 +695,7 @@ static int format_ns_chg_log(struct nofuse_queue *ep, void *data,
 		return -ENOMEM;
 	}
 	memset(log_buf, 0, log_len);
-	len = configdb_ns_changed_log_entries(ep->ctrl->subsysnqn,
+	len = configdb_ns_changed_log_entries(ep->ctrl->subsys_vid,
 					      ep->ctrl->cntlid,
 					      log_buf, log_len);
 	if (len < 0) {

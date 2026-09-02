@@ -212,11 +212,12 @@ static const char *init_sql[NUM_TABLES] = {
 	"ctime TIME );",
 	/* subsystems */
 	"CREATE TABLE subsystems ( "
+	"subsys_id INTEGER PRIMARY KEY, "
 	"nqn VARCHAR(223) UNIQUE NOT NULL, attr_allow_any_host INT DEFAULT 1, "
 	"attr_firmware VARCHAR(256), attr_ieee_oui VARCHAR(256), "
 	"attr_model VARCHAR(256), attr_serial VARCHAR(256), "
 	"attr_version VARCHAR(256), attr_type INT DEFAULT 3, "
-	"attr_qid_max INT, attr_vid INT UNIQUE NOT NULL, "
+	"attr_qid_max INT, "
 	"attr_cntlid_min INT DEFAULT 1, attr_cntlid_max INT DEFAULT 65519, "
 	"cntlid_next INT DEFAULT 1, ctime TIME, "
 	"ana_chgcnt INT DEFAULT 0, "
@@ -229,7 +230,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"cntlid INT NOT NULL, subsys_id INT, ctrl_type INT, "
 	"CHECK (cntlid > 0 AND cntlid < 65534), "
 	"UNIQUE(cntlid, subsys_id), "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(subsys_id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* cntlid index */
 	"CREATE UNIQUE INDEX cntlid_idx ON "
@@ -237,7 +238,7 @@ static const char *init_sql[NUM_TABLES] = {
 	/* cntlid trigger */
 	"CREATE TRIGGER cntlid_incr INSERT ON controllers "
 	"BEGIN UPDATE subsystems SET cntlid_next = cntlid_next + 1 "
-	"WHERE NEW.subsys_id = oid; END;",
+	"WHERE NEW.subsys_id = subsys_id; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
 	"FOREIGN KEY (ctrl_id) REFERENCES controllers(oid) "
@@ -254,17 +255,17 @@ static const char *init_sql[NUM_TABLES] = {
 	"CHECK (device_readonly = 0 OR device_enable = 1), "
 	"FOREIGN KEY (ana_group_id) REFERENCES ana_groups(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(subsys_id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT );",
 	/* nsid_idx */
 	"CREATE UNIQUE INDEX nsid_idx ON "
 	"namespaces(subsys_id, nsid); "
 	/* subsys_ctrl view */
 	"CREATE VIEW subsys_ctrl AS "
-	"SELECT s.oid AS subsys_id, s.nqn AS subsys_nqn, "
+	"SELECT s.subsys_id AS subsys_id, s.nqn AS subsys_nqn, "
 	"c.oid AS ctrl_id, c.cntlid AS cntlid "
 	"FROM controllers AS c "
-	"INNER JOIN subsystems AS s ON c.subsys_id = s.oid;"
+	"INNER JOIN subsystems AS s ON c.subsys_id = s.subsys_id;"
 	/* subsys_ns_add trigger */
 	"CREATE TRIGGER subsys_ns_add_trig INSERT ON namespaces "
 	"BEGIN INSERT INTO ns_changed (ctrl_id, nsid) "
@@ -277,10 +278,10 @@ static const char *init_sql[NUM_TABLES] = {
 	"WHERE sc.subsys_id = OLD.subsys_id; END;",
 	/* ns_ana_port_group view */
 	"CREATE VIEW ns_ana_port_group AS "
-	"SELECT s.oid AS s_id, ns.nsid, ap.id AS ap_id "
+	"SELECT s.subsys_id AS s_id, ns.nsid, ap.id AS ap_id "
 	"FROM ana_port_group AS ap "
 	"INNER JOIN namespaces AS n ON n.ana_group_id = ap.id "
-	"INNER JOIN subsystems AS s ON s.oid = n.subsys_id;"
+	"INNER JOIN subsystems AS s ON s.subsys_id = n.subsys_id;"
 	/* ns_anagrp trigger */
 	"CREATE TRIGGER ns_anagrp_update_trig UPDATE OF ana_group_id "
 	"ON namespaces BEGIN UPDATE ana_port_group SET chgcnt = chgcnt + 1 "
@@ -313,7 +314,7 @@ static const char *init_sql[NUM_TABLES] = {
 	"ctime TIME, "
 	"FOREIGN KEY (host_id) REFERENCES hosts(oid) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
-	"FOREIGN KEY (subsys_id) REFERENCES subsys(oid) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(subsys_id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
 	/* host_subsys triger */
 	"CREATE TRIGGER host_subsys_add_trig INSERT ON host_subsys "
@@ -322,7 +323,7 @@ static const char *init_sql[NUM_TABLES] = {
 	/* subsys_port */
 	"CREATE TABLE subsys_port ( subsys_id INTEGER, port_id INTEGER, "
 	"ctime TIME, "
-	"FOREIGN KEY (subsys_id) REFERENCES subsystems(oid) "
+	"FOREIGN KEY (subsys_id) REFERENCES subsystems(subsys_id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT, "
 	"FOREIGN KEY (port_id) REFERENCES ports(id) "
 	"ON UPDATE CASCADE ON DELETE RESTRICT);",
@@ -438,7 +439,7 @@ int configdb_add_subsys(const char *subsysnqn, uint32_t subsys_id, int type)
 		allow_any = 1;
 	ret = asprintf(&sql,
 		       "INSERT OR IGNORE INTO subsystems "
-		       "(nqn, attr_vid, attr_model, attr_serial, "
+		       "(nqn, subsys_id, attr_model, attr_serial, "
 		       "attr_version, attr_ieee_oui, attr_firmware, "
 		       "attr_allow_any_host, attr_type, attr_qid_max, ctime) "
 		       "VALUES ('%s', '%d', 'sheepdog', '%s', '2.4', "
@@ -480,7 +481,7 @@ int configdb_get_subsys_nqn(int subsys_id, char *nqn)
 	int ret;
 
 	ret = asprintf(&sql, "SELECT nqn FROM subsystems "
-		       "WHERE attr_vid = '%d';",
+		       "WHERE subsys_id = '%d';",
 		       subsys_id);
 	if (ret < 0)
 		return ret;
@@ -504,7 +505,7 @@ int configdb_get_subsys_attr(const char *nqn, const char *attr, char *buf)
 	return ret;
 }
 
-int configdb_set_subsys_attr(const char *nqn, const char *attr,
+int configdb_set_subsys_attr(uint32_t subsys_id, const char *attr,
 			     const char *buf)
 {
 	char *sql;
@@ -534,8 +535,8 @@ int configdb_set_subsys_attr(const char *nqn, const char *attr,
 			return -EINVAL;
 	}
 	ret = asprintf(&sql,
-		"UPDATE subsystems SET %s = '%s' WHERE nqn = '%s';",
-		attr, buf, nqn);
+		"UPDATE subsystems SET %s = '%s' WHERE subsys_id = '%u';",
+		attr, buf, subsys_id);
 	if (ret < 0)
 		return ret;
 
@@ -552,7 +553,7 @@ int configdb_del_subsys(uint32_t subsys_id)
 	int ret;
 
 	ret = asprintf(&sql,
-		       "DELETE FROM subsystems WHERE attr_vid = '%d';",
+		       "DELETE FROM subsystems WHERE subsys_id = '%d';",
 		       subsys_id);
 	if (ret < 0)
 		return ret;
@@ -596,9 +597,9 @@ static int raise_ns_chg_aen(uint32_t subsys_id, uint32_t nsid)
 
 	ret = asprintf(&sql,
 		       "SELECT s.nqn AS subsysnqn, c.cntlid FROM controllers AS c "
-		       "INNER JOIN subsystems AS s ON c.subsys_id = s.oid "
-		       "INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
-		       "WHERE s.attr_vid = '%d' AND n.nsid = '%d';",
+		       "INNER JOIN subsystems AS s ON c.subsys_id = s.subsys_id "
+		       "INNER JOIN namespaces AS n ON n.subsys_id = s.subsys_id "
+		       "WHERE s.subsys_id = '%d' AND n.nsid = '%d';",
 		       subsys_id, nsid);
 	if (ret < 0)
 		return ret;
@@ -621,10 +622,10 @@ int configdb_add_namespace(uint64_t oid, struct nofuse_namespace *ns)
 		       "(device_uuid, device_nguid, nsid, subsys_id, "
 		       "ana_group_id, device_size, device_blksize, "
 		       "device_readonly, device_enable, ctime) "
-		       "SELECT '%s', '%s', '%u', s.oid, ag.id, "
+		       "SELECT '%s', '%s', '%u', s.subsys_id, ag.id, "
 		       "'%lu', '%u', '%d', '%d', CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
-		       "WHERE s.attr_vid = '%d' AND s.attr_type == '2' AND ag.id = '%u';",
+		       "WHERE s.subsys_id = '%d' AND s.attr_type == '2' AND ag.id = '%u';",
 		       uuid_str, nguid_str, ns->nsid, ns->size, ns->blksize,
 		       ns->readonly, ns->enabled, ns->subsys_id, ns->ana_grpid);
 	if (ret < 0)
@@ -704,9 +705,8 @@ int configdb_get_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 	if (!strcmp(attr, "enable"))
 		attr = "device_enable";
 	ret = asprintf(&sql,
-		       "SELECT ns.%s FROM namespaces AS n "
-		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id "
-		       "WHERE s.attr_vid = '%d' AND n.nsid = '%u';",
+		       "SELECT n.%s FROM namespaces AS n "
+		       "WHERE n.subsys_id = '%d' AND n.nsid = '%u';",
 		       attr, subsys_id, nsid);
 	if (ret < 0)
 		return ret;
@@ -727,11 +727,8 @@ int configdb_set_namespace_attr(uint32_t subsys_id, uint32_t nsid,
 	if (!strcmp(attr, "enable"))
 		attr = "device_enable";
 	ret = asprintf(&sql,
-		       "UPDATE namespaces SET %s = '%s' FROM "
-		       "(SELECT n.nsid AS nsid, s.nqn AS nqn, s.attr_vid AS vid "
-		       "FROM namespaces AS n "
-		       "INNER JOIN subsystems AS s ON s.oid = n.subsys_id) AS sel "
-		       "WHERE sel.vid = '%d' AND sel.nsid = '%u';",
+		       "UPDATE namespaces SET %s = '%s' "
+		       "WHERE subsys_id = '%d' AND nsid = '%u';",
 		       attr, buf, subsys_id, nsid);
 	if (ret < 0)
 		goto rollback;
@@ -830,9 +827,9 @@ int configdb_del_namespace(uint32_t subsys_id, uint32_t nsid)
 	if (ret < 0)
 		return ret;
 	ret = asprintf(&sql,
-		       "DELETE FROM namespaces AS n WHERE n.subsys_id IN "
-		       "(SELECT oid FROM subsystems WHERE attr_vid = '%d') AND "
-		       "n.nsid = '%u';", subsys_id, nsid);
+		       "DELETE FROM namespaces AS n "
+		       "WHERE n.subsys_id = '%d' AND n.nsid = '%u';",
+		       subsys_id, nsid);
 	if (ret < 0)
 		goto rollback;
 
@@ -887,16 +884,15 @@ int configdb_get_cntlid(const char *subsysnqn, uint16_t *cntlid)
 	return ret;
 }
 
-int configdb_del_ctrl(const char *subsysnqn, int cntlid)
+int configdb_del_ctrl(uint32_t subsys_id, int cntlid)
 {
 	int ret;
 	char *sql;
 
 	ret = asprintf(&sql,
-		       "DELETE FROM controllers AS c WHERE c.subsys_id IN "
-		       "(SELECT oid FROM subsystems WHERE nqn = '%s') AND "
-		       "c.cntlid = '%d';",
-		       subsysnqn, cntlid);
+		       "DELETE FROM controllers "
+		       "WHERE subsys_id = '%u' AND cntlid = '%d';",
+		       subsys_id, cntlid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -1225,7 +1221,7 @@ int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn)
 	return 0;
 }
 
-static int configdb_update_subsys_port_genctr(const char *subsysnqn)
+static int configdb_update_subsys_port_genctr(uint32_t subsys_id)
 {
 	char *sql;
 	int ret;
@@ -1233,11 +1229,10 @@ static int configdb_update_subsys_port_genctr(const char *subsysnqn)
 	ret = asprintf(&sql,
 		       "UPDATE hosts SET genctr = genctr + 1 "
 		       "FROM "
-		       "(SELECT s.nqn AS subsys_nqn, hs.host_id AS host_id "
-		       "FROM host_subsys AS hs "
-		       "INNER JOIN subsystems AS s ON s.oid = hs.subsys_id) AS hs "
-		       "WHERE hs.host_id = hosts.oid AND hs.subsys_nqn = '%s';",
-		       subsysnqn);
+		       "(SELECT hs.subsys_id AS subsys_id, hs.host_id AS host_id "
+		       "FROM host_subsys AS hs) AS hs "
+		       "WHERE hs.host_id = hosts.oid AND hs.subsys_id = '%u';",
+		       subsys_id);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);
@@ -1245,7 +1240,7 @@ static int configdb_update_subsys_port_genctr(const char *subsysnqn)
 	return ret;
 }
 
-int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
+int configdb_add_subsys_port(uint32_t subsys_id, unsigned int port)
 {
 	int ret, _ret;
 	char *sql;
@@ -1256,9 +1251,9 @@ int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 
 	ret = asprintf(&sql,
 		       "INSERT INTO subsys_port (subsys_id, port_id, ctime) "
-		       "SELECT s.oid, p.id, CURRENT_TIMESTAMP FROM subsystems AS s, ports AS p "
-		       "WHERE s.nqn = '%s' AND p.id = '%d';",
-		       subsysnqn, port);
+		       "SELECT '%u', p.id, CURRENT_TIMESTAMP FROM ports AS p "
+		       "WHERE p.id = '%d';",
+		       subsys_id, port);
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_simple(sql);
@@ -1266,7 +1261,7 @@ int configdb_add_subsys_port(const char *subsysnqn, unsigned int port)
 	if (ret < 0)
 		goto rollback;
 
-	ret = configdb_update_subsys_port_genctr(subsysnqn);
+	ret = configdb_update_subsys_port_genctr(subsys_id);
 	if (ret < 0)
 		goto rollback;
 
@@ -1278,7 +1273,7 @@ rollback:
 	return ret;
 }
 
-int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
+int configdb_del_subsys_port(uint32_t subsys_id, unsigned int port)
 {
 	int ret, _ret;
 	char *sql;
@@ -1289,11 +1284,10 @@ int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
 
 	ret = asprintf(&sql,
 		       "DELETE FROM subsys_port AS sp "
-		       "WHERE sp.subsys_id in "
-		       "(SELECT oid FROM subsystems WHERE nqn LIKE '%s') AND "
+		       "WHERE sp.subsys_id = '%u' AND "
 		       "sp.port_id IN "
 		       "(SELECT id FROM ports WHERE id = %d);",
-		       subsysnqn, port);
+		       subsys_id, port);
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_simple(sql);
@@ -1301,7 +1295,7 @@ int configdb_del_subsys_port(const char *subsysnqn, unsigned int port)
 	if (ret < 0)
 		goto rollback;
 
-	ret = configdb_update_subsys_port_genctr(subsysnqn);
+	ret = configdb_update_subsys_port_genctr(subsys_id);
 	if (ret < 0)
 		goto rollback;
 
@@ -1321,7 +1315,7 @@ int configdb_count_subsys_port(unsigned int port, int *portnum)
 	ret = asprintf(&sql,
 		       "SELECT count(p.id) AS portnum "
 		       "FROM subsys_port AS sp "
-		       "INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
+		       "INNER JOIN subsystems AS s ON s.subsys_id = sp.subsys_id "
 		       "INNER JOIN ports AS p ON p.id = sp.port_id "
 		       "WHERE p.id = '%d';", port);
 	if (ret < 0)
@@ -1620,7 +1614,7 @@ static int subsys_identify_ctrl_cb(void *p, int argc, char **argv, char **col)
 	return 0;
 }
 
-int configdb_subsys_identify_ctrl(const char *subsysnqn,
+int configdb_subsys_identify_ctrl(uint32_t subsys_id,
 				  struct nvme_id_ctrl *id)
 {
 	int ret;
@@ -1631,8 +1625,8 @@ int configdb_subsys_identify_ctrl(const char *subsysnqn,
 		       "s.attr_ieee_oui AS ieee_oui, s.attr_model AS model, "
 		       "s.attr_serial AS serial, s.attr_type AS type, "
 		       "s.attr_version AS version "
-		       "FROM subsystems AS s WHERE s.nqn = '%s';",
-		       subsysnqn);
+		       "FROM subsystems AS s WHERE s.subsys_id = '%u';",
+		       subsys_id);
 	if (ret < 0)
 		return ret;
 
@@ -1679,7 +1673,7 @@ static int ns_list_cb(void *argp, int argc, char **argv, char **col)
 	return 0;
 }
 
-int configdb_identify_active_ns(const char *subsysnqn,
+int configdb_identify_active_ns(uint32_t subsys_id,
 				uint8_t *ns_list, size_t len)
 {
 	struct sql_entry_parm parm = {
@@ -1691,10 +1685,9 @@ int configdb_identify_active_ns(const char *subsysnqn,
 	int ret;
 
 	ret = asprintf(&sql,
-		       "SELECT ns.nsid FROM namespaces AS n "
-		       "INNER JOIN subsystems AS s ON n.subsys_id = s.oid "
-		       "WHERE s.nqn = '%s' AND n.device_enable = '1' "
-		       "ORDER BY n.nsid;", subsysnqn);
+		       "SELECT n.nsid FROM namespaces AS n "
+		       "WHERE n.subsys_id = '%u' AND n.device_enable = '1' "
+		       "ORDER BY n.nsid;", subsys_id);
 	if (ret < 0)
 		return ret;
 	ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
@@ -1757,7 +1750,7 @@ static int count_ana_grps_cb(void *argp, int argc, char **argv, char **col)
 	return 0;
 }
 
-int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
+int configdb_ana_log_entries(uint32_t subsys_id, unsigned int portid,
 			     uint8_t *log, int log_len)
 {
 	struct nvme_ana_rsp_hdr *hdr = (struct nvme_ana_rsp_hdr *)log;
@@ -1777,11 +1770,10 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 			       "SELECT ap.ana_state, ap.chgcnt, count(n.nsid) AS num "
 			       "FROM ana_port_group AS ap "
 			       "INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
-			       "INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
-			       "INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
+			       "INNER JOIN namespaces AS n ON n.subsys_id = sp.subsys_id "
 			       "INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
-			       "WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ag.id = '%d';",
-			       subsysnqn, portid, grpid);
+			       "WHERE sp.subsys_id = '%u' AND ap.port_id = '%d' AND ag.id = '%d';",
+			       subsys_id, portid, grpid);
 		if (ret < 0)
 			return ret;
 		ret = sqlite3_exec(configdb_db, sql, count_ana_grps_cb,
@@ -1802,13 +1794,12 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 		parm.buffer = (uint8_t *)grp_desc->nsids;
 		parm.cur = 0;
 		ret = asprintf(&sql,
-			       "SELECT ns.nsid FROM ana_port_group AS ap "
+			       "SELECT n.nsid FROM ana_port_group AS ap "
 			       "INNER JOIN subsys_port AS sp ON sp.port_id = ap.port_id "
-			       "INNER JOIN subsystems AS s ON sp.subsys_id = s.oid "
-			       "INNER JOIN namespaces AS n ON n.subsys_id = s.oid "
+			       "INNER JOIN namespaces AS n ON n.subsys_id = sp.subsys_id "
 			       "INNER JOIN ana_groups AS ag ON ap.ana_group_id = ag.id "
-			       "WHERE s.nqn = '%s' AND ap.port_id = '%d' AND ag.id = '%d';",
-			       subsysnqn, portid, grpid);
+			       "WHERE sp.subsys_id = '%u' AND ap.port_id = '%d' AND ag.id = '%d';",
+			       subsys_id, portid, grpid);
 		if (ret < 0)
 			return ret;
 		ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
@@ -1830,7 +1821,7 @@ int configdb_ana_log_entries(const char *subsysnqn, unsigned int portid,
 	return parm.len;
 }
 
-int configdb_ns_changed_log_entries(const char *subsysnqn, uint16_t cntlid,
+int configdb_ns_changed_log_entries(uint32_t subsys_id, uint16_t cntlid,
 				    uint8_t *log, int log_len)
 {
 	struct sql_entry_parm parm = {
@@ -1848,9 +1839,8 @@ int configdb_ns_changed_log_entries(const char *subsysnqn, uint16_t cntlid,
 	ret = asprintf(&sql,
 		       "SELECT chg.nsid FROM ns_changed AS chg "
 		       "INNER JOIN controllers AS c ON c.oid = chg.ctrl_id "
-		       "INNER JOIN subsystems AS s ON s.oid = c.subsys_id "
-		       "WHERE s.nqn = '%s' AND c.cntlid = '%d';",
-		       subsysnqn, cntlid);
+		       "WHERE c.subsys_id = '%u' AND c.cntlid = '%d';",
+		       subsys_id, cntlid);
 	if (ret < 0)
 		goto rollback;
 	ret = sqlite3_exec(configdb_db, sql, ns_list_cb,
@@ -1862,8 +1852,8 @@ int configdb_ns_changed_log_entries(const char *subsysnqn, uint16_t cntlid,
 	ret = asprintf(&sql,
 		       "DELETE FROM ns_changed AS chg WHERE chg.ctrl_id IN "
 		       "(SELECT ctrl_id FROM subsys_ctrl AS sc "
-		       " WHERE sc.subsys_nqn = '%s' AND sc.cntlid = '%d');",
-		       subsysnqn, cntlid);
+		       " WHERE sc.subsys_id = '%u' AND sc.cntlid = '%d');",
+		       subsys_id, cntlid);
 	if (ret < 0)
 		goto rollback;
 	ret = sql_exec_simple(sql);

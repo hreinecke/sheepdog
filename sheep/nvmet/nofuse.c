@@ -143,7 +143,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 		return ret;
 	}
 	sprintf(value, "1");
-	ret = configdb_set_subsys_attr(subsysnqn,
+	ret = configdb_set_subsys_attr(subsys_id,
 				       "attr_allow_any_host", value);
 	if (ret) {
 		sd_warn("failed to set 'attr_allow_any_host'");
@@ -156,7 +156,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	 * discovery log page (configdb_host_disc_entries() joins
 	 * through subsys_port).
 	 */
-	ret = configdb_add_subsys_port(subsysnqn, this_ctx->portid);
+	ret = configdb_add_subsys_port(subsys_id, this_ctx->portid);
 	if (ret < 0)
 		sd_warn("Failed to add port %u for subsystem '%s'",
 			this_ctx->portid, subsysnqn);
@@ -165,20 +165,14 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 
 int nvmet_unregister_subsystem(uint32_t subsys_id)
 {
-	char nqn[MAX_NQN_SIZE + 1];
 	int ret;
 
 	sd_debug("unregister subsystem %06x", subsys_id);
-	ret = configdb_get_subsys_nqn(subsys_id, nqn);
-	if (ret < 0) {
-		sd_warn("Failed to map subsystem nqn for '%06x'", subsys_id);
-		return ret;
-	}
 	/* subsys_port.subsys_id is ON DELETE RESTRICT */
-	ret = configdb_del_subsys_port(nqn, this_ctx->portid);
+	ret = configdb_del_subsys_port(subsys_id, this_ctx->portid);
 	if (ret < 0)
-		sd_warn("Failed to remove port %u for subsystem '%s'",
-			this_ctx->portid, nqn);
+		sd_warn("Failed to remove port %u for subsystem '%06x'",
+			this_ctx->portid, subsys_id);
 	return configdb_del_subsys(subsys_id);
 }
 
