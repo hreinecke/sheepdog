@@ -45,6 +45,7 @@ struct ns_ops {
 struct io_ops {
 	int (*io_read)(struct nofuse_queue *ep, void *buf, size_t buf_len);
 	int (*io_write)(struct nofuse_queue *ep, void *buf, size_t buf_len);
+	int (*io_wait)(struct nofuse_queue *ep, short events);
 };
 
 struct ns_ops *null_register_ops(void);

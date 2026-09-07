@@ -6,6 +6,7 @@
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
  */
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -54,9 +55,37 @@ static int tcp_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 	return write(ep->sockfd, buf, buf_len);
 }
 
+/*
+ * Bounded, not indefinite: this runs on the connection's own thread
+ * while it still holds 'ep', so blocking here forever if the peer never
+ * drains/sends again would let some other path (e.g. keepalive timeout)
+ * concurrently destroy this same 'ep' out from under it -- this thread
+ * would then wake up (or never wake up, if the socket gets closed
+ * first) and touch freed memory. Time out and let our own caller's
+ * normal error handling tear the connection down on this thread instead.
+ */
+#define IO_WAIT_TIMEOUT_MS 5000
+
+static int tcp_ep_wait(struct nofuse_queue *ep, short events)
+{
+	struct pollfd pfd = { .fd = ep->sockfd, .events = events };
+	int ret;
+
+	do {
+		ret = poll(&pfd, 1, IO_WAIT_TIMEOUT_MS);
+	} while (ret < 0 && errno == EINTR);
+
+	if (ret < 0)
+		return -errno;
+	if (ret == 0)
+		return -ETIMEDOUT;
+	return 0;
+}
+
 static struct io_ops tcp_io_ops = {
 	.io_read = tcp_ep_read,
 	.io_write = tcp_ep_write,
+	.io_wait = tcp_ep_wait,
 };
 
 struct io_ops *tcp_register_io_ops(void)
@@ -497,7 +526,15 @@ static int tcp_rma_read(struct nofuse_queue *ep, void *buf, size_t _len)
 			_len - offset);
 		len = ep->io_ops->io_read(ep, (uint8_t *)buf + offset,
 					  _len - offset);
+
 		if (len < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				int wret = ep->io_ops->io_wait(ep, POLLIN);
+
+				if (wret < 0)
+					return wret;
+				continue;
+			}
 			tcp_err(ep, "recv returned %d", errno);
 			return -errno;
 		}
@@ -511,11 +548,41 @@ static int tcp_rma_read(struct nofuse_queue *ep, void *buf, size_t _len)
 	return 0;
 }
 
+static int tcp_write_full(struct nofuse_queue *ep, void *buf, size_t len)
+{
+	off_t offset = 0;
+
+	while (offset < len) {
+		int ret = ep->io_ops->io_write(ep, (uint8_t *)buf + offset,
+					       len - offset);
+
+		if (ret < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				int wret = ep->io_ops->io_wait(ep, POLLOUT);
+
+				if (wret < 0)
+					return wret;
+				continue;
+			}
+			tcp_err(ep, "send returned %d", errno);
+			return -errno;
+		}
+		if (ret == 0) {
+			tcp_err(ep, "%s: disconnect during send data",
+				__func__);
+			return -ENODATA;
+		}
+		offset += ret;
+	}
+	return 0;
+}
+
 static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	int len, send_pdu_len = 0;
+	int ret;
 	bool last = qe->data_remaining == qe->iovec.iov_len;
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
+	size_t data_len = qe->iovec.iov_len;
 
 	tcp_info(ep, "c2h data cid %x offset %"PRIu64" len %lu/%"PRIu64,
 		  qe->ccid, qe->data_pos, qe->iovec.iov_len,
@@ -539,41 +606,23 @@ static int tcp_send_c2h_data(struct nofuse_queue *ep, struct ep_qe *qe)
 	tcp_info(ep, "c2h hdr init %u/%u bytes",
 		 pdu->hdr.hlen, pdu->hdr.plen);
 
-	while (send_pdu_len < pdu->hdr.hlen) {
-		uint8_t *data = (uint8_t *)pdu + send_pdu_len;
-		uint64_t data_len = pdu->hdr.hlen - send_pdu_len;
-
-		len = ep->io_ops->io_write(ep, data, data_len);
-		if (len < 0) {
-			tcp_err(ep, "c2h hdr write returned %d", errno);
-			return -errno;
-		}
-		if (len == 0) {
-			tcp_err(ep, "c2h hdr write connection closed");
-			return -ENODATA;
-		}
-		send_pdu_len += len;
-		tcp_info(ep, "c2h hdr wrote %d bytes", len);
+	ret = tcp_write_full(ep, pdu, pdu->hdr.hlen);
+	if (ret < 0) {
+		tcp_err(ep, "c2h hdr write error %d", -ret);
+		return ret;
 	}
-	while (qe->iovec.iov_len) {
-		uint8_t *data = qe->iovec.iov_base;
+	tcp_info(ep, "c2h hdr wrote %u bytes", pdu->hdr.hlen);
 
-		len = ep->io_ops->io_write(ep, data, qe->iovec.iov_len);
-		if (len < 0) {
-			tcp_err(ep, "c2h data write returned %d", errno);
-			return -errno;
-		}
-		if (len == 0) {
-			tcp_err(ep, "c2h data write connection closed");
-			return -ENODATA;
-		}
-		qe->data_remaining -= len;
-		data += len;
-		qe->iovec.iov_base = data;
-		qe->iovec.iov_len -= len;
-		qe->iovec_offset += len;
-		tcp_info(ep, "c2h data wrote %d bytes", len);
+	ret = tcp_write_full(ep, qe->iovec.iov_base, data_len);
+	if (ret < 0) {
+		tcp_err(ep, "c2h data write error %d", -ret);
+		return ret;
 	}
+	qe->data_remaining -= data_len;
+	qe->iovec.iov_base = (uint8_t *)qe->iovec.iov_base + data_len;
+	qe->iovec.iov_len -= data_len;
+	qe->iovec_offset += data_len;
+	tcp_info(ep, "c2h data wrote %lu bytes", data_len);
 
 	return 0;
 }
@@ -582,7 +631,6 @@ static int tcp_send_r2t(struct nofuse_queue *ep, uint16_t tag)
 {
 	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
 	struct ep_qe *qe;
-	int len;
 
 	qe = ep->ops->get_tag(ep, tag);
 	if (!qe) {
@@ -607,17 +655,7 @@ static int tcp_send_r2t(struct nofuse_queue *ep, uint16_t tag)
 
 	memcpy(&qe->pdu, pdu, sizeof(*pdu));
 
-	len = ep->io_ops->io_write(ep, pdu, sizeof(*pdu));
-	if (len < 0) {
-		tcp_err(ep, "r2t write returned %d", errno);
-		return -errno;
-	}
-	if (len < sizeof(*pdu)) {
-		tcp_err(ep, "short r2t write, %d bytes missing",
-			(int)sizeof(*pdu) - len);
-		return -EAGAIN;
-	}
-	return 0;
+	return tcp_write_full(ep, pdu, sizeof(*pdu));
 }
 
 static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_offset,
@@ -625,7 +663,7 @@ static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_
 			     union nvme_tcp_pdu *pdu, int pdu_len)
 {
 	struct nvme_tcp_term_pdu *term_pdu = &ep->send_pdu->term;
-	int len, plen;
+	int ret, plen;
 
 	tcp_info(ep, "c2h term fes %u offset pdu %u parm %u",
 		   fes, pdu_offset, parm_offset);
@@ -643,26 +681,16 @@ static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_
 	term_pdu->fes = htole16(fes);
 	term_pdu->fei = htole32(parm_offset << 6 | pdu_offset << 1);
 
-	len = ep->io_ops->io_write(ep, term_pdu, sizeof(*term_pdu));
-	if (len < 0) {
-		tcp_err(ep, "c2h_term write returned %d", errno);
-		return -errno;
-	}
-	if (len != sizeof(*term_pdu)) {
-		tcp_err(ep, "c2h_term short write; %d bytes missing",
-			 plen - len);
-		return -EAGAIN;
+	ret = tcp_write_full(ep, term_pdu, sizeof(*term_pdu));
+	if (ret < 0) {
+		tcp_err(ep, "c2h term write error %d", -ret);
+		return ret;
 	}
 	if (pdu) {
-		len = ep->io_ops->io_write(ep, pdu, pdu_len);
-		if (len < 0) {
-			tcp_err(ep, "c2h term pdu write returned %d", errno);
-			return -errno;
-		}
-		if (len != pdu_len) {
-			tcp_err(ep, "c2h term short write; %d bytes missing",
-				 pdu_len - len);
-			return -EAGAIN;
+		ret = tcp_write_full(ep, pdu, pdu_len);
+		if (ret < 0) {
+			tcp_err(ep, "c2h term pdu write error %d", -ret);
+			return ret;
 		}
 	}
 
@@ -690,13 +718,10 @@ static int tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 	memcpy(&(pdu->cqe), comp, sizeof(struct nvme_completion));
 
 	tcp_info(ep, "write %u pdu bytes", pdu->hdr.plen);
-	len = ep->io_ops->io_write(ep, pdu, pdu->hdr.plen);
-	if (len != sizeof(*pdu)) {
-		tcp_err(ep, "tcp_ep_write returned %d", errno);
-		return -errno;
-	}
-
-	return 0;
+	len = tcp_write_full(ep, pdu, pdu->hdr.plen);
+	if (len < 0)
+		tcp_err(ep, "pdu write error %d", -len);
+	return len;
 }
 
 static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)

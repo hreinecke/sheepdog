@@ -35,9 +35,20 @@ static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 	return tls_io(ep, true, buf, buf_len);
 }
 
+/*
+ * tls_io() already retries SSL_ERROR_WANT_READ/WANT_WRITE internally, so
+ * tls_ep_read()/tls_ep_write() never actually surface EAGAIN for callers.
+ */
+
+static int tls_ep_wait(struct nofuse_queue *ep, short events)
+{
+	return 0;
+}
+
 struct io_ops tls_io_ops = {
 	.io_read = tls_ep_read,
 	.io_write = tls_ep_write,
+	.io_wait = tls_ep_wait,
 };
 
 static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
