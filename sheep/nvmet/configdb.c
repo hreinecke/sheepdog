@@ -612,22 +612,24 @@ static int raise_ns_chg_aen(uint32_t subsys_id, uint32_t nsid)
 int configdb_add_namespace(uint64_t oid, struct nofuse_namespace *ns)
 {
 	char *sql;
-	char uuid_str[65], nguid_str[33];
+	char uuid_str[65], nguid_str[33], eui64_str[17];
 	int ret;
 
 	uuid_unparse(ns->uuid, uuid_str);
 	sprintf(nguid_str, "%08x000efd37%"PRIx64,
 		ns->subsys_id, oid);
+	sprintf(eui64_str, "000efd37%"PRIx32, oid_to_vid(oid));
 	ret = asprintf(&sql, "INSERT INTO namespaces "
-		       "(uuid, nguid, nsid, subsys_id, "
+		       "(uuid, nguid, eui64, nsid, subsys_id, "
 		       "ana_group_id, size, blksize, "
 		       "readonly, enable, ctime) "
-		       "SELECT '%s', '%s', '%u', s.subsys_id, ag.id, "
+		       "SELECT '%s', '%s', '%s', '%u', s.subsys_id, ag.id, "
 		       "'%lu', '%u', '%d', '%d', CURRENT_TIMESTAMP "
 		       "FROM subsystems AS s, ana_groups AS ag "
 		       "WHERE s.subsys_id = '%d' AND s.type == '2' AND ag.id = '%u';",
-		       uuid_str, nguid_str, ns->nsid, ns->size, ns->blksize,
-		       ns->readonly, ns->enabled, ns->subsys_id, ns->ana_grpid);
+		       uuid_str, nguid_str, eui64_str, ns->nsid, ns->size,
+		       ns->blksize, ns->readonly, ns->enabled, ns->subsys_id,
+		       ns->ana_grpid);
 	if (ret < 0)
 		return ret;
 
