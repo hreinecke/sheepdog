@@ -77,7 +77,8 @@ struct sd_node *cur_nodes;
 static int lookup_nodes(struct nofuse_context *ctx)
 {
 	int ret;
-	unsigned int size, nr_nodes;
+	unsigned int size, nr_nodes = 0;
+	struct rb_root nodes;
 	struct sd_node *buf = NULL;
 	struct sd_node *ent;
 	struct sd_req req;
@@ -100,18 +101,35 @@ static int lookup_nodes(struct nofuse_context *ctx)
 	}
 
 	size = rsp->data_length;
-	nr_nodes = size / sizeof(*ent);
-	if (nr_nodes == 0)
+	if (size / sizeof(*ent) == 0)
 		sd_warn("There are no active sheep daemons");
 
 	sd_mutex_lock(&ctx->root_lock);
-	rb_destroy(&ctx->nroot, struct sd_vnode, rb);
-	for (int i = 0; i < nr_nodes; i++) {
-		struct sd_node *n = xmalloc(sizeof*n);
+	INIT_RB_ROOT(&nodes);
+	nodes.rb_node = ctx->nroot.rb_node;
+	INIT_RB_ROOT(&ctx->nroot);
+	for (int i = 0; i < size / sizeof(*ent); i++) {
+		struct sd_node *n = xmalloc(sizeof*n), *o;
 
 		*n = buf[i];
+		o = rb_search(&nodes, n, rb, node_cmp);
+		if (o) {
+			rb_erase(&o->rb, &nodes);
+			free(n);
+			n = o;
+		} else {
+			ret = configdb_add_ana_group(n->zone + 1);
+			if (ret < 0) {
+				sd_warn("Cannot add ANA group '%d'",
+					n->zone + 1);
+				free(n);
+				continue;
+			}
+		}
 		rb_insert(&ctx->nroot, n, rb, node_cmp);
+		nr_nodes++;
 	}
+	rb_destroy(&nodes, struct sd_vnode, rb);
 	rb_destroy(&ctx->vroot, struct sd_vnode, rb);
 	if (sys->cinfo.flags & SD_CLUSTER_FLAG_DISKMODE)
 		disks_to_vnodes(&ctx->nroot, &ctx->vroot);
@@ -415,12 +433,14 @@ static int change_subsys_cntlid(struct nofuse_subsystem *subsys,
 static void process_node_event(struct nofuse_event *ev)
 {
 	struct nofuse_subsystem *subsys;
-	int nr_zones;
+	int nr_zones, nr_nodes;
 
-	if (lookup_nodes(this_ctx) < 0) {
+	nr_nodes = lookup_nodes(this_ctx);
+	if (nr_nodes < 0) {
 		sd_err("failed to lookup nodes");
 		return;
 	}
+	sd_debug("cluster has %d nodes", nr_nodes);
 
 	sd_mutex_lock(&this_ctx->root_lock);
 	nr_zones = get_zones_nr_from(&this_ctx->nroot);
@@ -684,8 +704,6 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 		if (vdi_is_acl(inode) || inode->acl_id != subsys_id)
 			continue;
 
-		sd_debug("register namespace %06lx ('%s')",
-			 nsid, inode->name);
 		nvmet_register_namespace(subsys_id, nsid, inode);
 	}
 	free(inode);

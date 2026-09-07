@@ -1043,7 +1043,7 @@ int configdb_add_ana_group(unsigned int grpid)
 	char *sql;
 	int ret;
 
-	ret = asprintf(&sql, "INSERT INTO ana_groups (id) VALUES ('%d');",
+	ret = asprintf(&sql, "INSERT OR IGNORE INTO ana_groups (id) VALUES ('%d');",
 		       grpid);
 
 	if (ret < 0)
