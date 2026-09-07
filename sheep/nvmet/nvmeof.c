@@ -147,8 +147,7 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		}
 		ctrl_info(ep, "%s: setting %d queues (cdw11 %x)", __func__,
 			  ep->ctrl->max_queues, cdw11);
-		qe->resp.result.u32 = htole32(ep->ctrl->max_queues << 16 |
-					      ep->ctrl->max_queues);
+		qe->resp.result.u32 = htole32(ep->ctrl->max_queues - 1);
 		break;
 	case NVME_FEAT_ASYNC_EVENT:
 		ep->ctrl->aen_enabled = cdw11;
@@ -180,12 +179,10 @@ static int handle_get_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		switch (sel) {
 		case 0:
 		case 2:
-			result = (ep->ctrl->max_queues  - 1) << 16 |
-				(ep->ctrl->max_queues - 1);
+			result = htole32(ep->ctrl->max_queues  - 1);
 			break;
 		case 1:
-			result = NVMF_NUM_QUEUES << 16 |
-				NVMF_NUM_QUEUES;
+			result = htole32(NVMF_NUM_QUEUES - 1);
 			break;
 		case 3:
 			result = 5;
