@@ -250,10 +250,7 @@ retry:
 			vls++;
 			continue;
 		}
-		if (!strcmp(traddr, "127.0.0.1")) {
-			free(traddr);
-			traddr = NULL;
-		} else if (!strchr(traddr, '.'))
+		if (!strchr(traddr, '.'))
 			adrfam = "ipv6";
 		if (lock_state == LOCK_STATE_LOCKED) {
 			sd_warn("nsid %"PRIx32" locked, disabling", ns->nsid);
@@ -435,12 +432,15 @@ static void process_nofuse_event(struct nofuse_event *ev)
 {
 	switch (ev->type) {
 	case NOFUSE_EVENT_ACL_CHANGE:
+		sd_debug("process 'ACL CHANGE' event");
 		process_acl_event(ev);
 		break;
 	case NOFUSE_EVENT_NODE_CHANGE:
+		sd_debug("process 'NODE CHANGE' event");
 		process_node_event(ev);
 		break;
 	case NOFUSE_EVENT_LOCK_CHANGE:
+		sd_debug("process 'LOCK CHANGE' event");
 		process_lock_event(ev);
 		break;
 	default:
