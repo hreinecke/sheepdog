@@ -57,6 +57,7 @@ int configdb_del_ctrl(uint32_t subsys_id, int cntlid);
 
 int configdb_add_port(unsigned int port, const char *traddr,
 		      const char *adrfam, unsigned int trsvcid);
+bool configdb_check_port(unsigned int port);
 int configdb_get_port_attr(unsigned int port, const char *attr, char *buf);
 int configdb_set_port_attr(unsigned int port, const char *attr, const char *buf);
 int configdb_del_port(unsigned int port);

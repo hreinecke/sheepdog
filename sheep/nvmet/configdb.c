@@ -908,7 +908,8 @@ int configdb_add_port(unsigned int portid, const char *traddr,
 	}
 
 	ret = asprintf(&sql,
-		       "INSERT INTO ports (id, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
+		       "INSERT OR IGNORE INTO ports "
+		       "(id, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
 		       " VALUES ('%d', '%s', '%s', '%u', CURRENT_TIMESTAMP);",
 		       portid, traddr, adrfam, trsvcid);
 	if (ret < 0)
@@ -917,6 +918,24 @@ int configdb_add_port(unsigned int portid, const char *traddr,
 	ret = sql_exec_simple(sql);
 	free(sql);
 	return ret;
+}
+
+bool configdb_check_port(unsigned int port)
+{
+	int ret, num = 0;
+	char *sql;
+
+	ret = asprintf(&sql,
+		       "SELECT count(id) AS num FROM ports WHERE id = '%d';",
+		       port);
+	if (ret < 0)
+		return ret;
+	ret = sql_exec_int(sql, "num", &num);
+	free(sql);
+	if (!ret && num > 0)
+		return true;
+	else
+		return false;
 }
 
 int configdb_get_port_attr(unsigned int port, const char *attr, char *buf)
