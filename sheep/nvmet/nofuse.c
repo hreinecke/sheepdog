@@ -36,10 +36,13 @@ bool port_debug;
 struct nofuse_context {
 	char *traddr;
 	char *dbname;
+	uint32_t subsys_id;
 	struct rb_root vroot;
 	struct rb_root nroot;
+	struct sd_mutex root_lock;
 	struct rb_root ns_root;
 	struct sd_mutex ns_lock;
+	struct rb_root subsys_root;
 	int nr_nodes;
 	unsigned int portid;
 	int trsvcid;
@@ -53,53 +56,19 @@ struct nofuse_context {
 
 struct nofuse_context *this_ctx;
 
+enum nofuse_event_type {
+	NOFUSE_EVENT_ACL_CHANGE,
+	NOFUSE_EVENT_NODE_CHANGE,
+};
+
 /* Queued via nvmet_notify_acl_change(), drained by nofuse_main()'s loop. */
-struct nvmet_acl_event {
+struct nofuse_event {
 	struct list_node node;
+	enum nofuse_event_type type;
 	uint32_t vid;
 	uint32_t old_acl;
 	uint32_t new_acl;
 };
-
-void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl, uint32_t new_acl)
-{
-	struct nvmet_acl_event *ev;
-
-	if (!this_ctx)
-		return;
-
-	ev = xmalloc(sizeof(*ev));
-	ev->vid = vid;
-	ev->old_acl = old_acl;
-	ev->new_acl = new_acl;
-
-	sd_mutex_lock(&this_ctx->event_lock);
-	list_add_tail(&ev->node, &this_ctx->event_list);
-	sd_mutex_unlock(&this_ctx->event_lock);
-
-	eventfd_write(this_ctx->event_evtfd, 1);
-}
-
-static void process_acl_event(struct nvmet_acl_event *ev)
-{
-	if (ev->new_acl) {
-		struct sd_inode_header inode;
-		int ret;
-
-		ret = sd_read_object(vid_to_vdi_oid(ev->vid), (char *)&inode,
-				     sizeof(inode), 0);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("failed to read inode of VDI %"PRIx32
-			       " for nvmet: %s", ev->vid, sd_strerror(ret));
-			return;
-		}
-		if (nvmet_register_namespace(ev->new_acl, ev->vid, &inode) < 0)
-			sd_err("failed to register namespace %"PRIx32
-			       " with nvmet", ev->vid);
-	} else if (nvmet_unregister_namespace(ev->old_acl, ev->vid) < 0)
-		sd_err("failed to unregister namespace %"PRIx32
-		       " with nvmet", ev->vid);
-}
 
 char discovery_nqn[MAX_NQN_SIZE + 1] = {};
 struct sd_node *cur_nodes;
@@ -134,16 +103,21 @@ static int lookup_nodes(struct nofuse_context *ctx)
 	if (nr_nodes == 0)
 		sd_warn("There are no active sheep daemons");
 
+	sd_mutex_lock(&ctx->root_lock);
+	rb_destroy(&ctx->nroot, struct sd_vnode, rb);
 	for (int i = 0; i < nr_nodes; i++) {
 		struct sd_node *n = xmalloc(sizeof*n);
 
 		*n = buf[i];
 		rb_insert(&ctx->nroot, n, rb, node_cmp);
 	}
+	rb_destroy(&ctx->vroot, struct sd_vnode, rb);
 	if (sys->cinfo.flags & SD_CLUSTER_FLAG_DISKMODE)
 		disks_to_vnodes(&ctx->nroot, &ctx->vroot);
 	else
 		nodes_to_vnodes(&ctx->nroot, &ctx->vroot);
+	ctx->nr_nodes = nr_nodes;
+	sd_mutex_unlock(&ctx->root_lock);
 out:
 	free(buf);
 	return ret < 0 ? ret : nr_nodes;
@@ -202,12 +176,135 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
 }
 
+void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl, uint32_t new_acl)
+{
+	struct nofuse_event *ev;
+
+	if (!this_ctx)
+		return;
+
+	ev = xmalloc(sizeof(*ev));
+	ev->vid = vid;
+	ev->old_acl = old_acl;
+	ev->new_acl = new_acl;
+	ev->type = NOFUSE_EVENT_ACL_CHANGE;
+
+	sd_mutex_lock(&this_ctx->event_lock);
+	list_add_tail(&ev->node, &this_ctx->event_list);
+	sd_mutex_unlock(&this_ctx->event_lock);
+
+	eventfd_write(this_ctx->event_evtfd, 1);
+}
+
+void nvmet_notify_node_change(void)
+{
+	struct nofuse_event *ev;
+
+	if (!this_ctx)
+		return;
+
+	ev = xmalloc(sizeof(*ev));
+	ev->type = NOFUSE_EVENT_NODE_CHANGE;
+
+	sd_mutex_lock(&this_ctx->event_lock);
+	list_add_tail(&ev->node, &this_ctx->event_list);
+	sd_mutex_unlock(&this_ctx->event_lock);
+
+	eventfd_write(this_ctx->event_evtfd, 1);
+}
+
+static void process_acl_event(struct nofuse_event *ev)
+{
+	if (ev->new_acl) {
+		struct sd_inode_header inode;
+		int ret;
+
+		ret = sd_read_object(vid_to_vdi_oid(ev->vid), (char *)&inode,
+				     sizeof(inode), 0);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("failed to read inode of VDI %"PRIx32
+			       " for nvmet: %s", ev->vid, sd_strerror(ret));
+			return;
+		}
+		if (nvmet_register_namespace(ev->new_acl, ev->vid, &inode) < 0)
+			sd_err("failed to register namespace %"PRIx32
+			       " with nvmet", ev->vid);
+	} else if (nvmet_unregister_namespace(ev->old_acl, ev->vid) < 0)
+		sd_err("failed to unregister namespace %"PRIx32
+		       " with nvmet", ev->vid);
+}
+
+static int change_subsys_cntlid(struct nofuse_subsystem *subsys,
+				unsigned int nr_zones)
+{
+	int ret, cntlid_range, cntlid_min, cntlid_max;
+	char value[32];
+
+	cntlid_range = 65520 / nr_zones;
+	cntlid_min = (sys->this_node.zone * cntlid_range) + 1;
+	cntlid_max = cntlid_min + cntlid_range - 1;
+	if (cntlid_max >= 65520)
+		cntlid_max = 65519;
+	sd_debug("restricting cntlid for subsystem '%s' to %u-%u",
+		 subsys->nqn, cntlid_min, cntlid_max);
+	sprintf(value, "%u", cntlid_min);
+	ret = configdb_set_subsys_attr(subsys->id,
+				       "cntlid_min", value);
+	if (ret < 0) {
+		sd_warn("Failed to set 'cntlid_min'");
+		return ret;
+	}
+	sprintf(value, "%u", cntlid_max);
+	ret = configdb_set_subsys_attr(subsys->id,
+				       "cntlid_max", value);
+	if (ret < 0)
+		sd_warn("Failed to set 'cntlid_max'");
+	return ret;
+}
+
+static void process_node_event(struct nofuse_event *ev)
+{
+	struct nofuse_subsystem *subsys;
+	int nr_zones;
+
+	if (lookup_nodes(this_ctx) < 0) {
+		sd_err("failed to lookup nodes");
+		return;
+	}
+
+	sd_mutex_lock(&this_ctx->root_lock);
+	nr_zones = get_zones_nr_from(&this_ctx->nroot);
+	sd_mutex_unlock(&this_ctx->root_lock);
+
+	rb_for_each_entry(subsys, &this_ctx->subsys_root, rb) {
+		if (nr_zones > 0) {
+			change_subsys_cntlid(subsys, nr_zones);
+		}
+	}
+}
+
+static void process_nofuse_event(struct nofuse_event *ev)
+{
+	switch (ev->type) {
+	case NOFUSE_EVENT_ACL_CHANGE:
+		process_acl_event(ev);
+		break;
+	case NOFUSE_EVENT_NODE_CHANGE:
+		process_node_event(ev);
+		break;
+	default:
+		sd_warn("Unhandled event %d", ev->type);
+		break;
+	}
+}
+
 static int register_ana_groups(struct nofuse_context *ctx,
 			       unsigned int agid)
 {
 	int ret = 0;
 	struct sd_node *node;
 
+	sd_mutex_lock(&ctx->root_lock);
 	rb_for_each_entry(node, &ctx->nroot, rb) {
 		int grpid = node->zone + 1;
 
@@ -216,45 +313,46 @@ static int register_ana_groups(struct nofuse_context *ctx,
 			sd_warn("cannot register ANA group %u", grpid);
 
 	}
+	sd_mutex_unlock(&ctx->root_lock);
 	return ret;
+}
+
+static int subsys_cmp(const struct nofuse_subsystem *a,
+		      const struct nofuse_subsystem *b)
+{
+	return intcmp(a->id, b->id);
 }
 
 int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 {
 	int ret, nr_zones;
 	char value[8];
+	struct nofuse_subsystem *new, *subsys = xzalloc(sizeof(*subsys));
 
-	sd_debug("register subsystem '%s' (%06x)", subsysnqn, subsys_id);
-	ret = configdb_add_subsys(subsysnqn, subsys_id, NVME_NQN_NVM);
+	strcpy(subsys->nqn, subsysnqn);
+	subsys->id = subsys_id;
+	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
+	if (new) {
+		sd_debug("update subsystem '%s' (%06x)", new->nqn, new->id);
+		free(subsys);
+		subsys = new;
+	} else
+		sd_debug("register subsystem '%s' (%06x)",
+			 subsys->nqn, subsys->id);
+	ret = configdb_add_subsys(subsys->nqn, subsys->id, NVME_NQN_NVM);
 	if (ret < 0) {
-		sd_warn("Failed to register subsystem '%s'", subsysnqn);
+		sd_warn("Failed to register subsystem '%s'", subsys->nqn);
+		rb_erase(&subsys->rb, &this_ctx->subsys_root);
+		free(subsys);
 		return ret;
 	}
+	sd_mutex_lock(&this_ctx->root_lock);
 	nr_zones = get_zones_nr_from(&this_ctx->nroot);
+	sd_mutex_unlock(&this_ctx->root_lock);
 	if (nr_zones > 0) {
-		int cntlid_range, cntlid_min, cntlid_max;
-
-		cntlid_range = 65520 / nr_zones;
-		cntlid_min = (sys->this_node.zone * cntlid_range) + 1;
-		cntlid_max = cntlid_min + cntlid_range - 1;
-		if (cntlid_max >= 65520)
-			cntlid_max = 65519;
-		sd_debug("restricting cntlid for subsystem '%s' to %u-%u",
-			 subsysnqn, cntlid_min, cntlid_max);
-		sprintf(value, "%u", cntlid_min);
-		ret = configdb_set_subsys_attr(subsys_id,
-					       "cntlid_min", value);
-		if (ret < 0) {
-			sd_warn("Failed to set 'cntlid_min'");
+		ret = change_subsys_cntlid(subsys, nr_zones);
+		if (ret < 0)
 			return ret;
-		}
-		sprintf(value, "%u", cntlid_max);
-		ret = configdb_set_subsys_attr(subsys_id,
-					       "cntlid_max", value);
-		if (ret < 0) {
-			sd_warn("Failed to set 'cntlid_max'");
-			return ret;
-		}
 	}
 
 	sprintf(value, "1");
@@ -280,15 +378,26 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 
 int nvmet_unregister_subsystem(uint32_t subsys_id)
 {
+	struct nofuse_subsystem *subsys, key = { .id = subsys_id };
 	int ret;
 
 	sd_debug("unregister subsystem %06x", subsys_id);
+	subsys = rb_search(&this_ctx->subsys_root, &key, rb, subsys_cmp);
+	if (!subsys) {
+		sd_warn("Subsystem '%06x' not found", subsys_id);
+		return -ENODEV;
+	}
+	rb_erase(&subsys->rb, &this_ctx->subsys_root);
 	/* subsys_port.subsys_id is ON DELETE RESTRICT */
-	ret = configdb_del_subsys_port(subsys_id, this_ctx->portid);
+	ret = configdb_del_subsys_port(subsys->id, this_ctx->portid);
 	if (ret < 0)
 		sd_warn("Failed to remove port %u for subsystem '%06x'",
-			this_ctx->portid, subsys_id);
-	return configdb_del_subsys(subsys_id);
+			this_ctx->portid, subsys->id);
+	ret = configdb_del_subsys(subsys->id);
+	if (ret < 0)
+		sd_warn("Failed to delete subsystem %06x", subsys->id);
+	free(subsys);
+	return ret;
 }
 
 int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
@@ -481,7 +590,7 @@ out:
 static void nofuse_cleanup(void *arg)
 {
 	struct nofuse_context *ctx = arg;
-	struct nvmet_acl_event *ev, *next;
+	struct nofuse_event *ev, *next;
 
 	list_for_each_entry_safe(ev, next, &ctx->event_list, node) {
 		list_del(&ev->node);
@@ -491,8 +600,10 @@ static void nofuse_cleanup(void *arg)
 		close(ctx->event_evtfd);
 	sd_destroy_mutex(&ctx->event_lock);
 
+	sd_mutex_lock(&ctx->root_lock);
 	rb_destroy(&ctx->nroot, struct sd_vnode, rb);
 	rb_destroy(&ctx->vroot, struct sd_node, rb);
+	sd_mutex_unlock(&ctx->root_lock);
 	rb_destroy(&ctx->ns_root, struct nofuse_namespace, rb);
 	free(ctx->traddr);
 	free(ctx->dbname);
@@ -519,7 +630,7 @@ static void *nofuse_main(void *arg)
 		sd_err("failed to get node list");
 		goto out_pop;
 	}
-	ctx->nr_nodes = ret;
+
 	agid = sys->this_node.zone + 1;
 	ctx->portid = agid;
 
@@ -570,7 +681,7 @@ static void *nofuse_main(void *arg)
 	 */
 	while (!stopped) {
 		struct pollfd pfd = { .fd = ctx->event_evtfd, .events = POLLIN };
-		struct nvmet_acl_event *ev, *next;
+		struct nofuse_event *ev, *next;
 		LIST_HEAD(pending);
 		eventfd_t val;
 
@@ -592,7 +703,7 @@ static void *nofuse_main(void *arg)
 
 		list_for_each_entry_safe(ev, next, &pending, node) {
 			list_del(&ev->node);
-			process_acl_event(ev);
+			process_nofuse_event(ev);
 			free(ev);
 		}
 	}
@@ -629,6 +740,7 @@ int nofuse_init(const char *traddr, int trsvcid)
 	this_ctx->dbname = strdup("nofuse.sqlite");
 	INIT_RB_ROOT(&this_ctx->nroot);
 	INIT_RB_ROOT(&this_ctx->vroot);
+	sd_init_mutex(&this_ctx->root_lock);
 	INIT_RB_ROOT(&this_ctx->ns_root);
 	sd_init_mutex(&this_ctx->ns_lock);
 	INIT_LIST_HEAD(&this_ctx->event_list);

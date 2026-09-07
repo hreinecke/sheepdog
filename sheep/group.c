@@ -1178,6 +1178,9 @@ static void update_cluster_info(const struct cluster_info *cinfo,
 	}
 
 	put_vnode_info(old_vnode_info);
+#ifdef HAVE_NVMET
+	nvmet_notify_node_change();
+#endif
 }
 
 /*
@@ -1528,6 +1531,9 @@ main_fn void sd_leave_handler(const struct sd_node *left,
 	sockfd_cache_del_node(&left->nid);
 
 	remove_node_from_participants(&left->nid);
+#ifdef HAVE_NVMET
+	nvmet_notify_node_change();
+#endif
 }
 
 main_fn void sd_kill_handler(const struct sd_node *killed)

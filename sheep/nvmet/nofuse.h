@@ -161,6 +161,12 @@ struct nofuse_namespace {
 	bool enabled;
 };
 
+struct nofuse_subsystem {
+	struct rb_node rb;
+	char nqn[MAX_NQN_SIZE];
+	uint32_t id;
+};
+
 struct nofuse_port {
 	struct list_node node;
 	pthread_t pthread;

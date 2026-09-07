@@ -717,6 +717,7 @@ int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid);
  */
 void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl,
 			     uint32_t new_acl);
+void nvmet_notify_node_change(void);
 #endif
 
 #endif
