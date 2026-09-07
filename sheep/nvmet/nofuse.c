@@ -229,6 +229,7 @@ retry:
 		char *traddr;
 		const char *adrfam = "ipv4";
 		uint16_t trsvcid;
+		bool port_present;
 
 		if (rsp->data_length - i < sizeof(*vls))
 			break;
@@ -244,6 +245,8 @@ retry:
 			vls++;
 			continue;
 		}
+		port_present = configdb_check_port(node->zone + 1);
+
 		traddr = str_to_tr(vls->owner, &trsvcid);
 		if (!traddr) {
 			sd_warn("failed to parse owner '%s'", vls->owner);
@@ -257,9 +260,17 @@ retry:
 			vls++;
 			continue;
 		} else if (lock_state == LOCK_STATE_SHARED) {
+			uint16_t portid = node->zone + 1;
 			sd_debug("adding port %d (%s:%d)",
-				 node->zone + 1, traddr, trsvcid);
-			ret = configdb_add_port(node->zone + 1,
+				 portid, traddr, trsvcid);
+
+			if (port_present) {
+				sd_debug("port '%s:%d' present, skipping",
+					 traddr, trsvcid);
+				vls++;
+				continue;
+			}
+			ret = configdb_add_port(portid,
 						traddr, adrfam, trsvcid);
 			if (ret < 0) {
 				sd_warn("cannot add port '%s:%d', error %d",
@@ -269,15 +280,23 @@ retry:
 				vls++;
 				continue;
 			}
-			ret = configdb_add_ana_port_group(node->zone + 1);
+			ret = configdb_add_ana_port_group(portid);
 			if (ret < 0) {
 				sd_warn("cannot register ana port group %d",
+					portid);
+				configdb_del_port(portid);
+			}
+			ret = configdb_add_subsys_port(acl_id, portid);
+			if (ret < 0) {
+				sd_warn("cannot register subsys port %d",
 					node->zone + 1);
-				configdb_del_port(node->zone + 1);
+				configdb_del_ana_port_group(portid);
+				configdb_del_port(portid);
 			}
 		} else {
 			sd_debug("removing port %d (%s:%d)",
 				 node->zone + 1, traddr, trsvcid);
+			configdb_del_subsys_port(acl_id, node->zone + 1);
 			configdb_del_ana_port_group(node->zone + 1);
 			configdb_del_port(node->zone + 1);
 		}
@@ -376,8 +395,8 @@ static int change_subsys_cntlid(struct nofuse_subsystem *subsys,
 	cntlid_max = cntlid_min + cntlid_range - 1;
 	if (cntlid_max >= 65520)
 		cntlid_max = 65519;
-	sd_debug("restricting cntlid for subsystem '%s' to %u-%u",
-		 subsys->nqn, cntlid_min, cntlid_max);
+	sd_debug("restricting cntlid for subsystem '%s' (%d zones) to %u-%u",
+		 subsys->nqn, nr_zones, cntlid_min, cntlid_max);
 	sprintf(value, "%u", cntlid_min);
 	ret = configdb_set_subsys_attr(subsys->id,
 				       "cntlid_min", value);
