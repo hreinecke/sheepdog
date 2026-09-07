@@ -31,9 +31,9 @@ struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
 	port->listenfd = -1;
 	port->portid = id;
 	if (traddr) {
-		if (strcmp(traddr, "127.0.0.1"))
+		if (!strcmp(traddr, "127.0.0.1"))
 			traddr = NULL;
-		else if (strchr(traddr, ':'))
+		else if (!strchr(traddr, '.'))
 			adrfam = "ipv6";
 	}
 	ret = configdb_add_port(id, traddr, adrfam, trsvcid);
@@ -41,18 +41,6 @@ struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
 		port_err(port, "cannot register port, error %d", ret);
 		free(port);
 		return NULL;
-	}
-	if (traddr && strcmp(traddr, "127.0.0.1")) {
-		if (strchr(traddr, ':'))
-			configdb_set_port_attr(port->portid, "addr_adrfam",
-					    "ipv6");
-		configdb_set_port_attr(port->portid, "addr_traddr", traddr);
-	}
-	if (trsvcid) {
-		char value[5];
-
-		sprintf(value, "%d", trsvcid);
-		configdb_set_port_attr(port->portid, "addr_trsvcid", value);
 	}
 	
 	ret = configdb_add_ana_port_group(port->portid);
