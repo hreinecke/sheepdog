@@ -71,6 +71,7 @@ int create_unix_domain_socket(const char *unix_path,
 			      int (*callback)(int, void *), void *data);
 
 const char *addr_to_str(const uint8_t *addr, uint16_t port);
+char *str_to_tr(const char *ipstr, uint16_t *port);
 int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port);
 char *sockaddr_in_to_str(struct sockaddr_in *sockaddr);
 int set_nodelay(int fd);

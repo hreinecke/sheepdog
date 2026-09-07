@@ -1122,17 +1122,14 @@ int configdb_set_ana_port_group(unsigned int portid, const char *ana_grpid,
 	return 0;
 }
 
-int configdb_del_ana_port_group(unsigned int portid, int grpid)
+int configdb_del_ana_port_group(unsigned int portid)
 {
 	char *sql;
 	int ret;
 
 	ret = asprintf(&sql,
 		       "DELETE FROM ana_port_group AS ap WHERE ap.port_id IN "
-		       "(SELECT id FROM ports WHERE id = '%d') AND "
-		       "ap.ana_group_id IN "
-		       "(SELECT id FROM ana_groups WHERE id = '%d');",
-		       portid, grpid);
+		       "(SELECT id FROM ports WHERE id = '%d');", portid);
 	if (ret < 0)
 		return ret;
 	ret = sql_exec_simple(sql);

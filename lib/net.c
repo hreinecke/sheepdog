@@ -416,24 +416,16 @@ char *sockaddr_in_to_str(struct sockaddr_in *sockaddr)
 	return str;
 }
 
-int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
+char *str_to_tr(const char *ipstr, uint16_t *port)
 {
-	struct addrinfo hints;
-	struct addrinfo *result, *rp;
-	struct sockaddr_in *sin;
-	struct sockaddr_in6 *sin6;
-	int res = -1;
-	int addr_start_idx;
 	char *hoststr = strdup(ipstr);
 	char *portstr = NULL;
 
-	if (!hoststr)
-		return -EINVAL;
 	if (ipstr[0] == '[') {
 		char *p = strchr(hoststr, ']');
 		if (!p) {
 			free(hoststr);
-			return -EINVAL;
+			return NULL;
 		}
 		if (strlen(p) > 1 && p[1] == ':') {
 			p[0] = '\0';
@@ -453,10 +445,27 @@ int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
 		p = strtoul(portstr, &end, 10);
 		if (portstr == end) {
 			free(hoststr);
-			return -EINVAL;
+			return NULL;
 		}
 		*port = p;
 	}
+	return hoststr;
+}
+
+int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
+{
+	struct addrinfo hints;
+	struct addrinfo *result, *rp;
+	struct sockaddr_in *sin;
+	struct sockaddr_in6 *sin6;
+	int res = -1;
+	int addr_start_idx;
+	char *hoststr = NULL;
+
+	hoststr = str_to_tr(ipstr, port);
+	if (!hoststr)
+		return -EINVAL;
+
 	memset(&hints, 0, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;

@@ -59,6 +59,7 @@ struct nofuse_context *this_ctx;
 enum nofuse_event_type {
 	NOFUSE_EVENT_ACL_CHANGE,
 	NOFUSE_EVENT_NODE_CHANGE,
+	NOFUSE_EVENT_LOCK_CHANGE,
 };
 
 /* Queued via nvmet_notify_acl_change(), drained by nofuse_main()'s loop. */
@@ -176,6 +177,120 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
 }
 
+static void update_vdi_lock_state(struct nofuse_namespace *ns,
+				  uint32_t vid, uint32_t acl_id)
+{
+	size_t buf_len = 0;
+	char *buf = NULL;
+	struct sd_req req;
+	struct sd_rsp *rsp = (struct sd_rsp *)&req;
+	enum lock_state lock_state;
+	struct vdi_lock_state *vls;
+	int ret;
+
+	buf_len = sizeof(struct vdi_lock_state) * 16;
+	buf = xzalloc(buf_len);
+	if (!buf)
+		return;
+
+	sd_init_req(&req, SD_OP_GET_VDI_LOCK_STATE);
+	req.vdi_lock.vid = vid;
+	req.vdi_lock.acl = acl_id;
+	req.vdi_lock.index = UINT32_MAX;
+retry:
+	req.data_length = buf_len;
+	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
+	if (ret < 0) {
+		sd_err("Failed to get VDI %"PRIx32" state: %m",
+		       vid);
+		free(buf);
+		return;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		free(buf);
+		if (rsp->result == SD_RES_BUFFER_SMALL) {
+			buf_len *= 2;
+			buf = xzalloc(buf_len);
+			if (!buf) {
+				sd_err("Failed to allocate buffer");
+				return;
+			}
+			goto retry;
+		}
+		sd_err("Failed to get VDI %"PRIx32" state: %s",
+		       vid, sd_strerror(rsp->result));
+		return;
+	}
+	lock_state = rsp->vdi_lock.state;
+
+	vls = (struct vdi_lock_state *)buf;
+	for (int i = 0; i < rsp->data_length; i += sizeof(*vls)) {
+		struct sd_node *node, node_key;
+		char *traddr;
+		const char *adrfam = "ipv4";
+		uint16_t trsvcid;
+
+		if (rsp->data_length - i < sizeof(*vls))
+			break;
+		if (!strlen(vls->owner)) {
+			vls++;
+			continue;
+		}
+		node_key.nid = vls->sender;
+		node = rb_search(&this_ctx->nroot, &node_key, rb, node_cmp);
+		if (!node) {
+			sd_warn("failed to find node '%s'",
+				node_to_str(&node_key));
+			vls++;
+			continue;
+		}
+		traddr = str_to_tr(vls->owner, &trsvcid);
+		if (!traddr) {
+			sd_warn("failed to parse owner '%s'", vls->owner);
+			vls++;
+			continue;
+		}
+		if (!strcmp(traddr, "127.0.0.1")) {
+			free(traddr);
+			traddr = NULL;
+		} else if (!strchr(traddr, '.'))
+			adrfam = "ipv6";
+		if (lock_state == LOCK_STATE_LOCKED) {
+			sd_warn("nsid %"PRIx32" locked, disabling", ns->nsid);
+			vls++;
+			continue;
+		} else if (lock_state == LOCK_STATE_SHARED) {
+			sd_debug("adding port %d (%s:%d)",
+				 node->zone + 1, traddr, trsvcid);
+			ret = configdb_add_port(node->zone + 1,
+						traddr, adrfam, trsvcid);
+			if (ret < 0) {
+				sd_warn("cannot add port '%s:%d', error %d",
+					traddr, trsvcid, ret);
+				if (traddr)
+					free(traddr);
+				vls++;
+				continue;
+			}
+			ret = configdb_add_ana_port_group(node->zone + 1);
+			if (ret < 0) {
+				sd_warn("cannot register ana port group %d",
+					node->zone + 1);
+				configdb_del_port(node->zone + 1);
+			}
+		} else {
+			sd_debug("removing port %d (%s:%d)",
+				 node->zone + 1, traddr, trsvcid);
+			configdb_del_ana_port_group(node->zone + 1);
+			configdb_del_port(node->zone + 1);
+		}
+		if (traddr)
+			free(traddr);
+		vls++;
+	}
+	free(buf);
+}
+
 void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl, uint32_t new_acl)
 {
 	struct nofuse_event *ev;
@@ -205,6 +320,25 @@ void nvmet_notify_node_change(void)
 
 	ev = xmalloc(sizeof(*ev));
 	ev->type = NOFUSE_EVENT_NODE_CHANGE;
+
+	sd_mutex_lock(&this_ctx->event_lock);
+	list_add_tail(&ev->node, &this_ctx->event_list);
+	sd_mutex_unlock(&this_ctx->event_lock);
+
+	eventfd_write(this_ctx->event_evtfd, 1);
+}
+
+void nvmet_notify_lock_change(uint32_t vid, uint32_t acl)
+{
+	struct nofuse_event *ev;
+
+	if (!this_ctx)
+		return;
+
+	ev = xmalloc(sizeof(*ev));
+	ev->type = NOFUSE_EVENT_LOCK_CHANGE;
+	ev->vid = vid;
+	ev->new_acl = acl;
 
 	sd_mutex_lock(&this_ctx->event_lock);
 	list_add_tail(&ev->node, &this_ctx->event_list);
@@ -283,6 +417,20 @@ static void process_node_event(struct nofuse_event *ev)
 	}
 }
 
+static void process_lock_event(struct nofuse_event *ev)
+{
+	struct nofuse_namespace *ns, key = {
+		.subsys_id = ev->new_acl,
+		.nsid = ev->vid,
+	};
+	ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+	if (!ns) {
+		sd_err("failed to find VDI %"PRIx32" namespace", ev->vid);
+		return;
+	}
+	update_vdi_lock_state(ns, ev->vid, ev->new_acl);
+}
+
 static void process_nofuse_event(struct nofuse_event *ev)
 {
 	switch (ev->type) {
@@ -291,6 +439,9 @@ static void process_nofuse_event(struct nofuse_event *ev)
 		break;
 	case NOFUSE_EVENT_NODE_CHANGE:
 		process_node_event(ev);
+		break;
+	case NOFUSE_EVENT_LOCK_CHANGE:
+		process_lock_event(ev);
 		break;
 	default:
 		sd_warn("Unhandled event %d", ev->type);

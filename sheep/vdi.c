@@ -990,6 +990,10 @@ int vdi_lock(struct vdi_lock_state *ls)
 
 out:
 	sd_rw_unlock(&vdi_state_lock);
+#ifdef HAVE_NVMET
+	if (ret == SD_RES_SUCCESS)
+		nvmet_notify_lock_change(ls->vid, ls->acl);
+#endif
 	return ret;
 }
 
@@ -1064,6 +1068,10 @@ int vdi_unlock(struct vdi_lock_state *ls)
 	}
 out:
 	sd_rw_unlock(&vdi_state_lock);
+#ifdef HAVE_NVMET
+	if (ret == SD_RES_SUCCESS)
+		nvmet_notify_lock_change(ls->vid, ls->acl);
+#endif
 	return ret;
 }
 

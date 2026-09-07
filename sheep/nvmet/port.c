@@ -108,7 +108,7 @@ int del_port(struct nofuse_port *port)
 		port_err(port, "port still running");
 		return -EBUSY;
 	}
-	ret = configdb_del_ana_port_group(port->portid, 1);
+	ret = configdb_del_ana_port_group(port->portid);
 	if (ret < 0) {
 		port_err(port, "cannot delete ana group from port, error %d",
 			  ret);
