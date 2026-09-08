@@ -854,6 +854,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
+	qe->opcode = nvme_cmd_read;
 	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
@@ -878,6 +879,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 	}
 
+	qe->opcode = nvme_cmd_write;
 	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
@@ -932,18 +934,11 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 	}
 
+	qe->opcode = nvme_cmd_dsm;
 	qe->vid = nsid;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
-	/*
-	 * NR is 0's based (actual range count = NR + 1). The H2CData
-	 * buffer (qe->data, sized off the SGL length) can be larger than
-	 * this -- a host may always allocate room for the architectural
-	 * max range count regardless of how many ranges it actually
-	 * fills in -- so uring_submit_dsm() must only process this many
-	 * of them, not however many fit in the buffer.
-	 */
-	qe->dsm_nr = le32toh(cmd->dsm.nr) + 1;
+	qe->data_remaining = qe->data_len;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
@@ -961,7 +956,6 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	qe->data_remaining = qe->data_len;
 	ret = qe->ns->ops->ns_prep_read(ep, qe);
 	if (ret)
 		ctrl_err(ep, "dsm: prep_rma_read failed with error %d", ret);

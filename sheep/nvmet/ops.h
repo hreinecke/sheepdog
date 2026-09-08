@@ -49,7 +49,7 @@ struct io_ops {
 	int (*io_wait)(struct nofuse_queue *ep, short events);
 };
 
-struct ns_ops *null_register_ops(void);
+struct ns_ops *vdi_register_ops(void);
 struct ns_ops *uring_register_ops(void);
 
 struct io_ops *tcp_register_io_ops(void);

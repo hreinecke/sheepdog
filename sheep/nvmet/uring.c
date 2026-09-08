@@ -181,15 +181,11 @@ static int uring_submit_io(struct nofuse_queue *ep, struct ep_qe *qe,
 
 static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	qe->opcode = nvme_cmd_write;
-
 	return uring_submit_io(ep, qe, true);
 }
 
 static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	qe->opcode = nvme_cmd_read;
-
 	return uring_submit_io(ep, qe, false);
 }
 
