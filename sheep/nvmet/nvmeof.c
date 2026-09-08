@@ -886,6 +886,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
+	qe->data_remaining = qe->data_len;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
