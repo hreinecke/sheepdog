@@ -3,7 +3,7 @@
  * vdi.c
  * synchronous VDI backend for NVMe-oF userspace emulation.
  *
- * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ * Copyright (c) 2026 Hannes Reinecke <hare@suse.de>
  */
 
 #include <stdio.h>

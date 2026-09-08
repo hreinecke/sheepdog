@@ -35,7 +35,6 @@
 
 extern bool tcp_debug;
 extern bool cmd_debug;
-extern bool ep_debug;
 extern bool port_debug;
 extern bool fuse_debug;
 
@@ -189,21 +188,6 @@ struct nofuse_port {
 	int listenfd;
 	bool tls;
 };
-
-#define ep_info(e, f, x...)				\
-	if (ep_debug) {					\
-		printf("ep %d: " f "\n",		\
-		       (e)->sockfd, ##x);		\
-		fflush(stdout);				\
-}
-
-#define ep_err(e, f, x...)				\
-	do {						\
-		fprintf(stderr, "ep %d: " f "\n",	\
-			(e)->sockfd, ##x);		\
-		fflush(stderr);				\
-	} while (0)
-
 
 #define ctrl_info(e, f, x...)					\
 	if (cmd_debug) {					\

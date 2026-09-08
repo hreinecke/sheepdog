@@ -51,20 +51,20 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 			break;
 		}
 		if (!ctrl) {
-			ep_err(ep, "qid %d invalid cntlid %d",
+			sd_err("qid %d invalid cntlid %d",
 			       ep->qid, cntlid);
 			ret = -ENOENT;
 			goto out_unlock;
 		}
 		if (ep->qid > ctrl->max_queues) {
-			ep_err(ep, "invalid qid %d (max %d)",
+			sd_err("invalid qid %d (max %d)",
 			       ep->qid, ctrl->max_queues);
 			ret = -EINVAL;
 			goto out_unlock;
 		}
 		pthread_mutex_lock(&ctrl->ctrl_mutex);
 		if (ctrl->ep[ep->qid]) {
-			ep_err(ep, "qid %d already connected", ep->qid);
+			sd_err("qid %d already connected", ep->qid);
 			ret = -EBUSY;
 		} else {
 			ctrl->ep[ep->qid] = ep;
@@ -77,35 +77,35 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 
 	if (!is_discovery &&
 	    configdb_check_allowed_host(hostnqn, nqn, ep->port->portid) <= 0) {
-		ep_err(ep, "rejecting host NQN '%s' for subsys '%s'",
+		sd_err("rejecting host NQN '%s' for subsys '%s'",
 		       hostnqn, nqn);
 		ret = -EPERM;
 		goto out_unlock;
 	}
-	ep_info(ep, "Allocating new controller '%s' for '%s'",
+	sd_debug("Allocating new controller '%s' for '%s'",
 		hostnqn, nqn);
 	ctrl = malloc(sizeof(*ctrl));
 	if (!ctrl) {
-		ep_err(ep, "Out of memory allocating controller");
+		sd_err("Out of memory allocating controller");
 		ret = -ENOMEM;
 		goto out_unlock;
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
 	ret = configdb_get_cntlid(nqn, &cntlid);
 	if (ret < 0) {
-		ep_err(ep, "error fetching cntlid");
+		sd_err("error fetching cntlid");
 		free(ctrl);
 		goto out_unlock;
 	}
 	ret = configdb_add_ctrl(nqn, cntlid);
 	if (ret < 0) {
-		ep_err(ep, "error registering cntlid %d", cntlid);
+		sd_err("error registering cntlid %d", cntlid);
 		free(ctrl);
 		goto out_unlock;
 	}
 	ret = configdb_get_subsys_attr(nqn, "qid_max", value);
 	if (ret < 0) {
-		ep_err(ep, "error fetching qid_max");
+		sd_err("error fetching qid_max");
 		ctrl->max_queues = NVMF_NUM_QUEUES;
 	} else {
 		unsigned long tmp;
@@ -113,16 +113,16 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 
 		tmp = strtoul(value, &eptr, 10);
 		if (tmp == ULONG_MAX || value == eptr) {
-			ep_err(ep, "invalid max_qid value '%s'", value);
+			sd_err("invalid max_qid value '%s'", value);
 			ctrl->max_queues = NVMF_NUM_QUEUES;
 		} else {
 			ctrl->max_queues = tmp;
 		}
 	}
-	ep_info(ep, "using %d queues", ctrl->max_queues);
+	sd_debug("using %d queues", ctrl->max_queues);
 	ret = configdb_get_subsys_attr(nqn, "subsys_id", value);
 	if (ret < 0) {
-		ep_err(ep, "error fetching subsys_id");
+		sd_err("error fetching subsys_id");
 		ret = -EBUSY;
 		goto out_unlock;
 	} else {
@@ -131,7 +131,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 
 		tmp = strtoul(value, &eptr, 10);
 		if (tmp == ULONG_MAX || value == eptr) {
-			ep_err(ep, "invalid subsys_id value '%s'", value);
+			sd_err("invalid subsys_id value '%s'", value);
 			ret = -EBUSY;
 			goto out_unlock;
 		}
@@ -171,8 +171,8 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	}
 	pthread_mutex_unlock(&ctrl->ctrl_mutex);
 	if (!ctrl->num_queues) {
-		printf("ctrl %u qid %d: deleting controller\n",
-		       ctrl->cntlid, ep->qid);
+		sd_debug("ctrl %u qid %d: deleting controller\n",
+			 ctrl->cntlid, ep->qid);
 		configdb_del_ctrl(ctrl->subsys_id, ctrl->cntlid);
 		list_del(&ctrl->node);
 		free(ctrl);
@@ -186,7 +186,7 @@ static int start_queue(struct nofuse_queue *ep, int conn)
 
 	ret = ep->ops->create_queue(ep, conn);
 	if (ret) {
-		fprintf(stderr, "ep %d: Failed to create queue, error %d",
+		sd_err("ep %d: Failed to create queue, error %d",
 			conn, ret);
 		return ret;
 	}
@@ -197,7 +197,7 @@ retry:
 		if (ret == -EAGAIN)
 			goto retry;
 
-		ep_err(ep, "accept() failed with error %d", ret);
+		sd_err("ep %d: accept() failed with error %d", conn, ret);
 		return ret;
 	}
 
@@ -213,7 +213,7 @@ static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		ep_err(ep, "qid %d failed to get poll sqe", ep->qid);
+		sd_err("qid %d failed to get poll sqe", ep->qid);
 		return NULL;
 	}
 
@@ -222,7 +222,7 @@ static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
-		ep_err(ep, "qid %d submit poll sqe failed, error %d",
+		sd_err("qid %d submit poll sqe failed, error %d",
 		       ep->qid, ret);
 		return NULL;
 	}
@@ -243,7 +243,7 @@ static struct io_uring_sqe *queue_submit_io_evtfd_poll(struct nofuse_queue *ep)
 
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		ep_err(ep, "qid %d failed to get io evtfd poll sqe", ep->qid);
+		sd_err("qid %d failed to get io evtfd poll sqe", ep->qid);
 		return NULL;
 	}
 
@@ -252,7 +252,7 @@ static struct io_uring_sqe *queue_submit_io_evtfd_poll(struct nofuse_queue *ep)
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
-		ep_err(ep, "qid %d submit io evtfd poll sqe failed, error %d",
+		sd_err("qid %d submit io evtfd poll sqe failed, error %d",
 		       ep->qid, ret);
 		return NULL;
 	}
@@ -266,7 +266,7 @@ static int queue_submit_cancel(struct nofuse_queue *ep)
 
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		ep_err(ep, "qid %d failed to get poll sqe", ep->qid);
+		sd_err("qid %d failed to get poll sqe", ep->qid);
 		return -ENOMEM;
 	}
 
@@ -275,7 +275,7 @@ static int queue_submit_cancel(struct nofuse_queue *ep)
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
-		ep_err(ep, "qid %d submit cancel failed, error %d",
+		sd_err("qid %d submit cancel failed, error %d",
 		       ep->qid, ret);
 		return ret;
 	}
@@ -290,13 +290,13 @@ static int queue_submit_aen(struct nofuse_queue *ep)
 
 	qe = ep->ops->get_aen(ep);
 	if (!qe) {
-		ep_info(ep, "qid %d no aen request", ep->qid);
+		sd_info("qid %d no aen request", ep->qid);
 		return 0;
 	}
 	qe->opcode = nvme_admin_async_event;
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		ep_err(ep, "qid %d failed to get nop sqe", ep->qid);
+		sd_err("qid %d failed to get nop sqe", ep->qid);
 		return 0;
 	}
 
@@ -305,7 +305,7 @@ static int queue_submit_aen(struct nofuse_queue *ep)
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
-		ep_err(ep, "qid %d submit nop failed, error %d",
+		sd_err("qid %d submit nop failed, error %d",
 		       ep->qid, ret);
 		return ret;
 	}
@@ -333,16 +333,16 @@ static void pop_free(void *arg)
 	struct nofuse_port *port = ep->port;
 
 	if (!port) {
-		ep_err(ep, "no port set");
+		sd_err("no port set");
 		return;
 	}
 
 	pthread_mutex_lock(&ctrl_list_mutex);
 	if (ep->ctrl) {
-		ep_err(ep, "ctrl %u still active", ep->ctrl->cntlid);
+		sd_err("ctrl %u still active", ep->ctrl->cntlid);
 	}
 	pthread_mutex_unlock(&ctrl_list_mutex);
-	ep_info(ep, "free queue");
+	sd_debug("qid %d free queue", ep->qid);
 	pthread_mutex_lock(&port->ep_mutex);
 	list_del(&ep->node);
 	pthread_mutex_unlock(&port->ep_mutex);
@@ -368,7 +368,7 @@ void *queue_thread(void *arg)
 	pthread_cleanup_push(pop_disconnect, ep);
 	ret = io_uring_queue_init(32, &ep->uring, 0);
 	if (ret) {
-		ep_err(ep, "qid %d error %d creating uring",
+		sd_err("qid %d error %d creating uring",
 		       ep->qid, ret);
 		ep->state = STOPPED;
 		goto out_disconnect;
@@ -460,7 +460,7 @@ void *queue_thread(void *arg)
 	skip_cqe:
 		if (ret == -EAGAIN || ret == -ETIME) {
 			if (!ep->ctrl) {
-				ep_err(ep, "qid %d no controller timeout",
+				sd_err("qid %d no controller timeout",
 				       ep->qid);
 			} else {
 				if (ep->qid != 0) {
@@ -526,17 +526,17 @@ struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 	pthread_mutex_init(&ep->io_done_lock, NULL);
 	ep->io_evtfd = eventfd(0, EFD_NONBLOCK);
 	if (ep->io_evtfd < 0) {
-		fprintf(stderr, "ep %d: failed to create io eventfd", conn);
+		sd_err("ep %d: failed to create io eventfd", conn);
 		goto out;
 	}
 
 	ret = start_queue(ep, conn);
 	if (ret) {
-		fprintf(stderr, "ep %d: failed to start queue", conn);
+		sd_err("ep %d: failed to start queue", conn);
 		goto out_close_evtfd;
 	}
 
-	ep_info(ep, "queue started");
+	sd_debug("ep %d queue started", conn);
 	pthread_mutex_lock(&port->ep_mutex);
 	list_add(&ep->node, &port->ep_list);
 	pthread_mutex_unlock(&port->ep_mutex);
@@ -553,14 +553,12 @@ out:
 void destroy_queue(struct nofuse_queue *ep)
 {
 	if (ep->state == CONNECTED) {
-		ep_info(ep, "%s: stop queue",
-			__func__);
+		sd_debug("qid %u stop queue", ep->qid);
 		ep->state = STOPPED;
 		queue_submit_cancel(ep);
 	}
 	if (ep->pthread) {
-		ep_info(ep, "%s: cancel thread",
-			__func__);
+		sd_debug("qid %u cancel thread", ep->qid);
 		pthread_cancel(ep->pthread);
 		ep->pthread = 0;
 	}
@@ -572,7 +570,7 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 
 	pthread_mutex_lock(&port->ep_mutex);
 	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
-		printf("%s: ctrl %d qid %d subsys %s\n",
+		sd_debug("%s: ctrl %d qid %d subsys %s\n",
 		       __func__,
 		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		       strlen(ep->ctrl->subsysnqn) ?
@@ -629,9 +627,9 @@ void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 		return;
 	}
 	if (aen_pending(ep->ctrl)) {
-		printf("%s: subsys %s ctrl %d type %s pending %#x masked %#x\n",
-		       __func__, ep->ctrl->subsysnqn, ep->ctrl->cntlid,
-		       aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
+		sd_debug("subsys %s ctrl %d type %s pending %#x masked %#x\n",
+			 ep->ctrl->subsysnqn, ep->ctrl->cntlid,
+			 aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
 		queue_submit_aen(ep);
 	}
 }

@@ -30,7 +30,6 @@
 int stopped;
 bool tcp_debug;
 bool cmd_debug;
-bool ep_debug;
 bool port_debug;
 
 struct nofuse_context {
