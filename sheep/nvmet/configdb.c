@@ -237,18 +237,35 @@ static const char *init_sql[NUM_TABLES] = {
 	"controllers(cntlid, subsys_id);",
 	/* cntlid trigger */
 	"CREATE TRIGGER cntlid_incr INSERT ON controllers "
-	"BEGIN UPDATE subsystems SET cntlid_next = cntlid_next + 1 "
-	"WHERE NEW.subsys_id = subsys_id; END;",
+	"BEGIN UPDATE subsystems SET cntlid_next = ( "
+	"WITH RECURSIVE seq(n, steps) AS ( "
+	"SELECT CASE WHEN NEW.cntlid >= s.cntlid_max THEN s.cntlid_min "
+	"ELSE NEW.cntlid + 1 END, 0 "
+	"FROM subsystems AS s WHERE s.subsys_id = NEW.subsys_id "
+	"UNION ALL "
+	"SELECT CASE WHEN seq.n >= s.cntlid_max THEN s.cntlid_min "
+	"ELSE seq.n + 1 END, seq.steps + 1 "
+	"FROM seq, subsystems AS s "
+	"WHERE s.subsys_id = NEW.subsys_id "
+	"AND seq.steps < (s.cntlid_max - s.cntlid_min + 1) "
+	"AND seq.n IN "
+	"(SELECT cntlid FROM controllers WHERE subsys_id = NEW.subsys_id) ) "
+	"SELECT n FROM seq ORDER BY steps DESC LIMIT 1 ) "
+	"WHERE subsys_id = NEW.subsys_id; END;",
 	/* cntlid_min update trigger */
 	"CREATE TRIGGER cntlid_min_update_trig UPDATE OF cntlid_min "
 	"ON subsystems "
 	"BEGIN UPDATE subsystems SET cntlid_next = ( "
-	"WITH RECURSIVE seq(n) AS ( "
-	"SELECT NEW.cntlid_min "
+	"WITH RECURSIVE seq(n, steps) AS ( "
+	"SELECT NEW.cntlid_min, 0 "
 	"UNION ALL "
-	"SELECT n + 1 FROM seq WHERE n IN "
+	"SELECT CASE WHEN n >= NEW.cntlid_max THEN NEW.cntlid_min "
+	"ELSE n + 1 END, steps + 1 "
+	"FROM seq "
+	"WHERE steps < (NEW.cntlid_max - NEW.cntlid_min + 1) "
+	"AND n IN "
 	"(SELECT cntlid FROM controllers WHERE subsys_id = NEW.subsys_id) ) "
-	"SELECT MAX(n) FROM seq ) "
+	"SELECT n FROM seq ORDER BY steps DESC LIMIT 1 ) "
 	"WHERE subsys_id = NEW.subsys_id; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
