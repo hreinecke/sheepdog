@@ -30,9 +30,11 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
 		ret = sd_write_object(oid, (char *)data, len, off, false);
+		if (ret == SD_RES_NO_OBJ)
+			ret = sd_write_object(oid, (char *)data, len, off, true);
 		if (ret != SD_RES_SUCCESS) {
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
-				 " off %lu size %lu read error %s",
+				 " off %lu size %lu write error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
 			return NVME_SC_INTERNAL;
 		}
