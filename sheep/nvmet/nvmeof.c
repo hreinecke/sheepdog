@@ -327,6 +327,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	id.iorcsz = NVME_NVM_IOCQES;
 	id.oaes = htole32(NVME_AEN_CFG_NS_ATTR | NVME_AEN_CFG_ANA_CHANGE | \
 			  NVME_AEN_CFG_DISC_CHANGE);
+	id.oncs = htole16(NVME_CTRL_ONCS_DSM);
 	id.acl = 3;
 	id.aerl = NVME_NR_AEN_COMMANDS - 1;
 	id.nn = htole32(MAX_NSID);
@@ -344,6 +345,47 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	id.anatt = 10;
 	id.anagrpmax = htole32(MAX_ANAGRPID);
 	id.nanagrpid = htole32(MAX_ANAGRPID);
+	if (len > sizeof(id))
+		len = sizeof(id);
+
+	memcpy(id_buf, &id, len);
+
+	return len;
+}
+
+/*
+ * I/O Command Set specific Identify Controller data structure for the
+ * NVM command set (CNS 06h, CSI 0). This is a *different* data
+ * structure than the plain Identify Controller response, sized and
+ * laid out to put VSL/WZSL/WUSL/DMRL/DMRSL/DMSL at fixed offsets --
+ * returning nvme_id_ctrl here instead would hand back the wrong bytes.
+ */
+static int handle_identify_ctrl_nvm(struct nofuse_queue *ep,
+				    uint8_t *id_buf, size_t len)
+{
+	struct nvme_id_ctrl_nvm id;
+
+	memset(&id, 0, sizeof(id));
+
+	/*
+	 * DMRL is a direct (not 0's based) range count; 255 is the
+	 * largest an 8-bit field can hold, and uring_submit_dsm() imposes
+	 * no smaller restriction.
+	 *
+	 * DMRSL is in logical blocks; one sheepdog object's worth of
+	 * sectors is as large a single range ever needs to be, since
+	 * uring_submit_dsm() only ever discards whole objects anyway.
+	 */
+	id.dmrl = 255;
+	id.dmrsl = htole32(SD_DATA_OBJ_SIZE / SECTOR_SIZE);
+	/*
+	 * WZSL bounds Write Zeroes, which we don't implement at all (ONCS
+	 * doesn't advertise it, so a compliant host won't read this
+	 * field) -- 0 here, not a limit, since asserting a specific size
+	 * for a command we don't handle would be misleading.
+	 */
+	id.wzsl = 0;
+
 	if (len > sizeof(id))
 		len = sizeof(id);
 
@@ -380,6 +422,20 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 	id.lbaf[0].ds = __builtin_ctz(ns->blksize);
 	if (ns->readonly)
 		id.nsattr = 1;
+
+	/*
+	 * The namespace is backed by sheepdog data objects (uring_submit_dsm()
+	 * only ever discards whole ones), so advertise that granularity as
+	 * the preferred/only useful deallocate unit -- otherwise the host
+	 * defaults discard_granularity to the logical block size, which
+	 * makes every discard request unaligned to what we can actually act
+	 * on. NPDG/NPDA are 0's based, in logical blocks.
+	 */
+	id.nsfeat |= NVME_NS_FEAT_THIN | NVME_NS_FEAT_IO_OPT;
+	id.npdg = htole16(SD_DATA_OBJ_SIZE / ns->blksize - 1);
+	id.npda = id.npdg;
+	/* Deallocated logical blocks read back as all-zero. */
+	id.dlfeat = 0x1;
 
 	if (len > sizeof(id))
 		len = sizeof(id);
@@ -550,8 +606,8 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		break;
 	case NVME_ID_CNS_CS_CTRL:
 		if (csi == 0) {
-			id_len = handle_identify_ctrl(ep, qe->data,
-						      qe->data_len);
+			id_len = handle_identify_ctrl_nvm(ep, qe->data,
+							  qe->data_len);
 			if (id_len < 0)
 				return NVME_SC_INTERNAL;
 			break;
