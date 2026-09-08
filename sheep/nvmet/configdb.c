@@ -203,7 +203,7 @@ static int sql_exec_str(const char *sql, const char *col, char *value)
 	return parm.done;
 }
 
-#define NUM_TABLES 20
+#define NUM_TABLES 21
 
 static const char *init_sql[NUM_TABLES] = {
 	/* hosts */
@@ -239,6 +239,11 @@ static const char *init_sql[NUM_TABLES] = {
 	"CREATE TRIGGER cntlid_incr INSERT ON controllers "
 	"BEGIN UPDATE subsystems SET cntlid_next = cntlid_next + 1 "
 	"WHERE NEW.subsys_id = subsys_id; END;",
+	/* cntlid_min update trigger */
+	"CREATE TRIGGER cntlid_min_update_trig UPDATE OF cntlid_min "
+	"ON subsystems "
+	"BEGIN UPDATE subsystems SET cntlid_next = NEW.cntlid_min "
+	"WHERE subsys_id = NEW.subsys_id; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
 	"FOREIGN KEY (ctrl_id) REFERENCES controllers(oid) "
@@ -345,6 +350,7 @@ static const char *exit_sql[NUM_TABLES] =
 	"DROP VIEW subsys_ctrl;",
 	"DROP INDEX nsid_idx;",
 	"DROP TABLE namespaces;",
+	"DROP TRIGGER cntlid_min_update_trig;",
 	"DROP TRIGGER cntlid_incr;",
 	"DROP INDEX cntlid_idx;",
 	"DROP TABLE controllers;",
