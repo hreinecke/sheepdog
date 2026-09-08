@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "sheep.h"
+#include "sheep_priv.h"
 #include "nofuse.h"
 #include "ops.h"
 #include "nvme.h"
@@ -872,6 +872,9 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
+	if (node_in_recovery())
+		return NVME_SC_ANA_TRANSITION;
+
 	qe->opcode = nvme_cmd_read;
 	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
@@ -897,6 +900,9 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
+
+	if (node_in_recovery())
+		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_write;
 	qe->vid = nsid;
@@ -952,6 +958,9 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 		ctrl_err(ep, "dsm: invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
+
+	if (node_in_recovery())
+		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_dsm;
 	qe->vid = nsid;
