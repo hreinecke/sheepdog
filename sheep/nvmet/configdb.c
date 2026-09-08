@@ -242,7 +242,13 @@ static const char *init_sql[NUM_TABLES] = {
 	/* cntlid_min update trigger */
 	"CREATE TRIGGER cntlid_min_update_trig UPDATE OF cntlid_min "
 	"ON subsystems "
-	"BEGIN UPDATE subsystems SET cntlid_next = NEW.cntlid_min "
+	"BEGIN UPDATE subsystems SET cntlid_next = ( "
+	"WITH RECURSIVE seq(n) AS ( "
+	"SELECT NEW.cntlid_min "
+	"UNION ALL "
+	"SELECT n + 1 FROM seq WHERE n IN "
+	"(SELECT cntlid FROM controllers WHERE subsys_id = NEW.subsys_id) ) "
+	"SELECT MAX(n) FROM seq ) "
 	"WHERE subsys_id = NEW.subsys_id; END;",
 	/* changed namespaces */
 	"CREATE TABLE ns_changed ( ctrl_id INT, nsid INT, "
