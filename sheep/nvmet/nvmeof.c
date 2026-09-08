@@ -20,6 +20,29 @@
 #include "configdb.h"
 #include "firmware.h"
 
+static int parse_guid(uint8_t *guid, size_t guid_len, const char *guid_str)
+{
+	int i;
+	unsigned long val, _val;
+	char part[11];
+
+	for (i = 0; i < guid_len; i+=4) {
+		char *eptr = NULL;
+
+		memset(part, 0, 11);
+		memcpy(part, "0x", 2);
+		memcpy(part + 2, guid_str, 8);
+		_val = strtoul(part, &eptr, 16);
+		if (_val == ULONG_MAX || part == eptr)
+			return -EINVAL;
+		val = htobe32(_val);
+		memcpy(guid, &val, 4);
+		guid += 4;
+		guid_str += 8;
+	}
+	return 0;
+}
+
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
 			 uint16_t status)
 {
@@ -399,12 +422,30 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 {
 	struct nofuse_namespace *ns;
 	struct nvme_id_ns id;
+	char uid_str[37];
+	int ret;
 
 	ns = lookup_namespace(ep->ctrl, nsid);
 	if (!ns)
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
 	memset(&id, 0, sizeof(id));
+
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_id, nsid,
+					  "nguid", uid_str);
+	if (!ret) {
+		ret = parse_guid(id.nguid, sizeof(id.nguid), uid_str);
+		if (ret)
+			memset(id.nguid, 0, sizeof(id.nguid));
+	}
+
+	ret = configdb_get_namespace_attr(ep->ctrl->subsys_id, nsid,
+					  "eui64", uid_str);
+	if (!ret) {
+		ret = parse_guid(id.eui64, sizeof(id.eui64), uid_str);
+		if (ret)
+			memset(id.eui64, 0, sizeof(id.eui64));
+	}
 
 	id.nsze = (uint64_t)ns->size / ns->blksize;
 	id.ncap = id.nsze;
@@ -457,29 +498,6 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 		return ret;
 
 	return len;
-}
-
-static int parse_guid(uint8_t *guid, size_t guid_len, const char *guid_str)
-{
-	int i;
-	unsigned long val, _val;
-	char part[11];
-
-	for (i = 0; i < guid_len; i+=4) {
-		char *eptr = NULL;
-
-		memset(part, 0, 11);
-		memcpy(part, "0x", 2);
-		memcpy(part + 2, guid_str, 8);
-		_val = strtoul(part, &eptr, 16);
-		if (_val == ULONG_MAX || part == eptr)
-			return -EINVAL;
-		val = htobe32(_val);
-		memcpy(guid, &val, 4);
-		guid += 4;
-		guid_str += 8;
-	}
-	return 0;
 }
 
 static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
