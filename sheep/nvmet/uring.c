@@ -194,6 +194,17 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 }
 
 /*
+ * Requests transfer of a non-inline write's data via R2T/H2CData PDUs.
+ * Submitting the write itself to the namespace backend happens later,
+ * once that data has actually arrived (tcp_handle_h2c_data() calls
+ * qe->ns_write(), set to uring_submit_write() by handle_write()).
+ */
+static int uring_prep_read(struct nofuse_queue *ep, struct ep_qe *qe)
+{
+	return ep->ops->prep_rma_read(ep, qe->tag);
+}
+
+/*
  * Called once a Dataset Management command's range descriptors have
  * fully arrived via R2T/H2CData (qe->ns_write, set by handle_dsm()).
  *
@@ -288,6 +299,7 @@ static struct ns_ops uring_ops = {
 	.ns_read = uring_submit_read,
 	.ns_write = uring_submit_write,
 	.ns_dsm = uring_submit_dsm,
+	.ns_prep_read = uring_prep_read,
 	.ns_handle_qe = uring_handle_qe,
 };
 
