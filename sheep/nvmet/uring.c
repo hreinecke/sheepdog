@@ -50,10 +50,21 @@ static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		ctrl_err(ep, "tag %#x eventfd_write error %d", qe->tag, errno);
 }
 
+static void uring_ctx_finish(struct uring_io_ctx *ctx, bool ok)
+{
+	if (!ok)
+		ctx->failed = true;
+	if (--ctx->pending == 0) {
+		uring_complete(ctx->ep, ctx->qe, ctx->failed ? -EIO : 0);
+		free(ctx);
+	}
+}
+
 /* Runs on the sheepdog main thread (put_request()). */
 static void uring_io_done(struct request *req)
 {
 	struct uring_io_ctx *ctx = req->local_done_arg;
+	bool ok = req->rp.result == SD_RES_SUCCESS;
 
 	if (req->rp.result == SD_RES_NO_OBJ && req->rq.opcode == SD_OP_READ_OBJ) {
 		/*
@@ -63,13 +74,54 @@ static void uring_io_done(struct request *req)
 		 * (same convention as e.g. dog_vdi_read()).
 		 */
 		memset(req->data, 0, req->data_length);
-	} else if (req->rp.result != SD_RES_SUCCESS)
-		ctx->failed = true;
-
-	if (--ctx->pending == 0) {
-		uring_complete(ctx->ep, ctx->qe, ctx->failed ? -EIO : 0);
-		free(ctx);
+		ok = true;
 	}
+
+	uring_ctx_finish(ctx, ok);
+}
+
+struct uring_write_ctx {
+	struct uring_io_ctx *ctx;
+	uint64_t oid;
+	uint64_t offset;
+	uint32_t len;
+	char *buf;
+};
+
+static void uring_write_retry_done(struct request *req)
+{
+	struct uring_write_ctx *wctx = req->local_done_arg;
+
+	uring_ctx_finish(wctx->ctx, req->rp.result == SD_RES_SUCCESS);
+	free(wctx);
+}
+
+/*
+ * Runs on the sheepdog main thread (put_request()), for the initial
+ * (non-create) write attempt against an object.
+ *
+ * default_create_and_write() (plain_store.c) doesn't update an existing
+ * object in place: it builds a brand-new object file containing only
+ * this write's own byte range (the rest reads back as zero) and renames
+ * it over whatever was there before. So always creating would silently
+ * destroy any data an earlier write already put in the rest of an
+ * object that's since come to exist. Try a plain write first instead,
+ * and only create the object on demand, the same way real thin-
+ * provisioned VDI clients only create on an object's very first write.
+ */
+static void uring_write_done(struct request *req)
+{
+	struct uring_write_ctx *wctx = req->local_done_arg;
+
+	if (req->rp.result == SD_RES_NO_OBJ) {
+		sd_write_object_async(wctx->oid, wctx->buf, wctx->len,
+				      wctx->offset, true,
+				      uring_write_retry_done, wctx);
+		return;
+	}
+
+	uring_ctx_finish(wctx->ctx, req->rp.result == SD_RES_SUCCESS);
+	free(wctx);
 }
 
 /*
@@ -103,11 +155,18 @@ static int uring_submit_io(struct nofuse_queue *ep, struct ep_qe *qe,
 		uint64_t len = min(remaining, SD_DATA_OBJ_SIZE - obj_offset);
 		uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
-		if (is_write)
+		if (is_write) {
+			struct uring_write_ctx *wctx = xmalloc(sizeof(*wctx));
+
+			wctx->ctx = ctx;
+			wctx->oid = oid;
+			wctx->offset = obj_offset;
+			wctx->len = len;
+			wctx->buf = (char *)buf;
 			sd_write_object_async(oid, (char *)buf, len,
-					      obj_offset, true,
-					      uring_io_done, ctx);
-		else
+					      obj_offset, false,
+					      uring_write_done, wctx);
+		} else
 			sd_read_object_async(oid, (char *)buf, len,
 					     obj_offset,
 					     uring_io_done, ctx);
