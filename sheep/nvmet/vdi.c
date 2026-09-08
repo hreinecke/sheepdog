@@ -79,38 +79,42 @@ static int vdi_prep_read(struct nofuse_queue *ep, struct ep_qe *qe)
 	return ep->ops->prep_rma_read(ep, qe->tag);
 }
 
+/*
+ * A range only ever gets discarded if it covers one or more whole
+ * sheepdog data objects -- sheepdog has no way to punch a hole inside
+ * an object, and a VDI already reads unwritten objects as zero
+ * (vdi_submit_read()), so removing a fully-covered object is exactly
+ * equivalent to (and cheaper than) actually writing zeroes over it. Any
+ * partial object at either end of a range is left untouched: discard is
+ * advisory, so silently keeping that data is always a valid response --
+ * rejecting the whole command outright (as opposed to just not acting
+ * on the part we can't) is not, and reliably produces I/O errors on the
+ * host for the routine case of a range that doesn't happen to fall
+ * exactly on an object boundary.
+ */
 static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct nvme_dsm_range *range = qe->data;
 	int nr_ranges = qe->data_len / sizeof(*range);
 	int i, ret;
 
-	if (qe->data_len % sizeof(*range)) {
-		sd_warn("unaligned dsm range payload");
-		nr_ranges--;
-	}
-
 	for (i = 0; i < nr_ranges; i++) {
 		uint64_t slba = le64toh(range[i].slba);
 		uint32_t nlb = le32toh(range[i].nlb);
 		uint64_t start = slba * qe->ns->blksize;
-		uint64_t idx = start / SD_DATA_OBJ_SIZE;
-		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		uint64_t end = start + (uint64_t)nlb * qe->ns->blksize;
+		uint64_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		uint64_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
 
-		if (start % SD_DATA_OBJ_SIZE) {
-			ctrl_err(ep, "dsm: invalide range %d start", i);
-			return NVME_SC_ONCS_NOT_SUPPORTED;
-		}
-		if ((uint64_t)nlb * qe->ns->blksize != SD_DATA_OBJ_SIZE) {
-			ctrl_err(ep, "dsm: invalid range %d size", i);
-			return NVME_SC_ONCS_NOT_SUPPORTED;
-		}
+		for (; idx < idx_end; idx++) {
+			uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
-		ret = sd_remove_object(oid);
-		if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
-			ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
-				 oid, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
+			ret = sd_remove_object(oid);
+			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
+				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
+					 oid, sd_strerror(ret));
+				return NVME_SC_INTERNAL;
+			}
 		}
 	}
 	return NVME_SC_SUCCESS;
