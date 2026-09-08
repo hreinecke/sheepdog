@@ -366,7 +366,6 @@ void *queue_thread(void *arg)
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
 	pthread_cleanup_push(pop_disconnect, ep);
-
 	ret = io_uring_queue_init(32, &ep->uring, 0);
 	if (ret) {
 		ep_err(ep, "qid %d error %d creating uring",
@@ -377,6 +376,8 @@ void *queue_thread(void *arg)
 
 	pthread_cleanup_push(pop_uring_exit, ep);
 
+	/* Do not cancel this thread during I/O */
+	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 	while (ep->state == CONNECTED) {
 		struct io_uring_cqe *cqe;
 		struct __kernel_timespec ts = {
@@ -396,7 +397,9 @@ void *queue_thread(void *arg)
 				break;
 		}
 
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 		ret = io_uring_wait_cqe_timeout(&ep->uring, &cqe, &ts);
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 		if (ret < 0)
 			goto skip_cqe;
 
@@ -485,6 +488,7 @@ void *queue_thread(void *arg)
 			break;
 		}
 	}
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	pthread_cleanup_pop(1);
 
 out_disconnect:
