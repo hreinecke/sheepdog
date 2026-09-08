@@ -841,11 +841,9 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		       struct nvme_command *cmd)
 {
 	uint32_t nsid = le32toh(cmd->rw.nsid);
-	struct ns_ops *ns_ops = uring_register_ops();
-	struct nofuse_namespace *ns;
 
-	ns = lookup_namespace(ep->ctrl, nsid);
-	if (!ns) {
+	qe->ns = lookup_namespace(ep->ctrl, nsid);
+	if (!qe->ns) {
 		ctrl_err(ep, "invalid nsid %u", nsid);
 		return NVME_SC_INVALID_NS;
 	}
@@ -857,14 +855,14 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	}
 
 	qe->vid = nsid;
-	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
 	ctrl_info(ep, "nsid %u tag %#x ccid %#x read pos %"PRIu64" len %"PRIu64,
 		  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
-	return ns_ops->ns_read(ep, qe);
+	return qe->ns->ops->ns_read(ep, qe);
 }
 
 static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
@@ -872,18 +870,16 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	uint8_t sgl_type = cmd->rw.dptr.sgl.type;
 	uint32_t nsid = le32toh(cmd->rw.nsid);
-	struct ns_ops *ns_ops = uring_register_ops();
-	struct nofuse_namespace *ns;
 	int ret;
 
-	ns = lookup_namespace(ep->ctrl, nsid);
-	if (!ns) {
+	qe->ns = lookup_namespace(ep->ctrl, nsid);
+	if (!qe->ns) {
 		ctrl_err(ep, "invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
 
 	qe->vid = nsid;
-	qe->data_pos = le64toh(cmd->rw.slba) * ns->blksize;
+	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 	qe->data_remaining = qe->data_len;
@@ -899,14 +895,14 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 				 qe->tag, ret);
 			return ret;
 		}
-		return ns_ops->ns_write(ep, qe);
+		return qe->ns->ops->ns_write(ep, qe);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		ctrl_err(ep, "Invalid sgl type %x", sgl_type);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	ret = ns_ops->ns_prep_read(ep, qe);
+	ret = qe->ns->ops->ns_prep_read(ep, qe);
 	if (ret) {
 		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else
@@ -928,12 +924,10 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	uint8_t sgl_type = cmd->dsm.dptr.sgl.type;
 	uint32_t nsid = le32toh(cmd->dsm.nsid);
-	struct ns_ops *ns_ops = uring_register_ops();
-	struct nofuse_namespace *ns;
 	int ret;
 
-	ns = lookup_namespace(ep->ctrl, nsid);
-	if (!ns) {
+	qe->ns = lookup_namespace(ep->ctrl, nsid);
+	if (!qe->ns) {
 		ctrl_err(ep, "dsm: invalid namespace %d", nsid);
 		return NVME_SC_INVALID_NS;
 	}
@@ -960,7 +954,7 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 				 qe->tag, ret);
 			return ret;
 		}
-		return ns_ops->ns_dsm(ep, qe);
+		return qe->ns->ops->ns_dsm(ep, qe);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		ctrl_err(ep, "dsm: invalid sgl type %x", sgl_type);
@@ -968,7 +962,7 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 	}
 
 	qe->data_remaining = qe->data_len;
-	ret = ns_ops->ns_prep_read(ep, qe);
+	ret = qe->ns->ops->ns_prep_read(ep, qe);
 	if (ret)
 		ctrl_err(ep, "dsm: prep_rma_read failed with error %d", ret);
 	else
@@ -1074,7 +1068,5 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 {
-	struct ns_ops *ns_ops = uring_register_ops();
-
-	return ns_ops->ns_handle_qe(ep, qe, res);
+	return qe->ns->ops->ns_handle_qe(ep, qe, res);
 }

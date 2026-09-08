@@ -75,6 +75,7 @@ extern int stopped;
 struct ep_qe {
 	int tag;
 	struct nofuse_queue *ep;
+	struct nofuse_namespace *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
 	struct nvme_completion resp;
@@ -161,6 +162,7 @@ struct nofuse_ctrl {
 
 struct nofuse_namespace {
 	struct rb_node rb;
+	struct ns_ops *ops;
 	uuid_t uuid;
 	uint32_t subsys_id;
 	uint32_t nsid;

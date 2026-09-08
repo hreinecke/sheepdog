@@ -614,6 +614,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ns->enabled = true;
 	ns->ana_grpid = vnode->node->zone + 1;
 	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
+	ns->ops = uring_register_ops();
 
 	sd_mutex_lock(&this_ctx->ns_lock);
 	new = rb_insert(&this_ctx->ns_root, ns, rb, ns_cmp);
