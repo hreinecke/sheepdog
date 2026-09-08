@@ -770,11 +770,30 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 	qe->iovec.iov_base = data;
 	qe->iovec.iov_len -= data_len;
 	if (!qe->data_remaining) {
-		ret = 0;
-		goto out_rsp;
+		/*
+		 * All of this command's data has arrived -- restore iovec to
+		 * describe the whole buffer (it was just walked down to
+		 * (end, 0) tracking reception progress above) before handing
+		 * off to the namespace backend, which expects to see the
+		 * complete write/dsm payload, not "0 bytes left".
+		 */
+		qe->iovec.iov_base = qe->data;
+		qe->iovec.iov_len = qe->data_len;
+		return handle_data(ep, qe, -EAGAIN);
 	}
 
-	return tcp_send_r2t(ep, qe->tag);
+	/*
+	 * The single R2T sent for this command (handle_write()/handle_dsm(),
+	 * via ns_prep_read()) already granted the entire remaining data
+	 * length up front. The host is free to split its response into as
+	 * many H2CData PDUs as it likes against that same grant -- nothing
+	 * further needs asking for, and sending an unsolicited extra R2T
+	 * here mid-transfer desyncs the host's own byte-accounting for this
+	 * request (observed as a kernel-side "r2t len exceeded data len"
+	 * error and a connection reset). Just acknowledge this PDU and wait
+	 * for the next one.
+	 */
+	return 0;
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	set_response(&qe->resp, qe->ccid, ret, true);

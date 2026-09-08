@@ -116,6 +116,15 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 	return NVME_SC_SUCCESS;
 }
 
+/*
+ * res == -EAGAIN means "not started yet, run it now" (handle_read()/
+ * handle_write()/handle_dsm() in nvmeof.c and tcp_handle_h2c_data() in
+ * tcp.c use this to kick off the actual I/O once a command's data --
+ * inline, or received via H2CData -- is ready). Any other value is a
+ * real completion result from elsewhere. Either way, on success this
+ * function is the one place responsible for actually telling the host:
+ * rma_write() for a read's data, or a response PDU for a write/dsm.
+ */
 static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 {
 	int status = 0, ret;
@@ -130,11 +139,9 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
                 status = NVME_SC_INVALID_OPCODE;
                 goto out_rsp;
         }
-        if (res < 0) {
-                if (res != -EAGAIN)
-                        return res;
-                ctrl_err(ep, "tag %#x retry", qe->tag);
-		switch(qe->opcode) {
+	if (res == -EAGAIN) {
+		ctrl_err(ep, "tag %#x retry", qe->tag);
+		switch (qe->opcode) {
 		case nvme_cmd_read:
                         status = vdi_submit_read(ep, qe);
 			break;
@@ -144,31 +151,16 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		case nvme_cmd_dsm:
 			status = vdi_submit_dsm(ep, qe);
 			break;
-		default:
-			status = NVME_SC_INVALID_OPCODE;
-			break;
 		}
-                if (status == NVME_SC_SUCCESS)
-                        return status;
-                goto out_rsp;
-        }
+                if (status != NVME_SC_SUCCESS)
+                        goto out_rsp;
+	} else if (res < 0) {
+		return res;
+	}
         if (qe->opcode == nvme_cmd_read) {
 		ctrl_info(ep, "tag %#x ccid %#x write %lu bytes payload",
 			  qe->tag, qe->ccid, qe->data_len);
 		return ep->ops->rma_write(ep, qe, qe->data_len);
-	}
-
-	if (res != qe->iovec.iov_len) {
-		uint8_t *data = qe->iovec.iov_base;
-
-		ctrl_info(ep, "tag %#x ccid %#x read %d remaining bytes",
-			  qe->tag, qe->ccid, res);
-		data += res;
-		qe->iovec.iov_base = data;
-		qe->iovec.iov_len =- res;
-		status = vdi_submit_read(ep, qe);
-		if (status == NVME_SC_SUCCESS)
-			return status;
 	}
 out_rsp:
         memset(&qe->resp, 0, sizeof(qe->resp));
