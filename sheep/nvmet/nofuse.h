@@ -90,6 +90,16 @@ struct ep_qe {
 	int opcode;
 	bool busy;
 	bool aen;
+	/*
+	 * Set by handle_dsm() from the command's NR field (already +1'd,
+	 * i.e. an actual count) before requesting the R2T. The buffer
+	 * received via H2CData (qe->data, sized off the SGL length) can
+	 * be larger than this -- e.g. a host may always allocate room for
+	 * the architectural max range count regardless of how many it
+	 * actually fills in -- so uring_submit_dsm() must only look at
+	 * the first dsm_nr ranges, never the full buffer.
+	 */
+	uint32_t dsm_nr;
 };
 
 enum { RECV_PDU, RECV_DATA, HANDLE_PDU };

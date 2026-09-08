@@ -915,6 +915,68 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	return ret;
 }
 
+/*
+ * Dataset Management (discard/TRIM): receives the host's range
+ * descriptors and hands them to the namespace backend, which removes
+ * whichever whole sheepdog data objects they fully cover. See the
+ * comment on uring_submit_dsm() for why partial objects are left
+ * alone and why removing is equivalent to zeroing for this backend.
+ */
+static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
+		      struct nvme_command *cmd)
+{
+	uint8_t sgl_type = cmd->dsm.dptr.sgl.type;
+	uint32_t nsid = le32toh(cmd->dsm.nsid);
+	struct ns_ops *ns_ops = uring_register_ops();
+	struct nofuse_namespace *ns;
+	int ret;
+
+	ns = lookup_namespace(ep->ctrl, nsid);
+	if (!ns) {
+		ctrl_err(ep, "dsm: invalid namespace %d", nsid);
+		return NVME_SC_INVALID_NS;
+	}
+
+	qe->vid = nsid;
+	qe->iovec.iov_base = qe->data;
+	qe->iovec.iov_len = qe->data_len;
+	/*
+	 * NR is 0's based (actual range count = NR + 1). The H2CData
+	 * buffer (qe->data, sized off the SGL length) can be larger than
+	 * this -- a host may always allocate room for the architectural
+	 * max range count regardless of how many ranges it actually
+	 * fills in -- so uring_submit_dsm() must only process this many
+	 * of them, not however many fit in the buffer.
+	 */
+	qe->dsm_nr = le32toh(cmd->dsm.nr) + 1;
+
+	if (sgl_type == NVME_SGL_FMT_OFFSET) {
+		/* Inline data */
+		ret = ep->ops->rma_read(ep, qe->iovec.iov_base,
+					qe->iovec.iov_len);
+		if (ret < 0) {
+			ctrl_err(ep, "dsm: tag %#x rma_read error %d",
+				 qe->tag, ret);
+			return ret;
+		}
+		return ns_ops->ns_dsm(ep, qe);
+	}
+	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
+		ctrl_err(ep, "dsm: invalid sgl type %x", sgl_type);
+		return NVME_SC_SGL_INVALID_TYPE;
+	}
+
+	qe->data_remaining = qe->data_len;
+	ret = ns_ops->ns_prep_read(ep, qe);
+	if (ret)
+		ctrl_err(ep, "dsm: prep_rma_read failed with error %d", ret);
+	else
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x dsm len %"PRIu64,
+			  nsid, qe->tag, qe->ccid, qe->data_len);
+
+	return ret;
+}
+
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 {
 	struct ep_qe *qe;
@@ -958,6 +1020,10 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 				return 0;
 		} else if (cmd->common.opcode == nvme_cmd_write) {
 			ret = handle_write(ep, qe, cmd);
+			if (!ret)
+				return 0;
+		} else if (cmd->common.opcode == nvme_cmd_dsm) {
+			ret = handle_dsm(ep, qe, cmd);
 			if (!ret)
 				return 0;
 		} else {

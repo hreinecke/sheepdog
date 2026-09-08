@@ -194,6 +194,70 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 }
 
 /*
+ * Called once a Dataset Management command's range descriptors have
+ * fully arrived via R2T/H2CData (qe->ns_write, set by handle_dsm()).
+ *
+ * A range only ever gets discarded if it covers one or more whole
+ * sheepdog data objects -- sheepdog has no way to punch a hole inside
+ * an object, and a VDI already reads unwritten objects as zero
+ * (uring_io_done()), so removing a fully-covered object is exactly
+ * equivalent to (and cheaper than) actually writing zeroes over it.
+ * Any partial object at either end of a range is left untouched:
+ * discard is advisory, so silently keeping that data is always a
+ * valid response.
+ */
+static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
+{
+	struct nvme_dsm_range *range = qe->data;
+	uint32_t max_nr = qe->data_len / sizeof(*range);
+	/*
+	 * qe->dsm_nr (from the command's NR field) is the number of
+	 * ranges actually meaningful in this buffer; the buffer itself
+	 * (sized off the SGL length) can be larger, e.g. if the host
+	 * always allocates room for the architectural max regardless of
+	 * how many ranges it fills in. Anything beyond dsm_nr is
+	 * leftover/unrelated bytes (from this buffer's own padding, or
+	 * conceivably stale content if the host reuses buffers), not a
+	 * real request -- processing it risks discarding whatever object
+	 * that garbage happens to decode to.
+	 */
+	uint32_t nr = qe->dsm_nr < max_nr ? qe->dsm_nr : max_nr;
+	struct nofuse_namespace *ns = lookup_namespace(ep->ctrl, qe->vid);
+	uint32_t i;
+	int status = 0;
+
+	if (!ns) {
+		ctrl_err(ep, "dsm: invalid namespace %u", qe->vid);
+		status = NVME_SC_INVALID_NS;
+		goto out;
+	}
+
+	for (i = 0; i < nr; i++) {
+		uint64_t slba = le64toh(range[i].slba);
+		uint32_t nlb = le32toh(range[i].nlb);
+		uint64_t start = slba * ns->blksize;
+		uint64_t end = start + (uint64_t)nlb * ns->blksize;
+		uint64_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		uint64_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+
+		for (; idx < idx_end; idx++) {
+			uint64_t oid = vid_to_data_oid(qe->vid, idx);
+			int ret = sd_remove_object(oid);
+
+			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ)
+				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
+					 oid, sd_strerror(ret));
+		}
+	}
+out:
+	memset(&qe->resp, 0, sizeof(qe->resp));
+	set_response(&qe->resp, qe->ccid, status, true);
+	ep->ops->send_rsp(ep, &qe->resp);
+	ep->ops->release_tag(ep, qe);
+	return 0;
+}
+
+/*
  * Called from queue.c:queue_thread() (ep->pthread) once a queued
  * read/write has finished; res is qe->io_res (0 on success).
  */
@@ -223,6 +287,7 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 static struct ns_ops uring_ops = {
 	.ns_read = uring_submit_read,
 	.ns_write = uring_submit_write,
+	.ns_dsm = uring_submit_dsm,
 	.ns_handle_qe = uring_handle_qe,
 };
 

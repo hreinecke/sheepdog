@@ -38,6 +38,7 @@ struct xp_ops *tcp_register_ops(void);
 struct ns_ops {
 	int (*ns_read)(struct nofuse_queue *ep, struct ep_qe *qe);
 	int (*ns_write)(struct nofuse_queue *ep, struct ep_qe *qe);
+	int (*ns_dsm)(struct nofuse_queue *ep, struct ep_qe *qe);
 	int (*ns_prep_read)(struct nofuse_queue *ep, struct ep_qe *qe);
 	int (*ns_handle_qe)(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 };
