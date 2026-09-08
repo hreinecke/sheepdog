@@ -757,18 +757,18 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 
-	ret = tcp_rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
+	ret = tcp_rma_read(ep, qe->iovec.iov_base, data_len);
 	if (ret < 0) {
 		tcp_err(ep, "h2c data read failed, error %d", errno);
 		ret = NVME_SC_SGL_INVALID_DATA;
 		goto out_rsp;
 	}
-	qe->data_remaining -= ret;
-	qe->iovec_offset += ret;
+	qe->data_remaining -= data_len;
+	qe->iovec_offset += data_len;
 	data = qe->iovec.iov_base;
-	data += ret;
+	data += data_len;
 	qe->iovec.iov_base = data;
-	qe->iovec.iov_len -= ret;
+	qe->iovec.iov_len -= data_len;
 	if (!qe->data_remaining) {
 		ret = 0;
 		goto out_rsp;
@@ -778,7 +778,9 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	set_response(&qe->resp, qe->ccid, ret, true);
-	return tcp_send_rsp(ep, &qe->resp);
+	ret = tcp_send_rsp(ep, &qe->resp);
+	ep->ops->release_tag(ep, qe);
+	return ret;
 }
 
 static int tcp_read_msg(struct nofuse_queue *ep)
