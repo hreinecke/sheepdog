@@ -144,6 +144,7 @@ struct nofuse_subsystem {
 	struct rb_node rb;
 	char nqn[MAX_NQN_SIZE];
 	uint32_t id;
+	enum nvme_subsys_type type;
 	unsigned int mnan;
 	unsigned int nn;
 };

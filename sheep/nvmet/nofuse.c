@@ -146,6 +146,8 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 	struct sd_rsp *rsp = (struct sd_rsp *)&req;
 	char *buf;
 
+	sd_debug("%sregister VDI %"PRIx32, unregister ? "un" : "",
+		 ns->nsid);
 	buf = xzalloc(256);
 	sprintf(buf, "%s:%u", this_ctx->traddr, this_ctx->trsvcid);
 	sd_init_req(&req, unregister ?
@@ -157,6 +159,9 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 
 	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
 	if (ret < 0) {
+		sd_warn("Failed to exec %s, error %d",
+			unregister ?
+			"SD_OP_UNREGISTER_VDI" : "SD_OP_REGISTER_VDI", -ret);
 		free(buf);
 		return ret;
 	}
@@ -167,12 +172,13 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 		       ns->nsid, sd_strerror(rsp->result));
 		ret = -1;
 		errno = EIO;
+	} else {
+		if (unregister)
+			ns->subsys->mnan--;
+		else
+			ns->subsys->mnan++;
 	}
 	free(buf);
-	if (unregister)
-		ns->subsys->mnan--;
-	else
-		ns->subsys->mnan++;
 	return ret;
 }
 
@@ -523,6 +529,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	strcpy(subsys->nqn, subsysnqn);
 	sd_mutex_lock(&this_ctx->subsys_lock);
 	subsys->id = subsys_id;
+	subsys->type = NVME_NQN_NVM;
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {
 		sd_debug("update subsystem '%s' (%06x)", new->nqn, new->id);
@@ -532,7 +539,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 		sd_debug("register subsystem '%s' (%06x)",
 			 subsys->nqn, subsys->id);
 	sd_mutex_unlock(&this_ctx->subsys_lock);
-	ret = configdb_add_subsys(subsys->nqn, subsys->id, NVME_NQN_NVM);
+	ret = configdb_add_subsys(subsys->nqn, subsys->id, subsys->type);
 	if (ret < 0) {
 		sd_warn("Failed to register subsystem '%s'", subsys->nqn);
 		rb_erase(&subsys->rb, &this_ctx->subsys_root);
@@ -833,6 +840,7 @@ static void nofuse_cleanup(void *arg)
 	rb_destroy(&ctx->vroot, struct sd_node, rb);
 	sd_mutex_unlock(&ctx->root_lock);
 	rb_destroy(&ctx->ns_root, struct nofuse_namespace, rb);
+	rb_destroy(&ctx->subsys_root, struct nofuse_subsystem, rb);
 	free(ctx->traddr);
 	free(ctx->dbname);
 	free(arg);
@@ -841,6 +849,7 @@ static void nofuse_cleanup(void *arg)
 static void *nofuse_main(void *arg)
 {
 	struct nofuse_context *ctx = arg;
+	struct nofuse_subsystem *disc_subsys, *new;
 	int tls_keyring;
 	int ret, agid;
 	struct nofuse_port *port = NULL;
@@ -876,16 +885,33 @@ static void *nofuse_main(void *arg)
 		goto out_close;
 	}
 
-	ret = configdb_add_subsys(NVME_DISC_SUBSYS_NAME, 0, NVME_NQN_CUR);
+	disc_subsys = xzalloc(sizeof(*disc_subsys));
+	if (!disc_subsys) {
+		sd_err("out of memory allocating discovery subsystem");
+		goto out_close;
+	}
+	strcpy(disc_subsys->nqn, NVME_DISC_SUBSYS_NAME);
+	disc_subsys->type = NVME_NQN_CUR;
+	sd_mutex_lock(&this_ctx->subsys_lock);
+	new = rb_insert(&this_ctx->subsys_root, disc_subsys,
+			rb, subsys_nqn_cmp);
+	sd_mutex_unlock(&this_ctx->subsys_lock);
+	if (new) {
+		sd_warn("discovery subsystem already present");
+		free(disc_subsys);
+		disc_subsys = new;
+	}
+	ret = configdb_add_subsys(disc_subsys->nqn, disc_subsys->id,
+				  disc_subsys->type);
 	if (ret < 0) {
 		sd_err("failed to create default discovery subsystem");
-		goto out_close;
+		goto out_destroy;
 	}
 
 	ret = register_subsystems(agid);
 	if (ret < 0) {
 		sd_err("failed to register ACL VDIs");
-		goto out_close;
+		goto out_destroy;
 	}
 
 	tls_keyring = tls_global_init();
@@ -897,7 +923,7 @@ static void *nofuse_main(void *arg)
 	ret = start_port(port);
 	if (ret) {
 		sd_err("failed to start nvmet port");
-		goto out_close;
+		goto out_destroy;
 	}
 
 	/*
@@ -936,6 +962,9 @@ static void *nofuse_main(void *arg)
 		}
 	}
 
+out_destroy:
+	rb_destroy(&this_ctx->subsys_root, struct nofuse_subsystem, rb);
+	free(disc_subsys);
 out_close:
 	/*
 	 * Port and configdb teardown both happen here, in this thread

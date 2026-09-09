@@ -338,8 +338,9 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	memset(id.sn, ' ', sizeof(id.sn));
 
 	id.mdts = 0;
-	id.cmic = NVME_CTRL_CMIC_MULTI_PORT | NVME_CTRL_CMIC_MULTI_CTRL |
-		NVME_CTRL_CMIC_ANA;
+	id.cmic = NVME_CTRL_CMIC_MULTI_PORT | NVME_CTRL_CMIC_MULTI_CTRL;
+	if (ep->ctrl->subsys->type == NVME_NQN_NVM)
+		id.cmic |= NVME_CTRL_CMIC_ANA;
 	id.cntlid = htole16(ep->ctrl->cntlid);
 	id.lpa = (1 << 2);
 	id.sgls = htole32(1 << 0) | htole32(1 << 2) | htole32(1 << 20);
@@ -348,13 +349,22 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 			    NVME_CTRL_ATTR_TBKAS);
 	id.ioccsz = NVME_NVM_IOSQES;
 	id.iorcsz = NVME_NVM_IOCQES;
-	id.oaes = htole32(NVME_AEN_CFG_NS_ATTR | NVME_AEN_CFG_ANA_CHANGE | \
-			  NVME_AEN_CFG_DISC_CHANGE);
+	if (ep->ctrl->subsys->type == NVME_NQN_NVM)
+		id.oaes = htole32(NVME_AEN_CFG_NS_ATTR |
+				  NVME_AEN_CFG_ANA_CHANGE);
+	else
+		id.oaes = htole32(NVME_AEN_CFG_DISC_CHANGE);
 	id.oncs = htole16(NVME_CTRL_ONCS_DSM);
 	id.acl = 3;
 	id.aerl = NVME_NR_AEN_COMMANDS - 1;
-	id.nn = htole32(ep->ctrl->subsys->nn);
-	id.mnan = htole32(ep->ctrl->subsys->mnan);
+	if (!ep->ctrl->subsys->nn)
+		id.nn = htole32(0xffffff);
+	else
+		id.nn = htole32(ep->ctrl->subsys->nn);
+	if (!ep->ctrl->subsys->mnan)
+		id.mnan = htole32(MAX_NSID);
+	else
+		id.mnan = htole32(ep->ctrl->subsys->mnan);
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
 
@@ -364,10 +374,13 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 
 	id.maxcmd = htole16(ep->qsize);
 
-	id.anacap = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
-	id.anatt = 10;
-	id.anagrpmax = htole32(MAX_ANAGRPID);
-	id.nanagrpid = htole32(MAX_ANAGRPID);
+	if (ep->ctrl->subsys->type == NVME_NQN_NVM) {
+		id.anacap = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) |
+			(1 << 4);
+		id.anatt = 10;
+		id.anagrpmax = htole32(MAX_ANAGRPID);
+		id.nanagrpid = htole32(MAX_ANAGRPID);
+	}
 	if (len > sizeof(id))
 		len = sizeof(id);
 
@@ -799,6 +812,7 @@ static int format_ns_chg_log(struct nofuse_queue *ep, void *data,
 static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
+	uint32_t *log_page;
 	int ret = 0, log_len;
 	uint64_t offset = le64toh(cmd->get_log_page.lpo);
 
@@ -808,6 +822,19 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->data_pos = offset;
 	switch (cmd->get_log_page.lid) {
+	case NVME_LOG_SUPPORTED:
+		log_page = qe->data;
+		memset(log_page, 0, qe->data_len);
+		log_page[NVME_LOG_SUPPORTED] = htole32(1);
+		if (ep->ctrl->subsys->type == NVME_NQN_NVM) {
+			log_page[NVME_LOG_SMART] = htole32(1);
+			log_page[NVME_LOG_CHANGED_NS] = htole32(1);
+			log_page[NVME_LOG_ANA] = htole32(1);
+		} else
+			log_page[NVME_LOG_DISC] = htole32(1);
+
+		log_len = qe->data_len;
+		break;
 	case NVME_LOG_SMART:
 		/* SMART Log */
 		log_len = qe->data_len;
