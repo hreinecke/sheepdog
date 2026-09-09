@@ -140,42 +140,26 @@ struct nofuse_queue {
 #endif
 };
 
-struct nofuse_ctrl {
-	struct list_node node;
-	pthread_mutex_t ctrl_mutex;
-	char subsysnqn[MAX_NQN_SIZE + 1];
-	char hostnqn[MAX_NQN_SIZE + 1];
-	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
-	uint32_t subsys_id;
-	int cntlid;
-	int kato;
-	int kato_countdown;
-	int num_queues;
-	int max_queues;
-	uint32_t aen_enabled;
-	uint32_t aen_masked;
-	uint32_t aen_pending;
-	uint64_t csts;
-	uint64_t cc;
+struct nofuse_subsystem {
+	struct rb_node rb;
+	char nqn[MAX_NQN_SIZE];
+	uint32_t id;
+	unsigned int mnan;
+	unsigned int nn;
 };
 
 struct nofuse_namespace {
 	struct rb_node rb;
 	struct ns_ops *ops;
-	uuid_t uuid;
+	struct nofuse_subsystem *subsys;
 	uint32_t subsys_id;
 	uint32_t nsid;
 	uint32_t ana_grpid;
+	uuid_t uuid;
 	size_t size;
 	unsigned int blksize;
 	bool readonly;
 	bool enabled;
-};
-
-struct nofuse_subsystem {
-	struct rb_node rb;
-	char nqn[MAX_NQN_SIZE];
-	uint32_t id;
 };
 
 struct nofuse_port {
@@ -187,6 +171,24 @@ struct nofuse_port {
 	int portid;
 	int listenfd;
 	bool tls;
+};
+
+struct nofuse_ctrl {
+	struct list_node node;
+	pthread_mutex_t ctrl_mutex;
+	struct nofuse_subsystem *subsys;
+	char hostnqn[MAX_NQN_SIZE + 1];
+	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
+	int cntlid;
+	int kato;
+	int kato_countdown;
+	int num_queues;
+	int max_queues;
+	uint32_t aen_enabled;
+	uint32_t aen_masked;
+	uint32_t aen_pending;
+	uint64_t csts;
+	uint64_t cc;
 };
 
 #define ctrl_info(e, f, x...)					\
@@ -285,6 +287,9 @@ int add_namespace(const char *subsysnqn, uint32_t nsid);
 int del_namespace(const char *subsysnqn, uint32_t nsid);
 int enable_namespace(const char *subsysnqn, uint32_t nsid);
 int disable_namespace(const char *subsysnqn, uint32_t nsid);
+
+struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id);
+struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn);
 
 int nofuse_init(const char *traddr, int trsvcid);
 void nofuse_exit(void);

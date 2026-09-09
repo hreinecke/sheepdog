@@ -26,6 +26,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl = NULL;
+	struct nofuse_subsystem *subsys = NULL;
 	char nqn[MAX_NQN_SIZE + 1], value[16];
 	bool is_discovery = false;
 	int ret = 0;
@@ -44,7 +45,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 
 		list_for_each_entry(c, &ctrl_linked_list, node) {
 			if (strcmp(hostnqn, c->hostnqn) ||
-			    strcmp(nqn, c->subsysnqn) ||
+			    strcmp(nqn, c->subsys->nqn) ||
 			    c->cntlid != cntlid)
 				continue;
 			ctrl = c;
@@ -120,25 +121,14 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		}
 	}
 	sd_debug("using %d queues", ctrl->max_queues);
-	ret = configdb_get_subsys_attr(nqn, "subsys_id", value);
-	if (ret < 0) {
-		sd_err("error fetching subsys_id");
+	subsys = lookup_subsystem_by_nqn(nqn);
+	if (!subsys) {
+		sd_err("subsystem '%s' not found", nqn);
 		ret = -EBUSY;
 		goto out_unlock;
-	} else {
-		unsigned long tmp;
-		char *eptr = NULL;
-
-		tmp = strtoul(value, &eptr, 10);
-		if (tmp == ULONG_MAX || value == eptr) {
-			sd_err("invalid subsys_id value '%s'", value);
-			ret = -EBUSY;
-			goto out_unlock;
-		}
-		ctrl->subsys_id = tmp;
 	}
+	ctrl->subsys = subsys;
 	strcpy(ctrl->hostnqn, hostnqn);
-	strcpy(ctrl->subsysnqn, nqn);
 	ep->ctrl = ctrl;
 	ctrl->ep[0] = ep;
 	ctrl->num_queues = 1;
@@ -173,7 +163,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	if (!ctrl->num_queues) {
 		sd_debug("ctrl %u qid %d: deleting controller\n",
 			 ctrl->cntlid, ep->qid);
-		configdb_del_ctrl(ctrl->subsys_id, ctrl->cntlid);
+		configdb_del_ctrl(ctrl->subsys->id, ctrl->cntlid);
 		list_del(&ctrl->node);
 		free(ctrl);
 	}
@@ -573,13 +563,13 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 		sd_debug("%s: ctrl %d qid %d subsys %s\n",
 		       __func__,
 		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		       strlen(ep->ctrl->subsysnqn) ?
-		       ep->ctrl->subsysnqn : "<none>");
+		       strlen(ep->ctrl->subsys->nqn) ?
+		       ep->ctrl->subsys->nqn : "<none>");
 		if (ep->state != CONNECTED)
 			continue;
 		if (!ep->ctrl)
 			continue;
-		if (strcmp(ep->ctrl->subsysnqn, subsysnqn))
+		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
 			continue;
 		destroy_queue(ep);
 	}
@@ -594,7 +584,7 @@ void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 
 	pthread_mutex_lock(&ctrl_list_mutex);
 	list_for_each_entry(ctrl, &ctrl_linked_list, node) {
-		if (!subsysnqn || strcmp(subsysnqn, ctrl->subsysnqn))
+		if (!subsysnqn || strcmp(subsysnqn, ctrl->subsys->nqn))
 			continue;
 		if (ctrl->cntlid != cntlid)
 			continue;
@@ -628,7 +618,7 @@ void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 	}
 	if (aen_pending(ep->ctrl)) {
 		sd_debug("subsys %s ctrl %d type %s pending %#x masked %#x\n",
-			 ep->ctrl->subsysnqn, ep->ctrl->cntlid,
+			 ep->ctrl->subsys->nqn, ep->ctrl->cntlid,
 			 aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
 		queue_submit_aen(ep);
 	}

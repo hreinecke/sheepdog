@@ -42,6 +42,7 @@ struct nofuse_context {
 	struct rb_root ns_root;
 	struct sd_mutex ns_lock;
 	struct rb_root subsys_root;
+	struct sd_mutex subsys_lock;
 	int nr_nodes;
 	unsigned int portid;
 	int trsvcid;
@@ -141,7 +142,7 @@ out:
 	return ret < 0 ? ret : nr_nodes;
 }
 
-static int register_vdi(uint32_t subsys_id, uint32_t nsid, bool unregister)
+static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 {
 	int ret;
 	struct sd_req req;
@@ -152,8 +153,8 @@ static int register_vdi(uint32_t subsys_id, uint32_t nsid, bool unregister)
 	sprintf(buf, "%s:%u", this_ctx->traddr, this_ctx->trsvcid);
 	sd_init_req(&req, unregister ?
 		    SD_OP_UNREGISTER_VDI : SD_OP_REGISTER_VDI);
-	req.vdi_lock.vid = nsid;
-	req.vdi_lock.acl = subsys_id;
+	req.vdi_lock.vid = ns->nsid;
+	req.vdi_lock.acl = ns->subsys_id;
 	req.data_length = 256;
 	req.flags = SD_FLAG_CMD_WRITE;
 
@@ -166,11 +167,15 @@ static int register_vdi(uint32_t subsys_id, uint32_t nsid, bool unregister)
 	if (rsp->result != SD_RES_SUCCESS) {
 		sd_err("Failed to %sregister namespace '%06x': %s",
 		       unregister ? "un" : "",
-		       nsid, sd_strerror(rsp->result));
+		       ns->nsid, sd_strerror(rsp->result));
 		ret = -1;
 		errno = EIO;
 	}
 	free(buf);
+	if (unregister)
+		ns->subsys->mnan--;
+	else
+		ns->subsys->mnan++;
 	return ret;
 }
 
@@ -187,7 +192,7 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 					  uint32_t nsid)
 {
 	struct nofuse_namespace key = {
-		.subsys_id = ctrl->subsys_id,
+		.subsys_id = ctrl->subsys->id,
 		.nsid = nsid,
 	};
 
@@ -519,6 +524,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	struct nofuse_subsystem *new, *subsys = xzalloc(sizeof(*subsys));
 
 	strcpy(subsys->nqn, subsysnqn);
+	sd_mutex_lock(&this_ctx->subsys_lock);
 	subsys->id = subsys_id;
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {
@@ -528,6 +534,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	} else
 		sd_debug("register subsystem '%s' (%06x)",
 			 subsys->nqn, subsys->id);
+	sd_mutex_unlock(&this_ctx->subsys_lock);
 	ret = configdb_add_subsys(subsys->nqn, subsys->id, NVME_NQN_NVM);
 	if (ret < 0) {
 		sd_warn("Failed to register subsystem '%s'", subsys->nqn);
@@ -565,18 +572,42 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	return ret;
 }
 
+struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id)
+{
+	struct nofuse_subsystem key = { .id = subsys_id };
+
+	return rb_search(&this_ctx->subsys_root, &key, rb, subsys_cmp);
+}
+
+static int subsys_nqn_cmp(const struct nofuse_subsystem *a,
+		      const struct nofuse_subsystem *b)
+{
+	return strcmp(a->nqn, b->nqn);
+}
+
+struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn)
+{
+	struct nofuse_subsystem key;
+
+	strcpy(key.nqn, nqn);
+	return rb_search(&this_ctx->subsys_root, &key, rb, subsys_nqn_cmp);
+}
+
 int nvmet_unregister_subsystem(uint32_t subsys_id)
 {
-	struct nofuse_subsystem *subsys, key = { .id = subsys_id };
+	struct nofuse_subsystem *subsys;
 	int ret;
 
 	sd_debug("unregister subsystem %06x", subsys_id);
-	subsys = rb_search(&this_ctx->subsys_root, &key, rb, subsys_cmp);
+	sd_mutex_lock(&this_ctx->subsys_lock);
+	subsys = lookup_subsystem_by_id(subsys_id);
 	if (!subsys) {
+		sd_mutex_unlock(&this_ctx->subsys_lock);
 		sd_warn("Subsystem '%06x' not found", subsys_id);
 		return -ENODEV;
 	}
 	rb_erase(&subsys->rb, &this_ctx->subsys_root);
+	sd_mutex_unlock(&this_ctx->subsys_lock);
 	/* subsys_port.subsys_id is ON DELETE RESTRICT */
 	ret = configdb_del_subsys_port(subsys->id, this_ctx->portid);
 	if (ret < 0)
@@ -593,6 +624,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 			     struct sd_inode_header *inode)
 {
 	struct nofuse_namespace *ns, *new = NULL;
+	struct nofuse_subsystem *subsys;
 	struct sd_vnode *vnode;
 	bool do_register = false;
 	uint64_t oid;
@@ -601,10 +633,16 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	oid = vid_to_vdi_oid(nsid);
 	vnode = oid_to_first_vnode(oid, &this_ctx->vroot);
 
+	subsys = lookup_subsystem_by_id(subsys_id);
+	if (!subsys) {
+		sd_warn("subsystem %"PRIx32" not registered", subsys_id);
+		return -EINVAL;
+	}
 	sd_debug("register namespace %06x ('%s')",
 		 nsid, inode->name);
 
 	ns = xzalloc(sizeof(*ns));
+	ns->subsys = subsys;
 	ns->subsys_id = subsys_id;
 	ns->nsid = nsid;
 	ns->size = inode->vdi_size;
@@ -615,6 +653,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
 	ns->ops = vdi_register_ops();
 
+	subsys->nn++;
 	sd_mutex_lock(&this_ctx->ns_lock);
 	new = rb_insert(&this_ctx->ns_root, ns, rb, ns_cmp);
 	if (new) {
@@ -642,7 +681,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	if (ret < 0)
 		free(ns);
 	else if (do_register)
-		ret = register_vdi(subsys_id, nsid, false);
+		ret = register_vdi(ns, false);
 	return ret;
 }
 
@@ -655,21 +694,25 @@ int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
 	int ret;
 
 	sd_debug("unregister namespace %06x", nsid);
-	ret = register_vdi(subsys_id, nsid, true);
+	sd_mutex_lock(&this_ctx->ns_lock);
+	ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+	if (ns)
+		rb_erase(&ns->rb, &this_ctx->ns_root);
+	sd_mutex_unlock(&this_ctx->ns_lock);
+	if (!ns) {
+		sd_warn("namespace '%06x' not found", nsid);
+		return -ENODEV;
+	}
+	ret = register_vdi(ns, true);
+	if (ret < 0)
+		sd_warn("Failed to unregister namespace '%06x'", nsid);
+
 	sd_mutex_lock(&this_ctx->ns_lock);
 	ret = configdb_del_namespace(subsys_id, nsid);
-	if (ret < 0) {
+	if (ret < 0)
 		sd_warn("Failed to delete namespace '%06x'", nsid);
-	} else {
-		ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
-		if (ns)
-			rb_erase(&ns->rb, &this_ctx->ns_root);
-		else {
-			ret = -1;
-			errno = -ENOENT;
-		}
-	}
-	sd_mutex_unlock(&this_ctx->ns_lock);
+	ns->subsys->nn--;
+	free(ns);
 	return ret;
 }
 
@@ -931,6 +974,8 @@ int nofuse_init(const char *traddr, int trsvcid)
 	sd_init_mutex(&this_ctx->root_lock);
 	INIT_RB_ROOT(&this_ctx->ns_root);
 	sd_init_mutex(&this_ctx->ns_lock);
+	INIT_RB_ROOT(&this_ctx->subsys_root);
+	sd_init_mutex(&this_ctx->subsys_lock);
 	INIT_LIST_HEAD(&this_ctx->event_list);
 	sd_init_mutex(&this_ctx->event_lock);
 	this_ctx->event_evtfd = eventfd(0, EFD_NONBLOCK);
