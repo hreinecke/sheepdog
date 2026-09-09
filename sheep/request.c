@@ -967,14 +967,13 @@ static void rx_main(struct work *work)
 
 	ci->rx_req = NULL;
 
-	refcount_dec(&ci->refcnt);
-
 	if (ci->conn.dead) {
 		if (req)
 			free_request(req);
 
-		clear_client_info(ci);
 		finish_work_done(work);
+		refcount_dec(&ci->refcnt);
+		clear_client_info(ci);
 		return;
 	}
 
@@ -997,8 +996,9 @@ static void rx_main(struct work *work)
 	}
 
 	tracepoint(request, rx_main, ci->conn.fd, work, req);
-	queue_request(req);
 	finish_work_done(work);
+	refcount_dec(&ci->refcnt);
+	queue_request(req);
 }
 
 static void tx_write_done(int res, void *data)
@@ -1069,8 +1069,8 @@ static void tx_main(struct work *work)
 	ci->tx_req = NULL;
 
 	if (ci->conn.dead) {
-		clear_client_info(ci);
 		finish_work_done(work);
+		clear_client_info(ci);
 		return;
 	}
 
