@@ -245,8 +245,7 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 		desc->grpid = htole32(grpid);
 		desc->nnsids = htole32(nnsids);
 		desc->chgcnt = htole64(0);
-		desc->state = ((unsigned int)grpid == portid) ?
-			NVME_ANA_OPTIMIZED : NVME_ANA_NONOPTIMIZED;
+		desc->state = NVME_ANA_OPTIMIZED;
 		memset(desc->rsvd17, 0, sizeof(desc->rsvd17));
 		sd_debug("%s: grpid %u %u nsids state %d",
 			 __func__, grpid, nnsids, desc->state);
