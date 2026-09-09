@@ -14,6 +14,8 @@
 #define __ASSEMBLY__
 #include "trace.h"
 
+	.section .note.GNU-stack,"",@progbits
+
 #define _ALIGN_TEXT .align 16, 0x90
 
 #define ENTRY(x) \

@@ -627,7 +627,7 @@ struct sockfd *sockfd_cache_get(const struct node_id *nid)
 void sockfd_cache_put(const struct node_id *nid, struct sockfd *sfd)
 {
 	if (sfd->idx == -1) {
-		assert(!isIO);
+		assert(!sfd->isIO);
 		sd_debug("%d", sfd->fd);
 		close(sfd->fd);
 		free(sfd);
@@ -664,7 +664,7 @@ void sockfd_cache_del_node(const struct node_id *nid)
 void sockfd_cache_del(const struct node_id *nid, struct sockfd *sfd)
 {
 	if (sfd->idx == -1) {
-		assert(!isIO);
+		assert(!sfd->isIO);
 		sd_debug("%d", sfd->fd);
 		close(sfd->fd);
 		free(sfd);

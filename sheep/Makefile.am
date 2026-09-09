@@ -80,7 +80,7 @@ sheep_LDADD		+= -lssl -lcrypto -lkeyutils -luring -lsqlite3
 endif
 
 if BUILD_TRACE
-sheep_LDADD		+= -lbfd -liberty -lsframe -lz
+sheep_LDADD		+= -lbfd -liberty -lsframe -lz -lzstd
 endif
 
 if BUILD_SYSTEMD
