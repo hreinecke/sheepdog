@@ -28,16 +28,57 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
 		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		bool create = false;
 
 		ret = sd_write_object(oid, (char *)data, len, off, false);
-		if (ret == SD_RES_NO_OBJ)
+		if (ret == SD_RES_NO_OBJ) {
+			create = true;
 			ret = sd_write_object(oid, (char *)data, len, off, true);
+		}
 		if (ret != SD_RES_SUCCESS) {
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
 				 " off %lu size %lu write error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
 			return NVME_SC_INTERNAL;
 		}
+
+		/*
+		 * A freshly created data object is invisible to anything
+		 * that resolves objects through the inode's index (dog vdi
+		 * read/list/tree, and our own vdi_submit_read() after a
+		 * restart) until that index entry is persisted -- exactly
+		 * as dog/vdi.c:vdi_write() does via sd_inode_write_vid()
+		 * right after dog_write_object() creates the object.
+		 */
+		if (create) {
+			struct sd_inode_header hdr;
+
+			ret = sd_read_object(vid_to_vdi_oid(qe->vid),
+					     (char *)&hdr, sizeof(hdr), 0);
+			if (ret != SD_RES_SUCCESS) {
+				ctrl_err(ep, "tag %d VDI %"PRIx32
+					 " failed to read inode: %s",
+					 qe->tag, qe->vid, sd_strerror(ret));
+				return NVME_SC_INTERNAL;
+			}
+			if (sd_store_policy_is_hyper(&hdr)) {
+				ctrl_err(ep, "tag %d VDI %"PRIx32
+					 " hyper store policy not supported",
+					 qe->tag, qe->vid);
+				return NVME_SC_INTERNAL;
+			}
+			ret = sd_inode_write_vid((struct sd_inode *)&hdr, idx,
+						 qe->vid, qe->vid, 0,
+						 false, false);
+			if (ret != SD_RES_SUCCESS) {
+				ctrl_err(ep, "tag %d VDI %"PRIx32
+					 " idx %u failed to update inode: %s",
+					 qe->tag, qe->vid, idx,
+					 sd_strerror(ret));
+				return NVME_SC_INTERNAL;
+			}
+		}
+
 		data += len;
 		pos += len;
 		data_len -= len;
@@ -107,6 +148,33 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t end = start + (uint64_t)nlb * qe->ns->blksize;
 		uint64_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
 		uint64_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		uint64_t nr_idx = idx_end - idx;
+		uint32_t *zero;
+
+		if (!nr_idx)
+			continue;
+
+		/*
+		 * Clear the inode's index entries for the whole span before
+		 * removing the objects they point to -- the same batched
+		 * zero-fill dog/vdi.c:vdi_reclaim() uses. A crash between
+		 * the two leaves at worst an unread orphan object; doing it
+		 * in the other order would leave the index still claiming
+		 * an object exists after it's gone, breaking every future
+		 * read of that idx (dog vdi read/list/tree included).
+		 */
+		zero = xzalloc(nr_idx * sizeof(*zero));
+		ret = sd_write_object(vid_to_vdi_oid(qe->vid), (char *)zero,
+				      nr_idx * sizeof(*zero),
+				      offsetof(struct sd_inode, data_vdi_id[idx]),
+				      false);
+		free(zero);
+		if (ret != SD_RES_SUCCESS) {
+			ctrl_err(ep, "dsm: failed to update inode for "
+				 "discarding idx %"PRIu64"-%"PRIu64": %s",
+				 idx, idx_end, sd_strerror(ret));
+			return NVME_SC_INTERNAL;
+		}
 
 		for (; idx < idx_end; idx++) {
 			uint64_t oid = vid_to_data_oid(qe->vid, idx);
