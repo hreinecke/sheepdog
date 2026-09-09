@@ -170,7 +170,8 @@ static int handle_set_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		}
 		ctrl_info(ep, "%s: setting %d queues (cdw11 %x)", __func__,
 			  ep->ctrl->max_queues, cdw11);
-		qe->resp.result.u32 = htole32(ep->ctrl->max_queues - 1);
+		qe->resp.result.u32 = htole32((ep->ctrl->max_queues - 1) |
+					      ((ep->ctrl->max_queues - 1) << 16));
 		break;
 	case NVME_FEAT_ASYNC_EVENT:
 		ep->ctrl->aen_enabled = cdw11;
@@ -202,10 +203,12 @@ static int handle_get_features(struct nofuse_queue *ep, struct ep_qe *qe,
 		switch (sel) {
 		case 0:
 		case 2:
-			result = htole32(ep->ctrl->max_queues  - 1);
+			result = htole32((ep->ctrl->max_queues - 1) |
+					 ((ep->ctrl->max_queues - 1) << 16));
 			break;
 		case 1:
-			result = htole32(NVMF_NUM_QUEUES - 1);
+			result = htole32((NVMF_NUM_QUEUES - 1) |
+					 ((NVMF_NUM_QUEUES - 1) << 16));
 			break;
 		case 3:
 			result = 5;
@@ -372,7 +375,14 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	if (ret < 0)
 		return ret;
 
-	id.maxcmd = htole16(ep->qsize);
+	/*
+	 * Identify Controller is only ever answered on the admin queue, so
+	 * ep->qsize here is the admin queue's depth (NVMF_AQ_DEPTH), not the
+	 * controller's actual limit -- reporting it as maxcmd makes the host
+	 * clamp every I/O queue's sqsize down to the admin queue's much
+	 * smaller depth. Report the real per-queue command limit instead.
+	 */
+	id.maxcmd = htole16(NVMF_SQ_DEPTH);
 
 	if (ep->ctrl->subsys->type == NVME_NQN_NVM) {
 		/* Report support for optimized, non-optimzed, and change */
