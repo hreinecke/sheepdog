@@ -71,9 +71,6 @@ struct nofuse_event {
 	uint32_t new_acl;
 };
 
-char discovery_nqn[MAX_NQN_SIZE + 1] = {};
-struct sd_node *cur_nodes;
-
 static int lookup_nodes(struct nofuse_context *ctx)
 {
 	int ret;
