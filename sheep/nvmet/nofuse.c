@@ -714,6 +714,7 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ns->enabled = true;
 	ns->ana_grpid = vnode->node->zone + 1;
 	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
+	ns->inode_hdr = *inode;
 	ns->ops = vdi_register_ops();
 
 	subsys->nn++;

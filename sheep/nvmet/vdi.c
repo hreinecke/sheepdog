@@ -49,27 +49,25 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		 * restart) until that index entry is persisted -- exactly
 		 * as dog/vdi.c:vdi_write() does via sd_inode_write_vid()
 		 * right after dog_write_object() creates the object.
+		 *
+		 * The inode header only carries persistent, immutable
+		 * per-VDI metadata (nr_copies/copy_policy/store_policy) --
+		 * never the vid mapping table itself, which is written
+		 * directly above and never read back -- so the copy taken
+		 * at registration time (nvmet_register_namespace()) is all
+		 * that's needed here; no need to read it off the wire again
+		 * on every write.
 		 */
 		if (create) {
-			struct sd_inode_header hdr;
-
-			ret = sd_read_object(vid_to_vdi_oid(qe->vid),
-					     (char *)&hdr, sizeof(hdr), 0);
-			if (ret != SD_RES_SUCCESS) {
-				ctrl_err(ep, "tag %d VDI %"PRIx32
-					 " failed to read inode: %s",
-					 qe->tag, qe->vid, sd_strerror(ret));
-				return NVME_SC_INTERNAL;
-			}
-			if (sd_store_policy_is_hyper(&hdr)) {
+			if (sd_store_policy_is_hyper(&qe->ns->inode_hdr)) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " hyper store policy not supported",
 					 qe->tag, qe->vid);
 				return NVME_SC_INTERNAL;
 			}
-			ret = sd_inode_write_vid((struct sd_inode *)&hdr, idx,
-						 qe->vid, qe->vid, 0,
-						 false, false);
+			ret = sd_inode_write_vid(
+				(struct sd_inode *)&qe->ns->inode_hdr, idx,
+				qe->vid, qe->vid, 0, false, false);
 			if (ret != SD_RES_SUCCESS) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " idx %u failed to update inode: %s",
@@ -154,6 +152,13 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 		if (!nr_idx)
 			continue;
 
+		if (sd_store_policy_is_hyper(&qe->ns->inode_hdr)) {
+			ctrl_err(ep, "dsm: VDI %"PRIx32
+				 " hyper store policy not supported",
+				 qe->vid);
+			return NVME_SC_INTERNAL;
+		}
+
 		/*
 		 * Clear the inode's index entries for the whole span before
 		 * removing the objects they point to -- the same batched
@@ -214,7 +219,7 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
                 goto out_rsp;
         }
 	if (res == -EAGAIN) {
-		ctrl_err(ep, "tag %#x retry", qe->tag);
+		ctrl_info(ep, "tag %#x retry", qe->tag);
 		switch (qe->opcode) {
 		case nvme_cmd_read:
                         status = vdi_submit_read(ep, qe);

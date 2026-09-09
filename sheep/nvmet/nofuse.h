@@ -161,6 +161,13 @@ struct nofuse_namespace {
 	unsigned int blksize;
 	bool readonly;
 	bool enabled;
+	/*
+	 * Snapshot of the VDI's inode header taken at registration time.
+	 * nr_copies/copy_policy/store_policy never change over the life of
+	 * a namespace, so I/O can use this instead of re-reading the inode
+	 * off the wire on every write.
+	 */
+	struct sd_inode_header inode_hdr;
 };
 
 struct nofuse_port {
