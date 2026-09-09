@@ -44,6 +44,7 @@ struct nofuse_context {
 	struct rb_root subsys_root;
 	struct sd_mutex subsys_lock;
 	int nr_nodes;
+	int nr_zones;
 	unsigned int portid;
 	int trsvcid;
 	int debug;
@@ -200,6 +201,64 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 	};
 
 	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+}
+
+/*
+ * Fill in the ANA group descriptors for 'subsys_id' as seen from 'portid',
+ * walking the live namespace list instead of querying configdb. A port
+ * always reports itself as optimized for the ANA group matching its own
+ * portid (ports and ANA groups share the same id space, see
+ * lookup_nodes()/register_ana_groups()) and non-optimized for every other
+ * group a namespace happens to be in; chgcnt tracking isn't wired up on
+ * either the configdb or in-memory path, so it stays 0 here as it always
+ * has.
+ */
+int ana_log_entries(uint32_t subsys_id, unsigned int portid,
+		    uint8_t *log, int log_len)
+{
+	struct nvme_ana_rsp_hdr *hdr = (struct nvme_ana_rsp_hdr *)log;
+	uint8_t *grp_ptr = (uint8_t *)hdr->entries;
+	struct nofuse_namespace *ns;
+	int ngrps = 0;
+
+	sd_mutex_lock(&this_ctx->ns_lock);
+	for (int grpid = 1; grpid <= this_ctx->nr_zones; grpid++) {
+		struct nvme_ana_group_desc *desc =
+			(struct nvme_ana_group_desc *)grp_ptr;
+		size_t avail = log_len - (grp_ptr - log);
+		uint32_t nnsids = 0;
+
+		if (avail < sizeof(*desc))
+			break;
+		avail -= sizeof(*desc);
+
+		rb_for_each_entry(ns, &this_ctx->ns_root, rb) {
+			if (ns->subsys_id != subsys_id ||
+			    ns->ana_grpid != (uint32_t)grpid)
+				continue;
+			if (avail < sizeof(desc->nsids[0]))
+				break;
+			desc->nsids[nnsids++] = htole32(ns->nsid);
+			avail -= sizeof(desc->nsids[0]);
+		}
+
+		desc->grpid = htole32(grpid);
+		desc->nnsids = htole32(nnsids);
+		desc->chgcnt = htole64(0);
+		desc->state = ((unsigned int)grpid == portid) ?
+			NVME_ANA_OPTIMIZED : NVME_ANA_NONOPTIMIZED;
+		memset(desc->rsvd17, 0, sizeof(desc->rsvd17));
+		sd_debug("%s: grpid %u %u nsids state %d",
+			 __func__, grpid, nnsids, desc->state);
+
+		grp_ptr = (uint8_t *)&desc->nsids[nnsids];
+		ngrps++;
+	}
+	sd_mutex_unlock(&this_ctx->ns_lock);
+
+	hdr->ngrps = htole16(ngrps);
+	sd_debug("%s: %d ana groups", __func__, ngrps);
+	return grp_ptr - log;
 }
 
 static void update_vdi_lock_state(struct nofuse_namespace *ns,
@@ -440,7 +499,7 @@ static int change_subsys_cntlid(struct nofuse_subsystem *subsys,
 static void process_node_event(struct nofuse_event *ev)
 {
 	struct nofuse_subsystem *subsys;
-	int nr_zones, nr_nodes;
+	int nr_nodes;
 
 	nr_nodes = lookup_nodes(this_ctx);
 	if (nr_nodes < 0) {
@@ -450,12 +509,12 @@ static void process_node_event(struct nofuse_event *ev)
 	sd_debug("cluster has %d nodes", nr_nodes);
 
 	sd_mutex_lock(&this_ctx->root_lock);
-	nr_zones = get_zones_nr_from(&this_ctx->nroot);
+	this_ctx->nr_zones = get_zones_nr_from(&this_ctx->nroot);
 	sd_mutex_unlock(&this_ctx->root_lock);
 
 	rb_for_each_entry(subsys, &this_ctx->subsys_root, rb) {
-		if (nr_zones > 0) {
-			change_subsys_cntlid(subsys, nr_zones);
+		if (this_ctx->nr_zones > 0) {
+			change_subsys_cntlid(subsys, this_ctx->nr_zones);
 		}
 	}
 }
@@ -522,7 +581,7 @@ static int subsys_cmp(const struct nofuse_subsystem *a,
 
 int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 {
-	int ret, nr_zones;
+	int ret;
 	char value[8];
 	struct nofuse_subsystem *new, *subsys = xzalloc(sizeof(*subsys));
 
@@ -547,10 +606,10 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 		return ret;
 	}
 	sd_mutex_lock(&this_ctx->root_lock);
-	nr_zones = get_zones_nr_from(&this_ctx->nroot);
+	this_ctx->nr_zones = get_zones_nr_from(&this_ctx->nroot);
 	sd_mutex_unlock(&this_ctx->root_lock);
-	if (nr_zones > 0) {
-		ret = change_subsys_cntlid(subsys, nr_zones);
+	if (this_ctx->nr_zones > 0) {
+		ret = change_subsys_cntlid(subsys, this_ctx->nr_zones);
 		if (ret < 0)
 			return ret;
 	}

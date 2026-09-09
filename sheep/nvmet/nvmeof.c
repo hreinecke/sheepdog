@@ -375,8 +375,8 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	id.maxcmd = htole16(ep->qsize);
 
 	if (ep->ctrl->subsys->type == NVME_NQN_NVM) {
-		id.anacap = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) |
-			(1 << 4);
+		/* Report support for optimized, non-optimzed, and change */
+		id.anacap = (1 << 0) | (1 << 1) | (1 << 4);
 		id.anatt = 10;
 		id.anagrpmax = htole32(MAX_ANAGRPID);
 		id.nanagrpid = htole32(MAX_ANAGRPID);
@@ -729,7 +729,7 @@ static int format_ana_log(struct nofuse_queue *ep,
 
 	log_len = sizeof(*log_hdr) +
 		MAX_ANAGRPID * sizeof(struct nvme_ana_group_desc) +
-		MAX_NSID * sizeof(uint32_t);
+		ep->ctrl->subsys->mnan * sizeof(uint32_t);
 	log_buf = malloc(log_len);
 	if (!log_buf) {
 		ctrl_err(ep, "error allocating ana log");
@@ -738,9 +738,9 @@ static int format_ana_log(struct nofuse_queue *ep,
 	memset(log_buf, 0, log_len);
 	log_hdr = (struct nvme_ana_rsp_hdr *)log_buf;
 
-	len = configdb_ana_log_entries(ep->ctrl->subsys->id,
-				       ep->port->portid,
-				       log_buf, log_len);
+	len = ana_log_entries(ep->ctrl->subsys->id,
+			     ep->port->portid,
+			     log_buf, log_len);
 	if (len < 0) {
 		ctrl_err(ep, "error fetching ana log entries");
 		log_hdr->ngrps = 0;

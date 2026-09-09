@@ -74,8 +74,6 @@ int configdb_subsys_identify_ctrl(uint32_t subsys_id,
 				  struct nvme_id_ctrl *id);
 int configdb_identify_active_ns(uint32_t subsys_id,
 				uint8_t *ns_list, size_t len);
-int configdb_ana_log_entries(uint32_t subsys_id, unsigned int portid,
-			     uint8_t *log, int log_len);
 int configdb_ns_changed_log_entries(uint32_t subsys_id, uint16_t cntlid,
 				    uint8_t *log, int log_len);
 
