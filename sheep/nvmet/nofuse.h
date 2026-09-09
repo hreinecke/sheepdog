@@ -195,43 +195,36 @@ struct nofuse_ctrl {
 #define ctrl_info(e, f, x...)					\
 	if (cmd_debug) {					\
 		if ((e)->ctrl) {				\
-			printf("ctrl %d qid %d: " f "\n",	\
+			sd_debug("ctrl %d qid %d: " f,		\
 			       (e)->ctrl->cntlid,		\
 			       (e)->qid, ##x);			\
 		} else {					\
-			printf("ep %d: " f "\n",		\
+			sd_debug("ep %d: " f,			\
 			       (e)->sockfd, ##x);		\
 		}						\
-		fflush(stdout);					\
 	}
 
 #define ctrl_err(e, f, x...)					\
 	do {							\
 		if ((e)->ctrl) {				\
-			fprintf(stderr,				\
-				"ctrl %d qid %d: " f "\n",	\
+			sd_err("ctrl %d qid %d: " f,		\
 				(e)->ctrl->cntlid,		\
 				(e)->qid, ##x);			\
 		} else {					\
-			fprintf(stderr, "ep %d: " f "\n",	\
+			sd_err("ep %d: " f,			\
 			       (e)->sockfd, ##x);		\
 		}						\
-		fflush(stderr);					\
 	} while (0)
 
 #define port_info(i, f, x...)			\
 	if (port_debug) {			\
-		printf("port %d: " f "\n",	\
-		       (i)->portid, ##x);	\
-		fflush(stdout);			\
+		sd_debug("port %d: " f,		\
+			 (i)->portid, ##x);	\
 	}
 
-#define port_err(i, f, x...)				\
-	do {						\
-		fprintf(stderr, "port %d: " f "\n",	\
-			(i)->portid, ##x);		\
-		fflush(stderr);				\
-	} while (0)
+#define port_err(i, f, x...)			\
+	sd_err("port %d: " f,			\
+	       (i)->portid, ##x)
 
 static inline void set_response(struct nvme_completion *resp,
 				uint16_t ccid, uint16_t status, bool dnr)

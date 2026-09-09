@@ -31,19 +31,15 @@
 
 #define tcp_info(e, f, x...)					\
 	if (tcp_debug) {					\
-		printf("ctrl %d qid %d: " f "\n",		\
-		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
-		       (e)->qid, ##x);				\
-		fflush(stdout);					\
+		sd_debug("ctrl %d qid %d: " f,			\
+			 (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
+			 (e)->qid, ##x);			\
 	}
 
 #define tcp_err(e, f, x...)					\
-	do {							\
-		fprintf(stderr, "ctrl %d qid %d: " f "\n",	\
-		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
-		       (e)->qid, ##x);				\
-		fflush(stderr);					\
-	} while (0)
+	sd_err("ctrl %d qid %d: " f,				\
+	       (e)->ctrl ? (e)->ctrl->cntlid : -1,		\
+	       (e)->qid, ##x)
 
 static int tcp_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
