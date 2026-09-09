@@ -1021,7 +1021,7 @@ static inline int etcd_node_is_master(struct etcd_ctx *ctx,
 static int etcd_update_event(struct etcd_ctx *ctx, enum etcd_event_type type,
 			     struct json_object *obj)
 {
-	char key[1024];
+	char key[1024] = {};
 	const char *event, *json_str;
 	int rc;
 
@@ -1868,7 +1868,7 @@ static struct etcd_lock_entry *etcd_lock_create(uint32_t lock_id,
 static void etcd_lock_wakeup(struct etcd_ctx *ctx, bool deleted)
 {
 	struct etcd_kv *kvs;
-	char key[256];
+	char key[256] = {};
 	int ret, num_kvs;
 	struct etcd_lock_entry l, *lock;
 

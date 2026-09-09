@@ -810,6 +810,7 @@ struct request *alloc_request(struct client_info *ci, uint32_t data_length)
 			free(req);
 			return NULL;
 		}
+		memset(req->data, 0, req->data_length);
 	}
 
 	req->ci = ci;

@@ -961,11 +961,13 @@ int nofuse_init(const char *traddr, int trsvcid)
 {
 	int err;
 
+	if (!traddr)
+		return 0;
+
 	this_ctx = malloc(sizeof(struct nofuse_context));
 	if (!this_ctx)
 		return 1;
 	memset(this_ctx, 0, sizeof(struct nofuse_context));
-	this_ctx->dbname = strdup("nofuse.sqlite");
 	this_ctx->traddr = strdup(traddr);
 	this_ctx->trsvcid = trsvcid;
 	this_ctx->dbname = strdup("nofuse.sqlite");

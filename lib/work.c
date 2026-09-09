@@ -420,8 +420,10 @@ retest:
 
 		work->arg = wi;
 		if (work->fn) {
+			bool async = work->async;
+
 			work->fn(work);
-			if (work->async)
+			if (async)
 				continue;
 		}
 		finish_work_fn(work);
