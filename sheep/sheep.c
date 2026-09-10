@@ -161,6 +161,10 @@ static struct sd_option sheep_options[] = {
 #endif
 	{'R', "recovery", true, "specify the recovery speed throttling",
 	 recovery_help},
+#ifdef HAVE_NVMET
+	{'s', "trsvcid", true, "specify the transport service ID for nvmet"},
+	{'t', "traddr", true, "specify the transport address for nvmet"},
+#endif
 	{'u', "upgrade", false, "upgrade to the latest data layout"},
 	{'v', "version", false, "show the version"},
 	{'V', "vnodes", true, "set number of vnodes", vnodes_help},
@@ -1081,6 +1085,18 @@ int main(int argc, char **argv, char **envp)
 			if (max_exec_count > 0 && queue_work_interval > 0)
 				sys->rthrottling.throttling = true;
 			break;
+#ifdef HAVE_NVMET
+		case 't':
+			traddr = optarg;
+			break;
+		case 's':
+			trsvcid = str_to_u32(optarg);
+			if (errno != 0) {
+				sd_err("Invalid trsvcid '%s'", optarg);
+				exit(1);
+			}
+			break;
+#endif
 		case 'v':
 			fprintf(stdout, "Sheepdog daemon version %s\n",
 				PACKAGE_VERSION);
@@ -1358,9 +1374,11 @@ int main(int argc, char **argv, char **envp)
 	#endif
 
 	#ifdef HAVE_NVMET
-	ret = nofuse_init(traddr, trsvcid);
-	if (ret)
-		goto cleanup_journal;
+	if (traddr) {
+		ret = nofuse_init(traddr, trsvcid);
+		if (ret)
+			goto cleanup_journal;
+	}
 	#endif
 	if (pid_file && (create_pidfile(pid_file) != 0)) {
 		sd_err("failed to pid file '%s' - %m", pid_file);
