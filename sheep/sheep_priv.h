@@ -719,6 +719,7 @@ void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl,
 			     uint32_t new_acl);
 void nvmet_notify_node_change(void);
 void nvmet_notify_lock_change(uint32_t vid, uint32_t acl);
+void nvmet_notify_recovery_change(bool in_recovery);
 #endif
 
 #endif

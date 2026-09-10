@@ -43,16 +43,17 @@ struct nofuse_context {
 	struct sd_mutex ns_lock;
 	struct rb_root subsys_root;
 	struct sd_mutex subsys_lock;
+	sd_thread_t thread;
+	int event_evtfd;
+	struct list_head event_list;
+	struct sd_mutex event_lock;
 	int nr_nodes;
 	int nr_zones;
 	unsigned int portid;
 	int trsvcid;
 	int debug;
 	int help;
-	sd_thread_t thread;
-	int event_evtfd;
-	struct list_head event_list;
-	struct sd_mutex event_lock;
+	uatomic_bool in_recovery;
 };
 
 struct nofuse_context *this_ctx;
@@ -444,6 +445,19 @@ void nvmet_notify_lock_change(uint32_t vid, uint32_t acl)
 	sd_mutex_unlock(&this_ctx->event_lock);
 
 	eventfd_write(this_ctx->event_evtfd, 1);
+}
+
+void nvmet_notify_recovery_change(bool recovery)
+{
+	if (recovery)
+		uatomic_set_true(&this_ctx->in_recovery);
+	else
+		uatomic_set_false(&this_ctx->in_recovery);
+}
+
+bool nofuse_node_in_recovery(void)
+{
+	return uatomic_is_true(&this_ctx->in_recovery);
 }
 
 static void process_acl_event(struct nofuse_event *ev)

@@ -926,6 +926,9 @@ static inline bool run_next_rw(void)
 	if (!node_is_gateway_only())
 		sd_store->update_epoch(nrinfo->tgt_epoch);
 
+#ifdef HAVE_NVMET
+	nvmet_notify_recovery_change(true);
+#endif
 	main_thread_set(current_rinfo, nrinfo);
 	wakeup_all_requests();
 	queue_recovery_work(nrinfo);
@@ -972,6 +975,9 @@ static inline void finish_recovery(struct recovery_info *rinfo)
 	free_recovery_info(rinfo);
 
 	sd_debug("recovery complete: new epoch %"PRIu32, recovered_epoch);
+#ifdef HAVE_NVMET
+	nvmet_notify_recovery_change(false);
+#endif
 }
 
 static void recover_next_object(struct recovery_info *rinfo)
@@ -1524,6 +1530,9 @@ int start_recovery(struct vnode_info *cur_vinfo, struct vnode_info *old_vinfo,
 		 */
 		resume_suspended_recovery();
 	} else {
+#ifdef HAVE_NVMET
+		nvmet_notify_recovery_change(true);
+#endif
 		main_thread_set(current_rinfo, rinfo);
 		queue_recovery_work(rinfo);
 	}

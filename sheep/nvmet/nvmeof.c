@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "sheep_priv.h"
+#include "sheep.h"
 #include "nofuse.h"
 #include "ops.h"
 #include "nvme.h"
@@ -909,7 +909,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
-	if (node_in_recovery())
+	if (nofuse_node_in_recovery())
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_read;
@@ -938,7 +938,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 	}
 
-	if (node_in_recovery())
+	if (nofuse_node_in_recovery())
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_write;
@@ -996,7 +996,7 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 	}
 
-	if (node_in_recovery())
+	if (nofuse_node_in_recovery())
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_dsm;

@@ -294,6 +294,8 @@ int disable_namespace(const char *subsysnqn, uint32_t nsid);
 struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id);
 struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn);
 
+bool nofuse_node_in_recovery(void);
+
 int nofuse_init(const char *traddr, int trsvcid);
 void nofuse_exit(void);
 #endif
