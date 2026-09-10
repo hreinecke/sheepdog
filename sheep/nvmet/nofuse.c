@@ -27,6 +27,8 @@
 #include "tls.h"
 #include "configdb.h"
 
+unsigned long genctr;
+
 int stopped;
 bool tcp_debug;
 bool cmd_debug;
@@ -457,6 +459,11 @@ bool nofuse_node_in_recovery(void)
 	return uatomic_is_true(&this_ctx->in_recovery);
 }
 
+unsigned int nofuse_genctr(void)
+{
+	return uatomic_read(&genctr);
+}
+
 static void process_acl_event(struct nofuse_event *ev)
 {
 	if (ev->new_acl) {
@@ -510,6 +517,8 @@ static void process_node_event(struct nofuse_event *ev)
 {
 	struct nofuse_subsystem *subsys;
 	int nr_nodes;
+
+	uatomic_inc(&genctr);
 
 	nr_nodes = lookup_nodes(this_ctx);
 	if (nr_nodes < 0) {
@@ -878,6 +887,8 @@ static int register_subsystems(unsigned int agid)
 		/* We are only interested in ACL VDIs */
 		if (!vdi_is_acl(inode))
 			continue;
+
+		uatomic_inc(&genctr);
 
 		ret = nvmet_register_subsystem(nr, inode->name);
 		if (ret < 0) {

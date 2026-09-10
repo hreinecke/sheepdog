@@ -705,8 +705,8 @@ static int format_disc_log(struct nofuse_queue *ep,
 
 	ret = configdb_host_genctr(ep->ctrl->hostnqn, &genctr);
 	if (ret < 0) {
-		ctrl_err(ep, "error retrieving genctr");
-		genctr = 0;
+		ctrl_info(ep, "error retrieving genctr");
+		genctr = nofuse_genctr();
 	}
 	log_hdr->recfmt = 1;
 	log_hdr->numrec = htole64(num_recs);
