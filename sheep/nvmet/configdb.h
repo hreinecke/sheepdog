@@ -70,8 +70,6 @@ int configdb_check_allowed_host(const char *hostnqn, const char *subsysnqn,
 			     unsigned int portid);
 int configdb_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len);
 int configdb_host_genctr(const char *hostnqn, int *genctr);
-int configdb_subsys_identify_ctrl(uint32_t subsys_id,
-				  struct nvme_id_ctrl *id);
 int configdb_identify_active_ns(uint32_t subsys_id,
 				uint8_t *ns_list, size_t len);
 int configdb_ns_changed_log_entries(uint32_t subsys_id, uint16_t cntlid,

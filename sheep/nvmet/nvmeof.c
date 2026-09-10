@@ -300,7 +300,7 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 				uint8_t *id_buf, size_t len)
 {
 	struct nvme_id_ctrl id;
-	int ret;
+	uint32_t oui;
 
 	memset(&id, 0, sizeof(id));
 
@@ -338,10 +338,17 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 		id.mnan = htole32(ep->ctrl->subsys->mnan);
 	id.sqes = (0x6 << 4) | 0x6;
 	id.cqes = (0x4 << 4) | 0x4;
-
-	ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys->id, &id);
-	if (ret < 0)
-		return ret;
+	oui = htole32(NOFUSE_OUI);
+	memcpy(id.ieee, &oui, sizeof(id.ieee));
+	strcpy(id.subnqn, ep->ctrl->subsys->nqn);
+	strcpy(id.fr, firmware_rev);
+	strcpy(id.mn, "sheepdog");
+	sprintf(id.sn, "SHEEPDOG%06X", ep->ctrl->subsys->id);
+	if (ep->ctrl->subsys->type == NVME_NQN_NVM)
+		id.cntrltype = NVME_CTRL_CNTRLTYPE_IO;
+	else
+		id.cntrltype = NVME_CTRL_CNTRLTYPE_DISC;
+	id.ver = htole32(NOFUSE_NVME_VER);
 
 	/*
 	 * Identify Controller is only ever answered on the admin queue, so
