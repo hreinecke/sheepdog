@@ -1045,7 +1045,6 @@ static void *nofuse_main(void *arg)
 
 out_destroy:
 	rb_destroy(&this_ctx->subsys_root, struct nofuse_subsystem, rb);
-	free(disc_subsys);
 out_close:
 	/*
 	 * Port and configdb teardown both happen here, in this thread
