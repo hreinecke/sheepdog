@@ -66,6 +66,7 @@ extern struct list_head port_linked_list;
 #define ADRFAM_STR_LOOP "loop"
 
 #define NOFUSE_OUI 0x0efd37
+#define NOFUSE_NVME_VER 0x00020400
 
 enum { CONNECTED, STOPPED, DISCONNECTED };
 

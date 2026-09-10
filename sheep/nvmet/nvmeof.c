@@ -97,17 +97,8 @@ static int handle_property_get(struct nofuse_queue *ep, struct ep_qe *qe,
 		reg_str = "cc";
 		value = ep->ctrl->cc;
 	} else if (cmd->prop_get.offset == NVME_REG_VS) {
-		struct nvme_id_ctrl id;
-		int ret;
-
 		reg_str = "vs";
-		ret = configdb_subsys_identify_ctrl(ep->ctrl->subsys->id, &id);
-		if (ret < 0) {
-			ctrl_info(ep, "%s: failed to identify controller",
-				  __func__);
-			return NVME_SC_INTERNAL;
-		}
-		value = id.ver;
+		value = NOFUSE_NVME_VER;
 	} else if (cmd->prop_get.offset == NVME_REG_CRTO) {
 		reg_str = "crto";
 		value = 0;
