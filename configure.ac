@@ -254,6 +254,11 @@ AC_ARG_WITH([initddir],
 	[ INITDDIR="$withval" ],
 	[ INITDDIR="$sysconfdir/init.d" ])
 
+AC_ARG_ENABLE([prof],
+	[  --enable-prof           : enable profiling],,
+	[ enable_prof="${enable_debug}" ],)
+AM_CONDITIONAL(BUILD_PROF, test x$enable_prof = xyes)
+
 AC_ARG_ENABLE([trace],
 	[  --enable-trace           : enable trace],,
 	[ enable_trace="${enable_debug}" ],)
@@ -439,6 +444,10 @@ if test "x${enable_trace}" = xyes; then
 	PACKAGE_FEATURES="$PACKAGE_FEATURES trace"
 fi
 
+if test "x${enable_prof}" = xyes; then
+	PACKAGE_FEATURES="$PACKAGE_FEATURES prof"
+fi
+
 if test "x${enable_sheepfs}" = xyes; then
 	AC_CHECK_HEADERS([fuse.h],,
 		AC_MSG_ERROR(fuse.h header missing),
@@ -564,12 +573,14 @@ else
 	WERROR_CFLAGS=""
 fi
 
-if test "x${enable_trace}" = xyes && \
+if test "x${enable_prof}" = xyes && \
 		cc_supports_flag -pg ; then
-	AC_MSG_NOTICE([Enabling trace (-pg)])
+	AC_MSG_NOTICE([Enabling profiling (-pg)])
 	TRACE_CFLAGS="-pg -fno-pie"
+	TRACE_LDFLAGS="-pg"
 else
 	TRACE_CFLAGS=""
+	TRACE_LDFLAGS=""
 fi
 
 if test "x${enable_lttng_ust}" = xyes ; then
@@ -594,7 +605,7 @@ CFLAGS="$ENV_CFLAGS $OPT_CFLAGS $GDB_FLAGS $OS_CFLAGS \
 	$LTTNG_UST_CFLAGS $ACCELIO_CFLAGS -D_GNU_SOURCE -D_LGPL_SOURCE \
 	-std=gnu99"
 CPPFLAGS="$ENV_CPPFLAGS $ANSI_CPPFLAGS $OS_CPPFLAGS"
-LDFLAGS="$ENV_LDFLAGS $COVERAGE_LDFLAGS $OS_LDFLAGS"
+LDFLAGS="$ENV_LDFLAGS $COVERAGE_LDFLAGS $OS_LDFLAGS $TRACE_LDFLAGS"
 
 # substitute what we need:
 AC_SUBST([OS_DYFLAGS])
