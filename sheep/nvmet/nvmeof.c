@@ -20,29 +20,6 @@
 #include "configdb.h"
 #include "firmware.h"
 
-static int parse_guid(uint8_t *guid, size_t guid_len, const char *guid_str)
-{
-	int i;
-	unsigned long val, _val;
-	char part[11];
-
-	for (i = 0; i < guid_len; i+=4) {
-		char *eptr = NULL;
-
-		memset(part, 0, 11);
-		memcpy(part, "0x", 2);
-		memcpy(part + 2, guid_str, 8);
-		_val = strtoul(part, &eptr, 16);
-		if (_val == ULONG_MAX || part == eptr)
-			return -EINVAL;
-		val = htobe32(_val);
-		memcpy(guid, &val, 4);
-		guid += 4;
-		guid_str += 8;
-	}
-	return 0;
-}
-
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
 			 uint16_t status)
 {
@@ -445,8 +422,7 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 {
 	struct nofuse_namespace *ns;
 	struct nvme_id_ns id;
-	char uid_str[37];
-	int ret;
+	uint64_t eui64, nguid;
 
 	ns = lookup_namespace(ep->ctrl, nsid);
 	if (!ns)
@@ -454,21 +430,12 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 
 	memset(&id, 0, sizeof(id));
 
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys->id, nsid,
-					  "nguid", uid_str);
-	if (!ret) {
-		ret = parse_guid(id.nguid, sizeof(id.nguid), uid_str);
-		if (ret)
-			memset(id.nguid, 0, sizeof(id.nguid));
-	}
-
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys->id, nsid,
-					  "eui64", uid_str);
-	if (!ret) {
-		ret = parse_guid(id.eui64, sizeof(id.eui64), uid_str);
-		if (ret)
-			memset(id.eui64, 0, sizeof(id.eui64));
-	}
+	nguid = (uint64_t)ns->subsys_id << 32 | NOFUSE_OUI;
+	memcpy(&id.nguid[0], &nguid, sizeof(nguid));
+	nguid = vid_to_vdi_oid(ns->nsid);
+	memcpy(&id.nguid[8], &nguid, sizeof(nguid));
+	eui64 = htole64((uint64_t)NOFUSE_OUI << 32 | ns->nsid);
+	memcpy(&id.eui64, &eui64, sizeof(id.eui64));
 
 	id.nsze = (uint64_t)ns->size / ns->blksize;
 	id.ncap = id.nsze;
@@ -526,20 +493,16 @@ static int handle_identify_active_ns(struct nofuse_queue *ep,
 static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 					uint8_t *desc_list, size_t len)
 {
-	int desc_len = len, ret;
+	struct nofuse_namespace *ns;
+	int desc_len = len;
 	struct nvme_ns_id_desc *desc;
-	char uid_str[37];
-	uuid_t uuid;
 	uint8_t *desc_list_save = desc_list;
 
+	ns = lookup_namespace(ep->ctrl, nsid);
+	if (!ns)
+		return NVME_SC_INVALID_NS | NVME_SC_DNR;
+
 	memset(desc_list, 0, len);
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys->id, nsid,
-					  "uuid", uid_str);
-	if (ret < 0)
-		return ret;
-	ret = uuid_parse(uid_str, uuid);
-	if (ret < 0)
-		return ret;
 
 	if (desc_len < sizeof(*desc) + NVME_NIDT_UUID_LEN)
 		return -EINVAL;
@@ -548,7 +511,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
         desc->nidl = NVME_NIDT_UUID_LEN;
 	desc_list += sizeof(*desc);
 	desc_len -= sizeof(*desc);
-	memcpy(&desc_list[4], uuid, desc->nidl);
+	memcpy(&desc_list[4], ns->uuid, desc->nidl);
 	desc_list += desc->nidl;
 	desc_len -= desc->nidl;
 
@@ -556,49 +519,32 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 		ctrl_info(ep, "no space for nguid");
 		goto parse_eui64;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys->id, nsid,
-					  "nguid", uid_str);
-	if (!ret) {
-		desc = (struct nvme_ns_id_desc *)desc_list;
-		desc->nidt = NVME_NIDT_NGUID;
-		desc->nidl = NVME_NIDT_NGUID_LEN;
-		desc_list += sizeof(*desc);
-		desc_len -= sizeof(*desc);
-		ret = parse_guid(desc_list, NVME_NIDT_NGUID_LEN, uid_str);
-		if (ret) {
-			ctrl_info(ep, "failed to parse nguid, error %d", ret);
-			desc_list = (uint8_t *)desc;
-		} else {
-			desc_list += desc->nidl;
-			desc_len -= desc->nidl;
-		}
-	} else
-		ctrl_info(ep, "no nguid");
+	desc = (struct nvme_ns_id_desc *)desc_list;
+	desc->nidt = NVME_NIDT_NGUID;
+	desc->nidl = NVME_NIDT_NGUID_LEN;
+	desc_list += sizeof(*desc);
+	desc_len -= sizeof(*desc);
+	sprintf((char *)desc_list, "%08x00%06x%"PRIx64,
+		ns->subsys_id, NOFUSE_OUI,
+		vid_to_vdi_oid(ns->nsid));
+	desc_list += desc->nidl;
+	desc_len -= desc->nidl;
 
 parse_eui64:
 	if (desc_len < sizeof(*desc) + NVME_NIDT_EUI64_LEN) {
 		ctrl_info(ep, "no space for eu64");
 		goto done;
 	}
-	ret = configdb_get_namespace_attr(ep->ctrl->subsys->id, nsid,
-					  "eui64", uid_str);
-	if (!ret) {
-		desc = (struct nvme_ns_id_desc *)desc_list;
-		desc->nidt = NVME_NIDT_EUI64;
-		desc->nidl = NVME_NIDT_EUI64_LEN;
-		desc_list += sizeof(*desc);
-		desc_len -= sizeof(*desc);
-		ret = parse_guid(desc_list, NVME_NIDT_EUI64_LEN, uid_str);
-		if (ret) {
-			ctrl_info(ep, "failed to parse eui64, error %d", ret);
-			desc_list = (uint8_t *)desc;
-		} else {
-			desc_list += desc->nidl;
-			desc_len -= desc->nidl;
-		}
-	} else
-		ctrl_info(ep, "no eui64");
-done:
+	desc = (struct nvme_ns_id_desc *)desc_list;
+	desc->nidt = NVME_NIDT_EUI64;
+	desc->nidl = NVME_NIDT_EUI64_LEN;
+	desc_list += sizeof(*desc);
+	desc_len -= sizeof(*desc);
+	sprintf((char *)desc_list, "00%06x%"PRIx32, NOFUSE_OUI, ns->nsid);
+	desc_list += desc->nidl;
+	desc_len -= desc->nidl;
+
+ done:
 	if (desc_len < sizeof(*desc) + NVME_NIDT_CSI_LEN)
 		return len;
 
