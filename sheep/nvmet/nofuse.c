@@ -33,9 +33,6 @@ bool cmd_debug;
 bool port_debug;
 
 struct nofuse_context {
-	char *traddr;
-	char *dbname;
-	uint32_t subsys_id;
 	struct rb_root vroot;
 	struct rb_root nroot;
 	struct sd_mutex root_lock;
@@ -47,12 +44,12 @@ struct nofuse_context {
 	int event_evtfd;
 	struct list_head event_list;
 	struct sd_mutex event_lock;
-	int nr_nodes;
-	int nr_zones;
+	char *dbname;
+	char *traddr;
 	unsigned int portid;
 	int trsvcid;
-	int debug;
-	int help;
+	int nr_nodes;
+	int nr_zones;
 	uatomic_bool in_recovery;
 };
 
