@@ -23,21 +23,6 @@
 #include "nvme.h"
 #include "ops.h"
 
-struct uring_io_ctx {
-	struct nofuse_queue *ep;
-	struct ep_qe *qe;
-	/*
-	 * 'pending' is written once (to the sub-request count) by the
-	 * submitting thread (ep->pthread) before any sub-request is
-	 * fired, and from then on only ever read/decremented by
-	 * uring_io_done() on the sheepdog main thread, so no lock is
-	 * needed for it. 'failed' is likewise only ever touched from
-	 * that same main thread.
-	 */
-	int pending;
-	bool failed;
-};
-
 static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 {
 	qe->io_res = res;
@@ -50,23 +35,29 @@ static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		ctrl_err(ep, "tag %#x eventfd_write error %d", qe->tag, errno);
 }
 
-static void uring_ctx_finish(struct uring_io_ctx *ctx, bool ok)
+static int uring_io_finish(struct ep_qe *qe, uint64_t oid,
+			   off_t off, size_t len, int result)
 {
-	if (!ok)
-		ctx->failed = true;
-	if (--ctx->pending == 0) {
-		uring_complete(ctx->ep, ctx->qe, ctx->failed ? -EIO : 0);
-		free(ctx);
+	int ret;
+
+	if (result != SD_RES_SUCCESS) {
+		ctrl_err(qe->ep, "tag %d VDI oid %"PRIx64
+			 " off %lu size %lu read error %s",
+			 qe->tag, oid, off, len, sd_strerror(result));
+		qe->async_result = result;
+		ret = -EIO;
 	}
+	return ret;
 }
 
 /* Runs on the sheepdog main thread (put_request()). */
 static void uring_io_done(struct request *req)
 {
-	struct uring_io_ctx *ctx = req->local_done_arg;
-	bool ok = req->rp.result == SD_RES_SUCCESS;
+	struct ep_qe *qe = req->local_done_arg;
+	int ret = 0;
 
-	if (req->rp.result == SD_RES_NO_OBJ && req->rq.opcode == SD_OP_READ_OBJ) {
+	if (req->rp.result == SD_RES_NO_OBJ &&
+	    req->rq.opcode == SD_OP_READ_OBJ) {
 		/*
 		 * Sheepdog VDIs are sparse: an object that was never
 		 * written simply doesn't exist yet. Reading it isn't a
@@ -74,119 +65,103 @@ static void uring_io_done(struct request *req)
 		 * (same convention as e.g. dog_vdi_read()).
 		 */
 		memset(req->data, 0, req->data_length);
-		ok = true;
-	}
+	} else
+		ret = uring_io_finish(qe, req->rq.obj.oid,
+				      req->rq.obj.offset, req->data_length,
+				      req->rp.result);
 
-	uring_ctx_finish(ctx, ok);
+	if (refcount_dec(&qe->async_pending) == 0)
+		uring_complete(qe->ep, qe, ret);
 }
-
-struct uring_write_ctx {
-	struct uring_io_ctx *ctx;
-	uint64_t oid;
-	uint64_t offset;
-	uint32_t len;
-	char *buf;
-};
 
 static void uring_write_retry_done(struct request *req)
 {
-	struct uring_write_ctx *wctx = req->local_done_arg;
+	struct ep_qe *qe = req->local_done_arg;
+	int ret = uring_io_finish(qe, req->rq.obj.oid,
+				  req->rq.obj.offset,
+				  req->data_length,
+				  req->rp.result);
 
-	uring_ctx_finish(wctx->ctx, req->rp.result == SD_RES_SUCCESS);
-	free(wctx);
+	if (refcount_dec(&qe->async_pending) == 0)
+		uring_complete(qe->ep, qe, ret);
 }
 
-/*
- * Runs on the sheepdog main thread (put_request()), for the initial
- * (non-create) write attempt against an object.
- *
- * default_create_and_write() (plain_store.c) doesn't update an existing
- * object in place: it builds a brand-new object file containing only
- * this write's own byte range (the rest reads back as zero) and renames
- * it over whatever was there before. So always creating would silently
- * destroy any data an earlier write already put in the rest of an
- * object that's since come to exist. Try a plain write first instead,
- * and only create the object on demand, the same way real thin-
- * provisioned VDI clients only create on an object's very first write.
- */
 static void uring_write_done(struct request *req)
 {
-	struct uring_write_ctx *wctx = req->local_done_arg;
+	struct ep_qe *qe = req->local_done_arg;
 
 	if (req->rp.result == SD_RES_NO_OBJ) {
-		sd_write_object_async(wctx->oid, wctx->buf, wctx->len,
-				      wctx->offset, true,
-				      uring_write_retry_done, wctx);
+		sd_write_object_async(req->rq.obj.oid, req->data,
+				      req->data_length,
+				      req->rq.obj.offset, true,
+				      uring_write_retry_done, qe);
 		return;
 	}
 
-	uring_ctx_finish(wctx->ctx, req->rp.result == SD_RES_SUCCESS);
-	free(wctx);
-}
-
-/*
- * A single NVMe read/write can span more than one sheepdog data
- * object, so fire one async local request per object touched by
- * [qe->data_pos, qe->data_pos + iov_len).
- */
-static int uring_submit_io(struct nofuse_queue *ep, struct ep_qe *qe,
-			   bool is_write)
-{
-	uint8_t *buf = qe->iovec.iov_base;
-	uint64_t pos = qe->data_pos;
-	uint64_t remaining = qe->iovec.iov_len;
-	struct uring_io_ctx *ctx;
-
-	if (!remaining) {
-		uring_complete(ep, qe, 0);
-		return 0;
-	}
-
-	ctx = xmalloc(sizeof(*ctx));
-	ctx->ep = ep;
-	ctx->qe = qe;
-	ctx->failed = false;
-	ctx->pending = (pos + remaining - 1) / SD_DATA_OBJ_SIZE -
-		       pos / SD_DATA_OBJ_SIZE + 1;
-
-	while (remaining) {
-		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
-		uint64_t obj_offset = pos % SD_DATA_OBJ_SIZE;
-		uint64_t len = min(remaining, SD_DATA_OBJ_SIZE - obj_offset);
-		uint64_t oid = vid_to_data_oid(qe->vid, idx);
-
-		if (is_write) {
-			struct uring_write_ctx *wctx = xmalloc(sizeof(*wctx));
-
-			wctx->ctx = ctx;
-			wctx->oid = oid;
-			wctx->offset = obj_offset;
-			wctx->len = len;
-			wctx->buf = (char *)buf;
-			sd_write_object_async(oid, (char *)buf, len,
-					      obj_offset, false,
-					      uring_write_done, wctx);
-		} else
-			sd_read_object_async(oid, (char *)buf, len,
-					     obj_offset,
-					     uring_io_done, ctx);
-
-		buf += len;
-		pos += len;
-		remaining -= len;
-	}
-
-	return 0;
+	uring_write_retry_done(req);
 }
 
 static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	return uring_submit_io(ep, qe, true);
+	uint8_t *data = qe->data;
+	size_t data_len = qe->data_len;
+	off_t pos = qe->data_pos;
+
+	if (!data_len) {
+		uring_complete(ep, qe, 0);
+		return 0;
+	}
+
+	refcount_set(&qe->async_pending,
+		     (pos + data_len - 1) / SD_DATA_OBJ_SIZE -
+		     pos / SD_DATA_OBJ_SIZE + 1);
+
+	qe->async_result = SD_RES_SUCCESS;
+	while (data_len) {
+		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
+		off_t off = pos % SD_DATA_OBJ_SIZE;
+		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
+		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+
+		sd_write_object_async(oid, (char *)data, len,
+				      off, false,
+				      uring_write_done, qe);
+		data += len;
+		pos += len;
+		data_len -= len;
+	}
+	return 0;
 }
 
 static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	return uring_submit_io(ep, qe, false);
+	uint8_t *data = qe->data;
+	size_t data_len = qe->data_len;
+	off_t pos = qe->data_pos;
+
+	if (!data_len) {
+		uring_complete(ep, qe, 0);
+		return 0;
+	}
+
+	refcount_set(&qe->async_pending,
+		     (pos + data_len - 1) / SD_DATA_OBJ_SIZE -
+		     pos / SD_DATA_OBJ_SIZE + 1);
+	qe->async_result = SD_RES_SUCCESS;
+
+	while (data_len) {
+		unsigned int idx = pos / SD_DATA_OBJ_SIZE;
+		off_t off = pos % SD_DATA_OBJ_SIZE;
+		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
+		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+
+		sd_read_object_async(oid, (char *)data, len,
+				     off, uring_io_done, qe);
+		data += len;
+		pos += len;
+		data_len -= len;
+	}
+	return 0;
 }
 
 /*
@@ -216,52 +191,46 @@ static int uring_prep_read(struct nofuse_queue *ep, struct ep_qe *qe)
 static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct nvme_dsm_range *range = qe->data;
-	uint32_t max_nr = qe->data_len / sizeof(*range);
-	/*
-	 * qe->dsm_nr (from the command's NR field) is the number of
-	 * ranges actually meaningful in this buffer; the buffer itself
-	 * (sized off the SGL length) can be larger, e.g. if the host
-	 * always allocates room for the architectural max regardless of
-	 * how many ranges it fills in. Anything beyond dsm_nr is
-	 * leftover/unrelated bytes (from this buffer's own padding, or
-	 * conceivably stale content if the host reuses buffers), not a
-	 * real request -- processing it risks discarding whatever object
-	 * that garbage happens to decode to.
-	 */
-	uint32_t nr = qe->dsm_nr < max_nr ? qe->dsm_nr : max_nr;
-	struct nofuse_namespace *ns = lookup_namespace(ep->ctrl, qe->vid);
-	uint32_t i;
-	int status = 0;
+	int nr_ranges = qe->data_len / sizeof(*range);
+	int i, ret;
 
-	if (!ns) {
-		ctrl_err(ep, "dsm: invalid namespace %u", qe->vid);
-		status = NVME_SC_INVALID_NS;
-		goto out;
-	}
-
-	for (i = 0; i < nr; i++) {
+	for (i = 0; i < nr_ranges; i++) {
 		uint64_t slba = le64toh(range[i].slba);
 		uint32_t nlb = le32toh(range[i].nlb);
-		uint64_t start = slba * ns->blksize;
-		uint64_t end = start + (uint64_t)nlb * ns->blksize;
+		uint64_t start = slba * qe->ns->blksize;
+		uint64_t end = start + (uint64_t)nlb * qe->ns->blksize;
 		uint64_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
 		uint64_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		int nr_idx = idx_end - idx;
+		uint32_t *zero;
+
+		if (!nr_idx)
+			continue;
+		zero = xzalloc(nr_idx * sizeof(*zero));
+		ret = sd_write_object(vid_to_vdi_oid(qe->vid), (char *)zero,
+				      nr_idx * sizeof(*zero),
+				      offsetof(struct sd_inode, data_vdi_id[idx]),
+				      false);
+		free(zero);
+		if (ret != SD_RES_SUCCESS) {
+			ctrl_err(ep, "dsm: failed to update inode for "
+				 "discarding idx %"PRIu64"-%"PRIu64": %s",
+				 idx, idx_end, sd_strerror(ret));
+			return NVME_SC_INTERNAL;
+		}
 
 		for (; idx < idx_end; idx++) {
 			uint64_t oid = vid_to_data_oid(qe->vid, idx);
-			int ret = sd_remove_object(oid);
 
-			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ)
+			ret = sd_remove_object(oid);
+			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
 				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
 					 oid, sd_strerror(ret));
+				return NVME_SC_INTERNAL;
+			}
 		}
 	}
-out:
-	memset(&qe->resp, 0, sizeof(qe->resp));
-	set_response(&qe->resp, qe->ccid, status, true);
-	ep->ops->send_rsp(ep, &qe->resp);
-	ep->ops->release_tag(ep, qe);
-	return 0;
+	return NVME_SC_SUCCESS;
 }
 
 /*

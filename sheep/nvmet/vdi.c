@@ -24,7 +24,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 	off_t pos = qe->data_pos;
 
 	while (data_len) {
-		unsigned int idx = pos / SD_DATA_OBJ_SIZE;
+		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
 		uint64_t oid = vid_to_data_oid(qe->vid, idx);
@@ -70,7 +70,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 				qe->vid, qe->vid, 0, false, false);
 			if (ret != SD_RES_SUCCESS) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
-					 " idx %u failed to update inode: %s",
+					 " idx %"PRIx64" failed to update inode: %s",
 					 qe->tag, qe->vid, idx,
 					 sd_strerror(ret));
 				return NVME_SC_INTERNAL;
