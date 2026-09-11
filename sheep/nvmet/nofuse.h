@@ -85,6 +85,15 @@ struct ep_qe {
 	uint64_t data_remaining;
 	uint64_t iovec_offset;
 	uint32_t vid;
+	/*
+	 * Backing store for the inode-index write in
+	 * uring_create_object_complete() (uring.c). sd_write_object_async()
+	 * doesn't copy its data argument -- it just stores the pointer for
+	 * the actual write to read later, asynchronously, on another
+	 * thread. A stack-local variable there would be long gone by then;
+	 * qe stays alive for the whole command, so this is.
+	 */
+	uint32_t inode_vid_buf;
 	refcnt_t async_pending;
 	int async_result;
 	int io_res;
@@ -108,6 +117,8 @@ struct nofuse_queue {
 	struct ep_qe *qes;
 	uint32_t qes_map[NVMF_SQ_DEPTH / 8];
 	unsigned int qes_map_index;
+	unsigned int qes_busy;
+	unsigned int qes_busy_max;
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
