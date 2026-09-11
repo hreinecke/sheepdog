@@ -104,7 +104,7 @@ static void uring_create_object_complete(struct request *req)
 			uring_complete(qe->ep, qe, -EIO);
 		return;
 	}
-	sd_write_object_async(oid, (char *)&vid, sizeof(vid),
+	sd_write_object_async(vid_to_vdi_oid(qe->vid), (char *)&vid, sizeof(vid),
 			      off, false, uring_write_retry_done, qe);
 }
 
