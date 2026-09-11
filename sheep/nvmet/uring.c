@@ -12,7 +12,7 @@
  * ep->io_evtfd, so that ep/qes_map state continues to be touched
  * only from ep->pthread.
  *
- * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ * Copyright (c) 2026 Hannes Reinecke <hare@suse.de>
  */
 #include <stdio.h>
 #include <pthread.h>
@@ -38,11 +38,11 @@ static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 static int uring_io_finish(struct ep_qe *qe, uint64_t oid,
 			   off_t off, size_t len, int result)
 {
-	int ret;
+	int ret = 0;
 
 	if (result != SD_RES_SUCCESS) {
 		ctrl_err(qe->ep, "tag %d VDI oid %"PRIx64
-			 " off %lu size %lu read error %s",
+			 " off %lu size %lu I/O error %s",
 			 qe->tag, oid, off, len, sd_strerror(result));
 		qe->async_result = result;
 		ret = -EIO;
@@ -86,7 +86,29 @@ static void uring_write_retry_done(struct request *req)
 		uring_complete(qe->ep, qe, ret);
 }
 
-static void uring_write_done(struct request *req)
+static void uring_create_object_complete(struct request *req)
+{
+	struct ep_qe *qe = req->local_done_arg;
+	uint64_t oid = req->rq.obj.oid;
+	uint64_t idx = data_oid_to_idx(oid);
+	uint32_t vid = oid_to_vid(oid);
+	off_t off = SD_INODE_HEADER_SIZE + sizeof(vid) * idx;
+
+	if (req->rp.result != SD_RES_SUCCESS) {
+		ctrl_err(qe->ep, "tag %d VDI oid %"PRIx64
+			 " off %u size %u write error %s",
+			 qe->tag, oid, req->rq.obj.offset,
+			 req->data_length, sd_strerror(req->rp.result));
+		qe->async_result = req->rp.result;
+		if (refcount_dec(&qe->async_pending) == 0)
+			uring_complete(qe->ep, qe, -EIO);
+		return;
+	}
+	sd_write_object_async(oid, (char *)&vid, sizeof(vid),
+			      off, false, uring_write_retry_done, qe);
+}
+
+static void uring_write_object_complete(struct request *req)
 {
 	struct ep_qe *qe = req->local_done_arg;
 
@@ -94,7 +116,7 @@ static void uring_write_done(struct request *req)
 		sd_write_object_async(req->rq.obj.oid, req->data,
 				      req->data_length,
 				      req->rq.obj.offset, true,
-				      uring_write_retry_done, qe);
+				      uring_create_object_complete, qe);
 		return;
 	}
 
@@ -125,7 +147,7 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 
 		sd_write_object_async(oid, (char *)data, len,
 				      off, false,
-				      uring_write_done, qe);
+				      uring_write_object_complete, qe);
 		data += len;
 		pos += len;
 		data_len -= len;
