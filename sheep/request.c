@@ -800,6 +800,9 @@ struct request *alloc_request(struct client_info *ci, uint32_t data_length)
 	req = zalloc(sizeof(struct request));
 	if (!req)
 		return NULL;
+	ci->ci_num_reqs++;
+	if (ci->ci_num_reqs > ci->ci_max_reqs)
+		ci->ci_max_reqs = ci->ci_num_reqs;
 
 	if (data_length) {
 		int ret;
@@ -825,6 +828,8 @@ struct request *alloc_request(struct client_info *ci, uint32_t data_length)
 
 void free_request(struct request *req)
 {
+	struct client_info *ci = req->ci;
+
 	uatomic_dec(&sys->nr_outstanding_reqs);
 	if (unlikely(uatomic_read(&sys->nr_drain_waiters) > 0))
 		wakeup_drain_waiters();
@@ -833,6 +838,7 @@ void free_request(struct request *req)
 	put_vnode_info(req->vinfo);
 	free(req->data);
 	free(req);
+	ci->ci_num_reqs--;
 }
 
 main_fn void put_request(struct request *req)
@@ -983,17 +989,19 @@ static void rx_main(struct work *work)
 				"connection maybe closed");
 
 	if (is_logging_op(get_sd_op(req->rq.opcode))) {
-		sd_info("req=%p, fd=%d, client=%s:%d, op=%s, data=%s",
+		sd_info("req=%p, fd=%d, client=%s:%d, max=%u, op=%s, data=%s",
 			req,
 			ci->conn.fd,
 			ci->conn.ipstr, ci->conn.port,
+			ci->ci_max_reqs,
 			op_name(get_sd_op(req->rq.opcode)),
 			data_to_str(req->data, req->rq.data_length));
 	} else {
-		sd_debug("%d, %s:%d",
+		sd_debug("%d, %s:%d, %u",
 			 ci->conn.fd,
 			 ci->conn.ipstr,
-			 ci->conn.port);
+			 ci->conn.port,
+			 ci->ci_max_reqs);
 	}
 
 	tracepoint(request, rx_main, ci->conn.fd, work, req);

@@ -87,6 +87,9 @@ struct client_info {
 	/* holds the response header across tx_work's asynchronous write */
 	struct sd_rsp tx_rsp;
 
+	unsigned int ci_num_reqs;
+	unsigned int ci_max_reqs;
+
 	struct list_head done_reqs;
 
 	refcnt_t refcnt;
