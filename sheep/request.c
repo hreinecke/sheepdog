@@ -168,16 +168,16 @@ static void local_op_done(struct work *work)
 static int check_request_epoch(struct request *req)
 {
 	if (before(req->rq.epoch, sys->cinfo.epoch)) {
-		sd_err("old node version %u, %u (%s)", sys->cinfo.epoch,
-		       req->rq.epoch, op_name(req->op));
+		sd_warn("old node version %u, %u (%s)", sys->cinfo.epoch,
+			req->rq.epoch, op_name(req->op));
 		/* Ask for sleeping req on requester's wait queue */
 		req->rp.result = SD_RES_OLD_NODE_VER;
 		req->rp.epoch = sys->cinfo.epoch;
 		put_request(req);
 		return -1;
 	} else if (after(req->rq.epoch, sys->cinfo.epoch)) {
-		sd_err("new node version %u, %u (%s)", sys->cinfo.epoch,
-		       req->rq.epoch, op_name(req->op));
+		sd_warn("new node version %u, %u (%s)", sys->cinfo.epoch,
+			req->rq.epoch, op_name(req->op));
 		/* Wait for local epoch to be lifted */
 		req->rp.result = SD_RES_NEW_NODE_VER;
 		sleep_on_wait_queue(req);
