@@ -33,6 +33,19 @@ struct store_cache_entry {
 	 * never left holding a freed or torn-down entry.
 	 */
 	refcnt_t refcnt;
+	/*
+	 * refcnt only keeps this struct itself alive; it says nothing about
+	 * the fd/map/path fields, which multiple concurrent holders of the
+	 * same entry (e.g. two writers to different offsets of the same
+	 * object) all read and mutate. Without this lock, one thread's
+	 * store_cache_cleanup() (munmap()+close()) can run concurrently with
+	 * another thread's in-flight memcpy() into that same mapping --
+	 * observed as a segfault in default_write() once real write
+	 * concurrency was enabled. Held across the entire fd-resolve/mmap/
+	 * actual-I/O sequence in default_write()/default_read()/
+	 * default_exist(), not just around individual field accesses.
+	 */
+	struct sd_mutex lock;
 };
 
 static struct rb_root store_cache_root = RB_ROOT;
@@ -66,6 +79,7 @@ static void store_cache_put(struct store_cache_entry *entry)
 {
 	if (refcount_dec(&entry->refcnt) == 0) {
 		store_cache_cleanup(entry);
+		sd_destroy_mutex(&entry->lock);
 		free(entry);
 	}
 }
@@ -87,6 +101,7 @@ static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
 static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 {
 	struct store_cache_entry *entry, *new = xzalloc(sizeof(*new));
+	pthread_mutexattr_t attr;
 
 	if (!new)
 		return NULL;
@@ -95,6 +110,15 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 	new->fd = -1;
 	new->size = get_store_objsize(oid);
 	new->map = MAP_FAILED;
+	/*
+	 * Recursive: default_read_from_path() calls default_exist(), which
+	 * looks up (and locks) the same oid's entry again on this same
+	 * thread -- a plain mutex would self-deadlock there.
+	 */
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+	sd_init_mutex_attr(&new->lock, &attr);
+	pthread_mutexattr_destroy(&attr);
 	refcount_set(&new->refcnt, 1); /* the cache's own reference */
 	entry = rb_insert(&store_cache_root, new, node, store_cache_cmp);
 	if (entry) {
@@ -240,24 +264,29 @@ bool default_exist(uint64_t oid, uint8_t ec_index)
 	int ret;
 
 	entry = store_cache_lookup_by_oid(oid);
-	if (entry && entry->fd >= 0) {
-		struct stat st;
+	if (entry) {
+		sd_mutex_lock(&entry->lock);
+		if (entry->fd >= 0) {
+			struct stat st;
 
-		/*
-		 * A changed inode means the path was atomically replaced
-		 * (e.g. an out-of-band repair/restore), not that nothing
-		 * is there anymore -- fall through to a fresh, path-based
-		 * check instead of reporting the object missing.
-		 */
-		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
-			store_cache_cleanup(entry);
-		else {
-			store_cache_put(entry);
-			return true;
+			/*
+			 * A changed inode means the path was atomically
+			 * replaced (e.g. an out-of-band repair/restore), not
+			 * that nothing is there anymore -- fall through to a
+			 * fresh, path-based check instead of reporting the
+			 * object missing.
+			 */
+			if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
+				store_cache_cleanup(entry);
+			else {
+				sd_mutex_unlock(&entry->lock);
+				store_cache_put(entry);
+				return true;
+			}
 		}
-	}
-	if (entry)
+		sd_mutex_unlock(&entry->lock);
 		store_cache_put(entry);
+	}
 	ret = get_store_path(oid, ec_index, &path);
 	if (ret < 0)
 		return false;
@@ -328,6 +357,8 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 	entry = store_cache_lookup(oid);
 	if (!entry)
 		return SD_RES_NO_MEM;
+
+	sd_mutex_lock(&entry->lock);
 
 	if (entry->fd >= 0) {
 		struct stat st;
@@ -407,6 +438,7 @@ do_mmap:
 		ret = err_to_sderr(entry->path, oid, errno);
 	}
 out_remove:
+	sd_mutex_unlock(&entry->lock);
 	if (ret != SD_RES_SUCCESS)
 		store_cache_remove(entry);
 	else
@@ -600,6 +632,8 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 	if (!entry)
 		return SD_RES_NO_MEM;
 
+	sd_mutex_lock(&entry->lock);
+
 	if (entry->fd >= 0) {
 		struct stat st;
 		if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
@@ -618,6 +652,7 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 	if (entry->fd == -1) {
 		ret = get_store_path(oid, iocb->ec_index, &entry->path);
 		if (ret < 0) {
+			sd_mutex_unlock(&entry->lock);
 			store_cache_remove(entry);
 			return SD_RES_NO_MEM;
 		}
@@ -636,9 +671,11 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 					   iocb->ec_index, &entry->path);
 		if (ret == SD_RES_SUCCESS)
 			ret = default_read_from_path(entry, iocb);
+		sd_mutex_unlock(&entry->lock);
 		store_cache_remove(entry);
 		return ret;
 	}
+	sd_mutex_unlock(&entry->lock);
 	store_cache_put(entry);
 	return ret;
 }
