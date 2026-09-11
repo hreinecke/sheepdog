@@ -495,6 +495,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 	int desc_len = len;
 	struct nvme_ns_id_desc *desc;
 	uint8_t *desc_list_save = desc_list;
+	uint64_t nguid;
 
 	ns = lookup_namespace(ep->ctrl, nsid);
 	if (!ns)
@@ -522,10 +523,12 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 	desc->nidl = NVME_NIDT_NGUID_LEN;
 	desc_list += sizeof(*desc);
 	desc_len -= sizeof(*desc);
-	sprintf((char *)desc_list, "%08x00%06x%"PRIx64,
-		ns->subsys_id, NOFUSE_OUI,
-		vid_to_vdi_oid(ns->nsid));
-	desc_list += desc->nidl;
+	nguid = (uint64_t)ns->subsys->id << 32 | NOFUSE_OUI;
+	memcpy(desc_list, &nguid, sizeof(nguid));
+	desc_list += sizeof(nguid);
+	nguid = vid_to_vdi_oid(ns->nsid);
+	memcpy(desc_list, &nguid, sizeof(nguid));
+	desc_list += sizeof(nguid);
 	desc_len -= desc->nidl;
 
 parse_eui64:
@@ -538,7 +541,8 @@ parse_eui64:
 	desc->nidl = NVME_NIDT_EUI64_LEN;
 	desc_list += sizeof(*desc);
 	desc_len -= sizeof(*desc);
-	sprintf((char *)desc_list, "00%06x%"PRIx32, NOFUSE_OUI, ns->nsid);
+	nguid = htole64((uint64_t)NOFUSE_OUI << 32 | ns->nsid);
+	memcpy(desc_list, &nguid, sizeof(nguid));
 	desc_list += desc->nidl;
 	desc_len -= desc->nidl;
 
