@@ -91,8 +91,7 @@ static void uring_create_object_complete(struct request *req)
 	struct ep_qe *qe = req->local_done_arg;
 	uint64_t oid = req->rq.obj.oid;
 	uint64_t idx = data_oid_to_idx(oid);
-	uint32_t vid = oid_to_vid(oid);
-	off_t off = SD_INODE_HEADER_SIZE + sizeof(vid) * idx;
+	off_t off = SD_INODE_HEADER_SIZE + sizeof(qe->inode_vid_buf) * idx;
 
 	if (req->rp.result != SD_RES_SUCCESS) {
 		ctrl_err(qe->ep, "tag %d VDI oid %"PRIx64
@@ -104,7 +103,17 @@ static void uring_create_object_complete(struct request *req)
 			uring_complete(qe->ep, qe, -EIO);
 		return;
 	}
-	sd_write_object_async(vid_to_vdi_oid(qe->vid), (char *)&vid, sizeof(vid),
+	/*
+	 * qe->inode_vid_buf, not a local variable: sd_write_object_async()
+	 * only stores this pointer, it doesn't copy the bytes -- the actual
+	 * write reads it back later, asynchronously, quite possibly after
+	 * this function has already returned. See the comment on
+	 * qe->inode_vid_buf (nofuse.h).
+	 */
+	qe->inode_vid_buf = oid_to_vid(oid);
+	sd_write_object_async(vid_to_vdi_oid(qe->vid),
+			      (char *)&qe->inode_vid_buf,
+			      sizeof(qe->inode_vid_buf),
 			      off, false, uring_write_retry_done, qe);
 }
 
