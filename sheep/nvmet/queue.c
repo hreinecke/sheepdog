@@ -145,6 +145,7 @@ out_unlock:
 static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
+	int num_queues = 0;
 
 	ep->ops->destroy_queue(ep);
 
@@ -153,14 +154,16 @@ static void disconnect_queue(struct nofuse_queue *ep)
 		return;
 
 	ctrl_info(ep, "disconnect queue");
-	pthread_mutex_lock(&ctrl_list_mutex);
+	pthread_mutex_lock(&ctrl->ctrl_mutex);
 	ep->ctrl = NULL;
 	if (ctrl->ep[ep->qid]) {
 		ctrl->ep[ep->qid] = NULL;
 		ctrl->num_queues--;
+		num_queues = ctrl->num_queues;
 	}
 	pthread_mutex_unlock(&ctrl->ctrl_mutex);
-	if (!ctrl->num_queues) {
+	pthread_mutex_lock(&ctrl_list_mutex);
+	if (!num_queues) {
 		sd_debug("ctrl %u qid %d: deleting controller\n",
 			 ctrl->cntlid, ep->qid);
 		configdb_del_ctrl(ctrl->subsys->id, ctrl->cntlid);
