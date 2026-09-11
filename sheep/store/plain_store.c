@@ -114,21 +114,36 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
  * it (i.e. the caller must have obtained entry via store_cache_lookup()
  * and must not touch it again afterwards). Cleanup/free is deferred if
  * another thread is concurrently holding its own reference.
+ *
+ * Concurrent callers can race here for the same oid -- e.g. two writers
+ * to an object that doesn't exist yet both look it up, both see it's
+ * missing, and both decide to evict it. Re-searching for entry by oid
+ * under the lock (rather than erasing unconditionally) makes a second,
+ * losing caller a no-op instead of a double rb_erase() on an
+ * already-removed node, which corrupts the tree. Comparing by pointer,
+ * not just found-or-not, also covers a fresh entry for the same oid
+ * having been inserted in the meantime: that one must be left alone.
  */
 static void store_cache_remove(struct store_cache_entry *entry)
 {
+	struct store_cache_entry *found, key = { .oid = entry->oid };
+
 	sd_mutex_lock(&store_cache_lock);
-	rb_erase(&entry->node, &store_cache_root);
-	sys->cache_stat.nr_cache_entries--;
+	found = rb_search(&store_cache_root, &key, node, store_cache_cmp);
+	if (found == entry) {
+		rb_erase(&entry->node, &store_cache_root);
+		sys->cache_stat.nr_cache_entries--;
+	}
 	sd_mutex_unlock(&store_cache_lock);
 
 	/*
-	 * Drop the cache's own reference; this caller's own reference
-	 * (from the store_cache_lookup() that produced entry) is still
-	 * outstanding at this point, so this can never be the one to drop
-	 * the count to 0.
+	 * Drop the cache's own reference, but only if this call is the one
+	 * that actually evicted it. This caller's own reference (from the
+	 * store_cache_lookup() that produced entry) is still outstanding at
+	 * this point, so this can never be the one to drop the count to 0.
 	 */
-	refcount_dec(&entry->refcnt);
+	if (found == entry)
+		refcount_dec(&entry->refcnt);
 	store_cache_put(entry);
 }
 
