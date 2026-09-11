@@ -630,34 +630,9 @@ static int create_work_queues(void)
 	return 0;
 }
 
-/*
- * FIXME: Teach sheep handle EMFILE gracefully.
- *
- * For now we only set a large enough value to run sheep safely.
- *
- * We just estimate we at most run 100 VMs for each node and each VM consumes 10
- * FDs at peak rush hour.
- */
-#define SD_RLIM_NOFILE (SD_MAX_NODES * 100 * 10)
-
 static void check_host_env(void)
 {
 	struct rlimit r;
-
-	if (getrlimit(RLIMIT_NOFILE, &r) < 0)
-		sd_err("failed to get nofile %m");
-	else if (r.rlim_cur < SD_RLIM_NOFILE) {
-		r.rlim_cur = SD_RLIM_NOFILE;
-		r.rlim_max = SD_RLIM_NOFILE;
-		if (setrlimit(RLIMIT_NOFILE, &r) != 0) {
-			sd_err("failed to set nofile to suggested %lu, %m",
-			       r.rlim_cur);
-			sd_err("please increase nofile via sysctl fs.nr_open");
-		} else {
-			sd_info("allowed open files set to suggested %lu",
-				r.rlim_cur);
-		}
-	}
 
 	if (getrlimit(RLIMIT_CORE, &r) < 0)
 		sd_debug("failed to get core %m");
