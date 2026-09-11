@@ -266,6 +266,21 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 	ctrl_info(ep, "tag %#x ccid %#x handle qe res %d",
 		  qe->tag, qe->ccid, res);
 
+	if (res == -EAGAIN) {
+		switch (qe->opcode) {
+		case nvme_cmd_read:
+			return uring_submit_read(ep, qe);
+		case nvme_cmd_write:
+			return uring_submit_write(ep, qe);
+		case nvme_cmd_dsm:
+			status = uring_submit_dsm(ep, qe);
+			goto out_rsp;
+		default:
+			status = NVME_SC_INVALID_OPCODE;
+			goto out_rsp;
+		}
+	}
+
 	if (res < 0) {
 		ctrl_err(ep, "tag %#x vdi %s failed, error %d", qe->tag,
 			 qe->opcode == nvme_cmd_write ? "write" : "read", res);
@@ -275,6 +290,7 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		return ep->ops->rma_write(ep, qe, qe->data_len);
 	}
 
+out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	set_response(&qe->resp, qe->ccid, status, true);
 	ret = ep->ops->send_rsp(ep, &qe->resp);
