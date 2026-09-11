@@ -65,6 +65,7 @@ struct wq_info {
 
 	/* protected by uatomic primitives */
 	size_t nr_queued_work;
+	size_t nr_queued_max;
 
 	/* we cannot shrink work queue till this time */
 	uint64_t tm_end_of_protection;
@@ -298,9 +299,19 @@ void queue_work(struct work_queue *q, struct work *work)
 	uatomic_inc(&wi->nr_queued_work);
 	sd_mutex_lock(&wi->pending_lock);
 
+	if (uatomic_read(&wi->nr_queued_work) > wi->nr_queued_max) {
+		wi->nr_queued_max = uatomic_read(&wi->nr_queued_work);
+		sd_err("wq %s nr_queued_max %zu (nr_threads %zu)",
+		       wi->name, wi->nr_queued_max, wi->nr_threads);
+	}
+
 	new_nr_threads = wq_need_grow(wi);
-	if (new_nr_threads > 0)
+	if (new_nr_threads > 0) {
 		create_worker_threads(wi, new_nr_threads);
+		sd_err("wq %s grew to %zu threads (nr_queued_work %d)",
+		       wi->name, wi->nr_threads,
+		       uatomic_read(&wi->nr_queued_work));
+	}
 
 	list_add_tail(&work->w_list, &wi->q.pending_list);
 	sd_mutex_unlock(&wi->pending_lock);
