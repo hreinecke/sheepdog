@@ -841,8 +841,10 @@ static int tcp_read_msg(struct nofuse_queue *ep)
 		tcp_info(ep, "read %u pdu bytes", msg_len);
 		len = ep->io_ops->io_read(ep, msg, msg_len);
 		if (len < 0) {
-			tcp_err(ep, "failed to read msg payload error %d",
-				errno);
+			if (errno != EAGAIN)
+				tcp_err(ep,
+					"failed to read msg payload error %d",
+					errno);
 			return -errno;
 		}
 		if (len == 0) {
@@ -852,8 +854,8 @@ static int tcp_read_msg(struct nofuse_queue *ep)
 		ep->recv_pdu_len += len;
 		msg_len -= len;
 		if (msg_len > 0) {
-			tcp_err(ep, "short msg payload read, %u bytes missing",
-			       msg_len);
+			tcp_info(ep, "short msg payload read, %u bytes missing",
+				 msg_len);
 			return -EAGAIN;
 		}
 		ep->recv_state = HANDLE_PDU;
