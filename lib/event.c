@@ -346,16 +346,8 @@ struct aio_op {
 	bool is_write;
 	void (*cb)(int res, void *data);
 	void *data;
-	union {
-		struct {
-			char *buf;
-			size_t len;
-		} r;
-		struct {
-			struct iovec iov[AIO_MAX_IOV];
-			int iovcnt;
-		} w;
-	};
+	struct iovec iov[AIO_MAX_IOV];
+	int iovcnt;
 };
 
 static void aio_submit(struct aio_op *op)
@@ -368,13 +360,13 @@ static void aio_submit(struct aio_op *op)
 		panic("io_uring SQ ring exhausted");
 
 	if (op->is_write)
-		io_uring_prep_writev(sqe, op->fd, op->w.iov, op->w.iovcnt, 0);
+		io_uring_prep_writev(sqe, op->fd, op->iov, op->iovcnt, 0);
 	else
 		/* MSG_WAITALL makes the kernel do our short-read retries for
 		 * us in the common case; aio_reap() below still handles a
 		 * short completion defensively. */
-		io_uring_prep_recv(sqe, op->fd, op->r.buf, op->r.len,
-				   MSG_WAITALL);
+		io_uring_prep_recv(sqe, op->fd, op->iov[0].iov_base,
+				   op->iov[0].iov_len, MSG_WAITALL);
 	io_uring_sqe_set_data(sqe, (void *)((uintptr_t)op | AIO_TAG));
 	io_uring_submit(&ring);
 	sd_mutex_unlock(&events_mutex);
@@ -389,8 +381,9 @@ void aio_read(int fd, void *buf, size_t len, void (*cb)(int, void *),
 	op->is_write = false;
 	op->cb = cb;
 	op->data = data;
-	op->r.buf = buf;
-	op->r.len = len;
+	op->iov[0].iov_base = buf;
+	op->iov[0].iov_len = len;
+	op->iovcnt = 1;
 	aio_submit(op);
 }
 
@@ -406,8 +399,8 @@ void aio_writev(int fd, const struct iovec *iov, int iovcnt,
 	op->is_write = true;
 	op->cb = cb;
 	op->data = data;
-	memcpy(op->w.iov, iov, iovcnt * sizeof(*iov));
-	op->w.iovcnt = iovcnt;
+	memcpy(op->iov, iov, iovcnt * sizeof(*iov));
+	op->iovcnt = iovcnt;
 	aio_submit(op);
 }
 
@@ -429,19 +422,18 @@ static void aio_reap(struct aio_op *op, int res)
 	}
 
 	if (!op->is_write) {
-		if ((size_t)res >= op->r.len) {
+		if ((size_t)res >= op->iov[0].iov_len) {
 			op->cb(0, op->data);
 			free(op);
 			return;
 		}
-		op->r.buf += res;
-		op->r.len -= res;
+		aio_advance_iov(op->iov, &op->iovcnt, (size_t) res);
 		aio_submit(op);
 		return;
 	}
 
-	aio_advance_iov(op->w.iov, &op->w.iovcnt, (size_t)res);
-	if (op->w.iovcnt == 0) {
+	aio_advance_iov(op->iov, &op->iovcnt, (size_t)res);
+	if (op->iovcnt == 0) {
 		op->cb(0, op->data);
 		free(op);
 		return;
