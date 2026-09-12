@@ -467,19 +467,22 @@ unsigned int nofuse_genctr(void)
 static void process_acl_event(struct nofuse_event *ev)
 {
 	if (ev->new_acl) {
-		struct sd_inode_header inode;
+		struct sd_inode *inode = xmalloc(sizeof(*inode));
 		int ret;
 
-		ret = sd_read_object(vid_to_vdi_oid(ev->vid), (char *)&inode,
-				     sizeof(inode), 0);
+		ret = sd_read_object(vid_to_vdi_oid(ev->vid), (char *)inode,
+				     sizeof(*inode), 0);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("failed to read inode of VDI %"PRIx32
 			       " for nvmet: %s", ev->vid, sd_strerror(ret));
+			free(inode);
 			return;
 		}
-		if (nvmet_register_namespace(ev->new_acl, ev->vid, &inode) < 0)
+		if (nvmet_register_namespace(ev->new_acl, ev->vid, inode) < 0) {
 			sd_err("failed to register namespace %"PRIx32
 			       " with nvmet", ev->vid);
+			free(inode);
+		}
 	} else if (nvmet_unregister_namespace(ev->old_acl, ev->vid) < 0)
 		sd_err("failed to unregister namespace %"PRIx32
 		       " with nvmet", ev->vid);
@@ -703,7 +706,7 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 }
 
 int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
-			     struct sd_inode_header *inode)
+			     struct sd_inode *inode)
 {
 	struct nofuse_namespace *ns, *new = NULL;
 	struct nofuse_subsystem *subsys;
@@ -721,19 +724,19 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 		return -EINVAL;
 	}
 	sd_debug("register namespace %06x ('%s')",
-		 nsid, inode->name);
+		 nsid, inode->header.name);
 
 	ns = xzalloc(sizeof(*ns));
 	ns->subsys = subsys;
 	ns->subsys_id = subsys_id;
 	ns->nsid = nsid;
-	ns->size = inode->vdi_size;
+	ns->size = inode->header.vdi_size;
 	ns->blksize = SECTOR_SIZE;
 	ns->readonly = false;
 	ns->enabled = true;
 	ns->ana_grpid = vnode->node->zone + 1;
-	memcpy(ns->uuid, inode->uuid, sizeof(ns->uuid));
-	ns->inode_hdr = *inode;
+	memcpy(ns->uuid, inode->header.uuid, sizeof(ns->uuid));
+	ns->inode = inode;
 	ns->ops = uring_register_ops();
 
 	subsys->nn++;
@@ -795,6 +798,7 @@ int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
 	if (ret < 0)
 		sd_warn("Failed to delete namespace '%06x'", nsid);
 	ns->subsys->nn--;
+	free(ns->inode);
 	free(ns);
 	return ret;
 }
@@ -806,7 +810,7 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 				unsigned long *vdi_deleted)
 {
 	unsigned long nsid;
-	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
+	struct sd_inode *inode = xmalloc(sizeof(*inode));
 
 	FOR_EACH_VDI(nsid, vdi_inuse) {
 		uint64_t oid;
@@ -817,20 +821,22 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 
 		oid = vid_to_vdi_oid(nsid);
 		ret = sd_read_object(oid, (char *)inode,
-				     SD_INODE_HEADER_SIZE, 0);
+				     SD_INODE_SIZE, 0);
 		if (ret != SD_RES_SUCCESS) {
 			sd_err("Failed to read inode header");
 			continue;
 		}
 
 		/* this VDI has been deleted, and no need to handle it */
-		if (inode->name[0] == '\0')
+		if (!strlen(inode->header.name))
 			continue;
 		/* We are only interested in VDIs which belong to this ACL */
-		if (vdi_is_acl(inode) || inode->acl_id != subsys_id)
+		if (vdi_is_acl(&inode->header) ||
+		    inode->header.acl_id != subsys_id)
 			continue;
 
 		nvmet_register_namespace(subsys_id, nsid, inode);
+		inode = xmalloc(sizeof(*inode));
 	}
 	free(inode);
 }

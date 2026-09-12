@@ -59,14 +59,14 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		 * on every write.
 		 */
 		if (create) {
-			if (sd_store_policy_is_hyper(&qe->ns->inode_hdr)) {
+			if (sd_store_policy_is_hyper(&qe->ns->inode->header)) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " hyper store policy not supported",
 					 qe->tag, qe->vid);
 				return NVME_SC_INTERNAL;
 			}
 			ret = sd_inode_write_vid(
-				(struct sd_inode *)&qe->ns->inode_hdr, idx,
+				qe->ns->inode, idx,
 				qe->vid, qe->vid, 0, false, false);
 			if (ret != SD_RES_SUCCESS) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
@@ -152,7 +152,7 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 		if (!nr_idx)
 			continue;
 
-		if (sd_store_policy_is_hyper(&qe->ns->inode_hdr)) {
+		if (sd_store_policy_is_hyper(&qe->ns->inode->header)) {
 			ctrl_err(ep, "dsm: VDI %"PRIx32
 				 " hyper store policy not supported",
 				 qe->vid);
