@@ -16,6 +16,12 @@
 #include "nvme.h"
 #include "ops.h"
 
+static bool is_data_obj_writeable(const struct sd_inode *inode,
+				     uint32_t idx)
+{
+	return inode->header.vdi_id == sd_inode_get_vid(inode, idx);
+}
+
 static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	int ret;
@@ -27,47 +33,31 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		uint64_t oid = vid_to_data_oid(qe->vid, idx), old_oid = 0;
+		uint32_t data_vid;
 		bool create = false;
 
-		ret = sd_write_object(oid, (char *)data, len, off, false);
-		if (ret == SD_RES_NO_OBJ) {
+		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		if (!data_vid)
 			create = true;
-			ret = sd_write_object(oid, (char *)data, len, off, true);
+		else if (!is_data_obj_writeable(qe->ns->inode, idx)) {
+			create = true;
+			old_oid = vid_to_data_oid(data_vid, idx);
 		}
+		sd_inode_set_vid(qe->ns->inode, idx, qe->ns->inode->header.vdi_id);
+		ret = sd_write_object_tgt(oid, old_oid, (char *)data, len, off,
+					  create);
 		if (ret != SD_RES_SUCCESS) {
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
 				 " off %lu size %lu write error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
 			return NVME_SC_INTERNAL;
 		}
-
-		/*
-		 * A freshly created data object is invisible to anything
-		 * that resolves objects through the inode's index (dog vdi
-		 * read/list/tree, and our own vdi_submit_read() after a
-		 * restart) until that index entry is persisted -- exactly
-		 * as dog/vdi.c:vdi_write() does via sd_inode_write_vid()
-		 * right after dog_write_object() creates the object.
-		 *
-		 * The inode header only carries persistent, immutable
-		 * per-VDI metadata (nr_copies/copy_policy/store_policy) --
-		 * never the vid mapping table itself, which is written
-		 * directly above and never read back -- so the copy taken
-		 * at registration time (nvmet_register_namespace()) is all
-		 * that's needed here; no need to read it off the wire again
-		 * on every write.
-		 */
 		if (create) {
-			if (sd_store_policy_is_hyper(&qe->ns->inode->header)) {
-				ctrl_err(ep, "tag %d VDI %"PRIx32
-					 " hyper store policy not supported",
-					 qe->tag, qe->vid);
-				return NVME_SC_INTERNAL;
-			}
-			ret = sd_inode_write_vid(
-				qe->ns->inode, idx,
-				qe->vid, qe->vid, 0, false, false);
+			ret = sd_inode_write_vid(qe->ns->inode, idx,
+						 qe->vid, qe->vid,
+						 SD_FLAG_CMD_TGT,
+						 false, false);
 			if (ret != SD_RES_SUCCESS) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " idx %"PRIx64" failed to update inode: %s",
@@ -96,9 +86,12 @@ static int vdi_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
 		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		uint32_t data_vid = sd_inode_get_vid(qe->ns->inode, idx);
 
-		ret = sd_read_object(oid, (char *)data, len, off);
-		if (ret == SD_RES_NO_OBJ) {
+		if (data_vid) {
+			oid = vid_to_data_oid(data_vid, idx);
+			ret = sd_read_object(oid, (char *)data, len, off);
+		} else {
 			memset(data, 0, len);
 			ret = SD_RES_SUCCESS;
 		}

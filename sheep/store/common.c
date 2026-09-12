@@ -549,7 +549,8 @@ int init_global_pathnames(const char *d, char *argp)
 	return 0;
 }
 
-static int __sd_write_object(uint64_t oid, char *data, unsigned int datalen,
+static int __sd_write_object(uint64_t oid, uint64_t cow_oid,
+			     char *data, unsigned int datalen,
 			     uint64_t offset, bool create, uint16_t flags)
 {
 	struct sd_req hdr;
@@ -563,6 +564,7 @@ static int __sd_write_object(uint64_t oid, char *data, unsigned int datalen,
 	hdr.data_length = datalen;
 
 	hdr.obj.oid = oid;
+	hdr.obj.cow_oid = oid;
 	hdr.obj.offset = offset;
 
 	ret = exec_local_req(&hdr, data);
@@ -576,14 +578,22 @@ static int __sd_write_object(uint64_t oid, char *data, unsigned int datalen,
 int sd_write_object(uint64_t oid, char *data, unsigned int datalen,
 		    uint64_t offset, bool create)
 {
-	return __sd_write_object(oid, data, datalen, offset, create, 0);
+	return __sd_write_object(oid, 0, data, datalen, offset, create, 0);
 }
 
 int sd_write_object_fwd(uint64_t oid, char *data, unsigned int datalen,
 			uint64_t offset, bool create)
 {
-	return __sd_write_object(oid, data, datalen, offset, create,
+	return __sd_write_object(oid, 0, data, datalen, offset, create,
 				 SD_FLAG_CMD_FWD);
+}
+
+int sd_write_object_tgt(uint64_t oid, uint64_t cow_oid,
+			char *data, unsigned int datalen,
+			uint64_t offset, bool create)
+{
+	return __sd_write_object(oid, cow_oid, data, datalen, offset,
+				 create, SD_FLAG_CMD_TGT);
 }
 
 void sd_write_object_async(uint64_t oid, char *data, unsigned int datalen,

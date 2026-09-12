@@ -737,7 +737,11 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 	ns->ana_grpid = vnode->node->zone + 1;
 	memcpy(ns->uuid, inode->header.uuid, sizeof(ns->uuid));
 	ns->inode = inode;
+#ifdef HAVE_IO_URING
 	ns->ops = uring_register_ops();
+#else
+	ns->ops = vdi_register_ops();
+#endif
 
 	subsys->nn++;
 	sd_mutex_lock(&this_ctx->ns_lock);

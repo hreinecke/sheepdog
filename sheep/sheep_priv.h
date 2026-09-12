@@ -536,6 +536,9 @@ int sd_write_object(uint64_t oid, char *data, unsigned int datalen,
 		    uint64_t offset, bool create);
 int sd_write_object_fwd(uint64_t oid, char *data, unsigned int datalen,
 			uint64_t offset, bool create);
+int sd_write_object_tgt(uint64_t oid, uint64_t cow_oid,
+			char *data, unsigned int datalen,
+			uint64_t offset, bool create);
 int sd_read_object(uint64_t oid, char *data, unsigned int datalen,
 		   uint64_t offset);
 int sd_read_object_fwd(uint64_t oid, char *data, unsigned int datalen,
