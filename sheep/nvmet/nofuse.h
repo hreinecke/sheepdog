@@ -166,6 +166,7 @@ struct nofuse_namespace {
 	bool readonly;
 	bool enabled;
 	struct sd_inode *inode;
+	struct sd_mutex inode_lock;
 };
 
 struct nofuse_port {

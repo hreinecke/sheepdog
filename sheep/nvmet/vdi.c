@@ -16,12 +16,6 @@
 #include "nvme.h"
 #include "ops.h"
 
-static bool is_data_obj_writeable(const struct sd_inode *inode,
-				     uint32_t idx)
-{
-	return inode->header.vdi_id == sd_inode_get_vid(inode, idx);
-}
-
 static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	int ret;
@@ -34,17 +28,21 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
 		uint64_t oid = vid_to_data_oid(qe->vid, idx), old_oid = 0;
-		uint32_t data_vid;
+		uint32_t inode_vid, data_vid;
 		bool create = false;
+		bool is_writeable;
 
+		sd_mutex_lock(&qe->ns->inode_lock);
+		inode_vid = qe->ns->inode->header.vdi_id;
 		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		is_writeable = (inode_vid == data_vid);
+		sd_mutex_unlock(&qe->ns->inode_lock);
 		if (!data_vid)
 			create = true;
-		else if (!is_data_obj_writeable(qe->ns->inode, idx)) {
+		else if (!is_writeable) {
 			create = true;
 			old_oid = vid_to_data_oid(data_vid, idx);
 		}
-		sd_inode_set_vid(qe->ns->inode, idx, qe->ns->inode->header.vdi_id);
 		ret = sd_write_object_tgt(oid, old_oid, (char *)data, len, off,
 					  create);
 		if (ret != SD_RES_SUCCESS) {
@@ -54,10 +52,15 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 			return NVME_SC_INTERNAL;
 		}
 		if (create) {
+			sd_mutex_lock(&qe->ns->inode_lock);
+			sd_inode_set_vid(qe->ns->inode, idx, inode_vid);
 			ret = sd_inode_write_vid(qe->ns->inode, idx,
 						 qe->vid, qe->vid,
 						 SD_FLAG_CMD_TGT,
 						 false, false);
+			if (ret != SD_RES_SUCCESS)
+				sd_inode_set_vid(qe->ns->inode, idx, 0);
+			sd_mutex_unlock(&qe->ns->inode_lock);
 			if (ret != SD_RES_SUCCESS) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " idx %"PRIx64" failed to update inode: %s",
@@ -86,8 +89,11 @@ static int vdi_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
 		uint64_t oid = vid_to_data_oid(qe->vid, idx);
-		uint32_t data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		uint32_t data_vid;
 
+		sd_mutex_lock(&qe->ns->inode_lock);
+		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		sd_mutex_unlock(&qe->ns->inode_lock);
 		if (data_vid) {
 			oid = vid_to_data_oid(data_vid, idx);
 			ret = sd_read_object(oid, (char *)data, len, off);
