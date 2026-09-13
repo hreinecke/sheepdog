@@ -141,45 +141,43 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 	for (i = 0; i < nr_ranges; i++) {
 		uint64_t slba = le64toh(range[i].slba);
 		uint32_t nlb = le32toh(range[i].nlb);
-		uint64_t start = slba * qe->ns->blksize;
-		uint64_t end = start + (uint64_t)nlb * qe->ns->blksize;
-		uint64_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
-		uint64_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
-		uint64_t nr_idx = idx_end - idx;
-		uint32_t *zero;
+		size_t start = slba * qe->ns->blksize;
+		size_t end = start + (uint64_t)nlb * qe->ns->blksize;
+		uint32_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		uint32_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		uint32_t nr_idx = idx_end - idx;
+		off_t inode_off;
 
 		if (!nr_idx)
 			continue;
 
-		if (sd_store_policy_is_hyper(&qe->ns->inode->header)) {
-			ctrl_err(ep, "dsm: VDI %"PRIx32
-				 " hyper store policy not supported",
-				 qe->vid);
-			return NVME_SC_INTERNAL;
+		/* Clean the entire range in the inode */
+		sd_mutex_lock(&qe->ns->inode_lock);
+		for (;idx < idx_end; idx++) {
+			uint32_t data_vid =
+				sd_inode_get_vid(qe->ns->inode, idx);
+			if (data_vid)
+				break;
 		}
-
-		/*
-		 * Clear the inode's index entries for the whole span before
-		 * removing the objects they point to -- the same batched
-		 * zero-fill dog/vdi.c:vdi_reclaim() uses. A crash between
-		 * the two leaves at worst an unread orphan object; doing it
-		 * in the other order would leave the index still claiming
-		 * an object exists after it's gone, breaking every future
-		 * read of that idx (dog vdi read/list/tree included).
-		 */
-		zero = xzalloc(nr_idx * sizeof(*zero));
-		ret = sd_write_object(vid_to_vdi_oid(qe->vid), (char *)zero,
-				      nr_idx * sizeof(*zero),
-				      offsetof(struct sd_inode, data_vdi_id[idx]),
-				      false);
-		free(zero);
+		if (idx < idx_end) {
+			sd_mutex_unlock(&qe->ns->inode_lock);
+			continue;
+		}
+		ret = sd_inode_set_vid_range(qe->ns->inode, idx, idx_end, 0);
+		if (ret == SD_RES_SUCCESS) {
+			inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
+			ret = sd_write_object(vid_to_vdi_oid(qe->vid),
+					      (char *)qe->ns->inode + inode_off,
+					      nr_idx * sizeof(uint32_t),
+					      inode_off, false);
+		}
+		sd_mutex_unlock(&qe->ns->inode_lock);
 		if (ret != SD_RES_SUCCESS) {
-			ctrl_err(ep, "dsm: failed to update inode for "
-				 "discarding idx %"PRIu64"-%"PRIu64": %s",
+			ctrl_err(ep, "dsm: failed to write inode for "
+				 "discarding idx %"PRIu32"-%"PRIu32": %s",
 				 idx, idx_end, sd_strerror(ret));
 			return NVME_SC_INTERNAL;
 		}
-
 		for (; idx < idx_end; idx++) {
 			uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
