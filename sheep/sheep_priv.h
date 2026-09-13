@@ -543,7 +543,8 @@ int sd_read_object(uint64_t oid, char *data, unsigned int datalen,
 		   uint64_t offset);
 int sd_read_object_fwd(uint64_t oid, char *data, unsigned int datalen,
 		   uint64_t offset);
-void sd_write_object_async(uint64_t oid, char *data, unsigned int datalen,
+void sd_write_object_async(uint64_t oid, uint64_t cow_oid,
+			   char *data, unsigned int datalen,
 			   uint64_t offset, bool create,
 			   local_req_cb_t done, void *arg);
 void sd_read_object_async(uint64_t oid, char *data, unsigned int datalen,

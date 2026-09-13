@@ -86,49 +86,28 @@ static void uring_write_retry_done(struct request *req)
 		uring_complete(qe->ep, qe, ret);
 }
 
-static void uring_create_object_complete(struct request *req)
-{
-	struct ep_qe *qe = req->local_done_arg;
-	uint64_t oid = req->rq.obj.oid;
-	uint64_t idx = data_oid_to_idx(oid);
-	off_t off = SD_INODE_HEADER_SIZE + sizeof(qe->inode_vid_buf) * idx;
-
-	if (req->rp.result != SD_RES_SUCCESS) {
-		ctrl_err(qe->ep, "tag %d VDI oid %"PRIx64
-			 " off %u size %u write error %s",
-			 qe->tag, oid, req->rq.obj.offset,
-			 req->data_length, sd_strerror(req->rp.result));
-		qe->async_result = req->rp.result;
-		if (refcount_dec(&qe->async_pending) == 0)
-			uring_complete(qe->ep, qe, -EIO);
-		return;
-	}
-	/*
-	 * qe->inode_vid_buf, not a local variable: sd_write_object_async()
-	 * only stores this pointer, it doesn't copy the bytes -- the actual
-	 * write reads it back later, asynchronously, quite possibly after
-	 * this function has already returned. See the comment on
-	 * qe->inode_vid_buf (nofuse.h).
-	 */
-	qe->inode_vid_buf = oid_to_vid(oid);
-	sd_write_object_async(vid_to_vdi_oid(qe->vid),
-			      (char *)&qe->inode_vid_buf,
-			      sizeof(qe->inode_vid_buf),
-			      off, false, uring_write_retry_done, qe);
-}
-
 static void uring_write_object_complete(struct request *req)
 {
 	struct ep_qe *qe = req->local_done_arg;
 
-	if (req->rp.result == SD_RES_NO_OBJ) {
-		sd_write_object_async(req->rq.obj.oid, req->data,
-				      req->data_length,
-				      req->rq.obj.offset, true,
-				      uring_create_object_complete, qe);
-		return;
-	}
+	if (req->rq.opcode == SD_OP_CREATE_AND_WRITE_OBJ) {
+		uint64_t idx = data_oid_to_idx(req->rq.obj.oid);
+		uint32_t inode_vid;
+		int ret;
 
+		sd_mutex_lock(&qe->ns->inode_lock);
+		inode_vid = qe->ns->inode->header.vdi_id;
+		sd_inode_set_vid(qe->ns->inode, idx, inode_vid);
+		ret = sd_inode_write_vid(qe->ns->inode, idx,
+					 inode_vid, inode_vid,
+					 SD_FLAG_CMD_TGT,
+					 false, false);
+		if (ret != SD_RES_SUCCESS) {
+			sd_inode_set_vid(qe->ns->inode, idx, 0);
+			req->rp.result = ret;
+		}
+		sd_mutex_unlock(&qe->ns->inode_lock);
+	}
 	uring_write_retry_done(req);
 }
 
@@ -140,7 +119,7 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 
 	if (!data_len) {
 		uring_complete(ep, qe, 0);
-		return 0;
+		return NVME_SC_SUCCESS;
 	}
 
 	refcount_set(&qe->async_pending,
@@ -152,16 +131,31 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		uint64_t oid, old_oid = 0;
+		uint32_t inode_vid, data_vid;
+		bool create = false;
+		bool is_writeable;
 
-		sd_write_object_async(oid, (char *)data, len,
-				      off, false,
+		sd_mutex_lock(&qe->ns->inode_lock);
+		inode_vid = qe->ns->inode->header.vdi_id;
+		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		is_writeable = (inode_vid == data_vid);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (!data_vid)
+			create = true;
+		else if (!is_writeable) {
+			create = true;
+			old_oid = vid_to_data_oid(data_vid, idx);
+		}
+		oid = vid_to_data_oid(inode_vid, idx);
+		sd_write_object_async(oid, old_oid, (char *)data, len,
+				      off, create,
 				      uring_write_object_complete, qe);
 		data += len;
 		pos += len;
 		data_len -= len;
 	}
-	return 0;
+	return -EAGAIN;
 }
 
 static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
@@ -169,10 +163,11 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 	uint8_t *data = qe->data;
 	size_t data_len = qe->data_len;
 	off_t pos = qe->data_pos;
+	int ret = NVME_SC_SUCCESS;
 
 	if (!data_len) {
 		uring_complete(ep, qe, 0);
-		return 0;
+		return ret;
 	}
 
 	refcount_set(&qe->async_pending,
@@ -181,18 +176,29 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 	qe->async_result = SD_RES_SUCCESS;
 
 	while (data_len) {
-		unsigned int idx = pos / SD_DATA_OBJ_SIZE;
+		uint32_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		uint64_t oid;
+		uint32_t data_vid;
 
-		sd_read_object_async(oid, (char *)data, len,
-				     off, uring_io_done, qe);
+		sd_mutex_lock(&qe->ns->inode_lock);
+		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (data_vid) {
+			oid = vid_to_data_oid(data_vid, idx);
+			sd_read_object_async(oid, (char *)data, len,
+					     off, uring_io_done, qe);
+			ret = -EAGAIN;
+		} else {
+			/* Todo: re-check inode */
+			memset(data, 0, len);
+		}
 		data += len;
 		pos += len;
 		data_len -= len;
 	}
-	return 0;
+	return ret;
 }
 
 /*
@@ -228,28 +234,55 @@ static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 	for (i = 0; i < nr_ranges; i++) {
 		uint64_t slba = le64toh(range[i].slba);
 		uint32_t nlb = le32toh(range[i].nlb);
-		uint64_t start = slba * qe->ns->blksize;
-		uint64_t end = start + (uint64_t)nlb * qe->ns->blksize;
-		uint64_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
-		uint64_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		size_t start = slba * qe->ns->blksize;
+		size_t end = start + (uint64_t)nlb * qe->ns->blksize;
+		uint32_t idx = round_up(start, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
+		uint32_t idx_end = round_down(end, SD_DATA_OBJ_SIZE) / SD_DATA_OBJ_SIZE;
 		int nr_idx = idx_end - idx;
-		uint32_t *zero;
+		off_t inode_off;
 
 		if (!nr_idx)
 			continue;
-		zero = xzalloc(nr_idx * sizeof(*zero));
-		ret = sd_write_object(vid_to_vdi_oid(qe->vid), (char *)zero,
-				      nr_idx * sizeof(*zero),
-				      offsetof(struct sd_inode, data_vdi_id[idx]),
-				      false);
-		free(zero);
+		ret = sd_inode_set_vid_range(qe->ns->inode, idx, idx_end, 0);
+		if (ret == SD_RES_SUCCESS) {
+			inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
+			ret = sd_write_object(vid_to_vdi_oid(qe->vid),
+					      (char *)qe->ns->inode + inode_off,
+					      nr_idx * sizeof(uint32_t),
+					      inode_off, false);
+		}
+		sd_mutex_unlock(&qe->ns->inode_lock);
 		if (ret != SD_RES_SUCCESS) {
-			ctrl_err(ep, "dsm: failed to update inode for "
-				 "discarding idx %"PRIu64"-%"PRIu64": %s",
+			ctrl_err(ep, "dsm: failed to write inode for "
+				 "discarding idx %"PRIu32"-%"PRIu32": %s",
 				 idx, idx_end, sd_strerror(ret));
 			return NVME_SC_INTERNAL;
 		}
+		for (; idx < idx_end; idx++) {
+			uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
+			ret = sd_remove_object(oid);
+			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
+				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
+					 oid, sd_strerror(ret));
+				return NVME_SC_INTERNAL;
+			}
+		}
+		ret = sd_inode_set_vid_range(qe->ns->inode, idx, idx_end, 0);
+		if (ret == SD_RES_SUCCESS) {
+			inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
+			ret = sd_write_object(vid_to_vdi_oid(qe->vid),
+					      (char *)qe->ns->inode + inode_off,
+					      nr_idx * sizeof(uint32_t),
+					      inode_off, false);
+		}
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (ret != SD_RES_SUCCESS) {
+			ctrl_err(ep, "dsm: failed to write inode for "
+				 "discarding idx %"PRIu32"-%"PRIu32": %s",
+				 idx, idx_end, sd_strerror(ret));
+			return NVME_SC_INTERNAL;
+		}
 		for (; idx < idx_end; idx++) {
 			uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
@@ -271,9 +304,16 @@ static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 {
 	int status = 0, ret;
+	int pending = refcount_read(&qe->async_pending);
 
-	ctrl_info(ep, "tag %#x ccid %#x handle qe res %d",
-		  qe->tag, qe->ccid, res);
+	ctrl_info(ep, "tag %#x ccid %#x handle qe res %d pending %u res %d",
+		  qe->tag, qe->ccid, res, pending, qe->async_result);
+
+	if (!pending) {
+		if (qe->async_result != SD_RES_SUCCESS)
+			status = NVME_SC_INTERNAL;
+		goto out_rsp;
+	}
 
 	if (res == -EAGAIN) {
 		switch (qe->opcode) {
