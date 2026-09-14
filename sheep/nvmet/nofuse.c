@@ -30,9 +30,15 @@
 unsigned long genctr;
 
 int stopped;
+#ifdef DEBUG
+bool tcp_debug = true;
+bool cmd_debug = true;
+bool port_debug = true;
+#else
 bool tcp_debug;
 bool cmd_debug;
 bool port_debug;
+#endif
 
 struct nofuse_context {
 	struct rb_root vroot;
