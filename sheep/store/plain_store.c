@@ -680,27 +680,60 @@ int default_read(uint64_t oid, const struct siocb *iocb)
 	return ret;
 }
 
+/*
+ * Two concurrent local writes that both see oid as not-yet-created (e.g.
+ * two unaligned partial writes landing in the same not-yet-written data
+ * object) both arrive here with create=true. Previously this evicted
+ * (rather than looked up) the cache entry, so the two callers never
+ * shared anything to serialize on: they raced on the same fixed
+ * tmp-file path, and whichever finished last silently recreated the
+ * whole object from an empty temporary file, wiping out everything the
+ * other had just written outside of its own offset/length.
+ *
+ * Looking the entry up instead keeps it in store_cache_root (indexed by
+ * oid, so every concurrent caller for the same oid gets the same
+ * entry), and holding entry->lock across the whole operation makes the
+ * second caller block until the first is done. Re-checking existence
+ * once inside the lock lets that second caller detect it lost the race
+ * and fall through to a plain write into the now-existing object
+ * instead of recreating it.
+ */
 int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 {
-	struct store_cache_entry *entry = store_cache_remove_by_oid(oid);
-	char *path, *tmp_path, *dir;
-	int flags = prepare_iocb(oid, iocb, true);
-	int ret, fd;
+	struct store_cache_entry *entry = store_cache_lookup(oid);
+	char *path = NULL, *tmp_path = NULL, *dir;
+	int flags, ret, fd = -1;
 	uint32_t len = iocb->length;
 	uint32_t object_size = 0;
 	size_t obj_size;
 	uint64_t offset = iocb->offset;
 
-	sd_debug("%016"PRIx64, oid);
-	if (entry)
-		store_cache_put(entry);
-	ret = get_store_path(oid, iocb->ec_index, &path);
-	if (ret < 0)
+	if (!entry)
 		return SD_RES_NO_MEM;
+
+	sd_debug("%016"PRIx64, oid);
+
+	ret = get_store_path(oid, iocb->ec_index, &path);
+	if (ret < 0) {
+		ret = SD_RES_NO_MEM;
+		goto out_put;
+	}
+
+	sd_mutex_lock(&entry->lock);
+
+	if (md_exist(oid, iocb->ec_index, path)) {
+		sd_mutex_unlock(&entry->lock);
+		store_cache_put(entry);
+		free(path);
+		return default_write(oid, iocb);
+	}
+
+	flags = prepare_iocb(oid, iocb, true);
+
 	ret = get_store_tmp_path(oid, iocb->ec_index, &tmp_path);
 	if (ret < 0) {
-		free(path);
-		return SD_RES_NO_MEM;
+		ret = SD_RES_NO_MEM;
+		goto out_unlock;
 	}
 
 	if (uatomic_is_true(&sys->use_journal) &&
@@ -716,10 +749,8 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	fd = open(tmp_path, flags, sd_def_fmode);
 	if (fd < 0) {
 		sd_err("failed to open %s: %m", tmp_path);
-		free(tmp_path);
 		ret = err_to_sderr(path, oid, errno);
-		free(path);
-		return ret;
+		goto out_unlock;
 	}
 	sys->cache_stat.nr_open++;
 
@@ -736,7 +767,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 			ret = prealloc(fd, obj_size);
 		if (ret < 0) {
 			ret = err_to_sderr(path, oid, errno);
-			goto out;
+			goto out_unlink;
 		}
 	}
 
@@ -744,23 +775,23 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	if (ret != len) {
 		sd_err("failed to write object. %m");
 		ret = err_to_sderr(path, oid, errno);
-		goto out;
+		goto out_unlink;
 	}
 
 	ret = rename(tmp_path, path);
 	if (ret < 0) {
 		sd_err("failed to rename %s to %s: %m", tmp_path, path);
 		ret = err_to_sderr(path, oid, errno);
-		goto out;
+		goto out_unlink;
 	}
 
 	close(fd);
 	sys->cache_stat.nr_close++;
+	fd = -1;
 	if (uatomic_is_true(&sys->use_journal) || sys->nosync == true) {
 		objlist_cache_insert(oid);
-		free(tmp_path);
-		free(path);
-		return SD_RES_SUCCESS;
+		ret = SD_RES_SUCCESS;
+		goto out_unlock;
 	}
 
 	/* dirname() may modify its argument, and tmp_path is longer than path */
@@ -769,35 +800,37 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	fd = open(dir, O_DIRECTORY | O_RDONLY);
 	if (fd < 0) {
 		sd_err("failed to open directory %s: %m", dir);
-		free(tmp_path);
 		ret = err_to_sderr(path, oid, errno);
-		free(path);
-		return ret;
+		goto out_unlock;
 	}
 	sys->cache_stat.nr_open++;
 	if (fsync(fd) != 0) {
 		sd_err("failed to write directory %s: %m", dir);
-		free(tmp_path);
 		ret = err_to_sderr(path, oid, errno);
 		close(fd);
 		sys->cache_stat.nr_close++;
+		fd = -1;
 		if (unlink(path) != 0)
 			sd_err("failed to unlink %s: %m", path);
-		free(path);
-		return ret;
+		goto out_unlock;
 	}
 	close(fd);
 	sys->cache_stat.nr_close++;
+	fd = -1;
 	objlist_cache_insert(oid);
-	free(tmp_path);
-	free(path);
-	return SD_RES_SUCCESS;
+	ret = SD_RES_SUCCESS;
+	goto out_unlock;
 
-out:
+out_unlink:
 	if (unlink(tmp_path) != 0)
 		sd_err("failed to unlink %s: %m", tmp_path);
 	close(fd);
 	sys->cache_stat.nr_close++;
+	fd = -1;
+out_unlock:
+	sd_mutex_unlock(&entry->lock);
+out_put:
+	store_cache_put(entry);
 	free(tmp_path);
 	free(path);
 	return ret;
