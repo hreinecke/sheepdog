@@ -437,7 +437,7 @@ void *queue_thread(void *arg)
 			ret = 0;
 			list_for_each_entry_safe(qe, next, &done_list, io_node) {
 				list_del(&qe->io_node);
-				ret = handle_data(ep, qe, qe->io_res);
+				ret = handle_data(ep, qe, -EAGAIN);
 			}
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;

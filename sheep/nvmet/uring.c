@@ -23,10 +23,8 @@
 #include "nvme.h"
 #include "ops.h"
 
-static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe, int res)
+static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	qe->io_res = res;
-
 	pthread_mutex_lock(&ep->io_done_lock);
 	list_add_tail(&qe->io_node, &ep->io_done_list);
 	pthread_mutex_unlock(&ep->io_done_lock);
@@ -35,26 +33,21 @@ static void uring_complete(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		ctrl_err(ep, "tag %#x eventfd_write error %d", qe->tag, errno);
 }
 
-static int uring_io_finish(struct ep_qe *qe, uint64_t oid,
-			   off_t off, size_t len, int result)
+static void uring_io_finish(struct ep_qe *qe, uint64_t oid,
+			    off_t off, size_t len, int result)
 {
-	int ret = 0;
-
 	if (result != SD_RES_SUCCESS) {
 		ctrl_err(qe->ep, "tag %d VDI oid %"PRIx64
 			 " off %lu size %lu I/O error %s",
 			 qe->tag, oid, off, len, sd_strerror(result));
 		qe->async_result = result;
-		ret = -EIO;
 	}
-	return ret;
 }
 
 /* Runs on the sheepdog main thread (put_request()). */
 static void uring_io_done(struct request *req)
 {
 	struct ep_qe *qe = req->local_done_arg;
-	int ret = 0;
 
 	if (req->rp.result == SD_RES_NO_OBJ &&
 	    req->rq.opcode == SD_OP_READ_OBJ) {
@@ -66,32 +59,40 @@ static void uring_io_done(struct request *req)
 		 */
 		memset(req->data, 0, req->data_length);
 	} else
-		ret = uring_io_finish(qe, req->rq.obj.oid,
-				      req->rq.obj.offset, req->data_length,
-				      req->rp.result);
+		uring_io_finish(qe, req->rq.obj.oid,
+				req->rq.obj.offset, req->data_length,
+				req->rp.result);
 
 	if (refcount_dec(&qe->async_pending) == 0)
-		uring_complete(qe->ep, qe, ret);
+		uring_complete(qe->ep, qe);
 }
 
 static void uring_write_retry_done(struct request *req)
 {
 	struct ep_qe *qe = req->local_done_arg;
-	int ret = uring_io_finish(qe, req->rq.obj.oid,
-				  req->rq.obj.offset,
-				  req->data_length,
-				  req->rp.result);
+
+	uring_io_finish(qe, req->rq.obj.oid,
+			req->rq.obj.offset,
+			req->data_length,
+			req->rp.result);
 
 	if (refcount_dec(&qe->async_pending) == 0)
-		uring_complete(qe->ep, qe, ret);
+		uring_complete(qe->ep, qe);
 }
 
 static void uring_write_object_complete(struct request *req)
 {
 	struct ep_qe *qe = req->local_done_arg;
+	uint64_t idx = data_oid_to_idx(req->rq.obj.oid);
 
+	if (req->rp.result != SD_RES_SUCCESS) {
+		ctrl_err(qe->ep, "tag %d VDI %"PRIx32
+			 " idx %"PRIx64" write failed: %s",
+			 qe->tag, qe->vid, idx,
+			 sd_strerror(req->rp.result));
+		goto out_done;
+	}
 	if (req->rq.opcode == SD_OP_CREATE_AND_WRITE_OBJ) {
-		uint64_t idx = data_oid_to_idx(req->rq.obj.oid);
 		uint32_t inode_vid;
 		int ret;
 
@@ -108,6 +109,7 @@ static void uring_write_object_complete(struct request *req)
 		}
 		sd_mutex_unlock(&qe->ns->inode_lock);
 	}
+ out_done:
 	uring_write_retry_done(req);
 }
 
@@ -117,10 +119,8 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 	size_t data_len = qe->data_len;
 	off_t pos = qe->data_pos;
 
-	if (!data_len) {
-		uring_complete(ep, qe, 0);
+	if (!data_len)
 		return NVME_SC_SUCCESS;
-	}
 
 	refcount_set(&qe->async_pending,
 		     (pos + data_len - 1) / SD_DATA_OBJ_SIZE -
@@ -165,10 +165,8 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 	off_t pos = qe->data_pos;
 	int ret = NVME_SC_SUCCESS;
 
-	if (!data_len) {
-		uring_complete(ep, qe, 0);
+	if (!data_len)
 		return ret;
-	}
 
 	refcount_set(&qe->async_pending,
 		     (pos + data_len - 1) / SD_DATA_OBJ_SIZE -
@@ -309,13 +307,12 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 	ctrl_info(ep, "tag %#x ccid %#x handle qe res %d pending %u res %d",
 		  qe->tag, qe->ccid, res, pending, qe->async_result);
 
-	if (!pending) {
-		if (qe->async_result != SD_RES_SUCCESS)
-			status = NVME_SC_INTERNAL;
-		goto out_rsp;
-	}
-
 	if (res == -EAGAIN) {
+		if (!pending) {
+			if (qe->async_result != SD_RES_SUCCESS)
+				status = NVME_SC_INTERNAL;
+			goto out_rsp;
+		}
 		switch (qe->opcode) {
 		case nvme_cmd_read:
 			return uring_submit_read(ep, qe);

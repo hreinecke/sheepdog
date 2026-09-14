@@ -96,7 +96,6 @@ struct ep_qe {
 	uint32_t inode_vid_buf;
 	refcnt_t async_pending;
 	int async_result;
-	int io_res;
 	struct list_node io_node;
 	int ccid;
 	int opcode;
