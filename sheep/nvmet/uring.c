@@ -295,23 +295,36 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		  qe->tag, qe->ccid, res, pending, qe->async_result);
 
 	if (res == -EAGAIN) {
-		if (!pending) {
-			if (qe->async_result != SD_RES_SUCCESS)
-				status = NVME_SC_INTERNAL;
+		if (!qe->async_started) {
+			qe->async_started = true;
+			switch (qe->opcode) {
+			case nvme_cmd_read:
+				ret = uring_submit_read(ep, qe);
+				break;
+			case nvme_cmd_write:
+				ret = uring_submit_write(ep, qe);
+				break;
+			case nvme_cmd_dsm:
+				ret = uring_submit_dsm(ep, qe);
+				break;
+			default:
+				ret = NVME_SC_INVALID_OPCODE;
+				break;
+			}
+			if (ret == -EAGAIN)
+				return -EAGAIN;
+			qe->async_started = false;
+			if (ret == NVME_SC_SUCCESS && qe->opcode == nvme_cmd_read)
+				return ep->ops->rma_write(ep, qe, qe->data_len);
+			status = ret;
 			goto out_rsp;
 		}
-		switch (qe->opcode) {
-		case nvme_cmd_read:
-			return uring_submit_read(ep, qe);
-		case nvme_cmd_write:
-			return uring_submit_write(ep, qe);
-		case nvme_cmd_dsm:
-			status = uring_submit_dsm(ep, qe);
-			goto out_rsp;
-		default:
-			status = NVME_SC_INVALID_OPCODE;
-			goto out_rsp;
-		}
+		/* All of this command's sub-I/Os have completed. */
+		if (qe->async_result != SD_RES_SUCCESS)
+			status = NVME_SC_INTERNAL;
+		else if (qe->opcode == nvme_cmd_read)
+			return ep->ops->rma_write(ep, qe, qe->data_len);
+		goto out_rsp;
 	}
 
 	if (res < 0) {

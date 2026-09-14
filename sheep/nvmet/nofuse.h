@@ -96,6 +96,14 @@ struct ep_qe {
 	uint32_t inode_vid_buf;
 	refcnt_t async_pending;
 	int async_result;
+	/*
+	 * Distinguishes the initial kickoff call into ns_handle_qe() (res
+	 * == -EAGAIN, nothing submitted yet) from the later completion
+	 * call once all of a command's sub-I/Os have finished (also res
+	 * == -EAGAIN, async_pending back down to 0) -- async_pending
+	 * alone can't tell the two apart, since it reads 0 in both cases.
+	 */
+	bool async_started;
 	struct list_node io_node;
 	int ccid;
 	int opcode;

@@ -264,6 +264,7 @@ static void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 
 	qe->busy = false;
 	qe->aen = false;
+	qe->async_started = false;
 	ep->qes_busy--;
 	if (qe->data) {
 		free(qe->data);
