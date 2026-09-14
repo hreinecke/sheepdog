@@ -241,30 +241,17 @@ static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 
 		if (!nr_idx)
 			continue;
-		ret = sd_inode_set_vid_range(qe->ns->inode, idx, idx_end, 0);
-		if (ret == SD_RES_SUCCESS) {
-			inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
-			ret = sd_write_object(vid_to_vdi_oid(qe->vid),
-					      (char *)qe->ns->inode + inode_off,
-					      nr_idx * sizeof(uint32_t),
-					      inode_off, false);
-		}
-		sd_mutex_unlock(&qe->ns->inode_lock);
-		if (ret != SD_RES_SUCCESS) {
-			ctrl_err(ep, "dsm: failed to write inode for "
-				 "discarding idx %"PRIu32"-%"PRIu32": %s",
-				 idx, idx_end, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
-		}
-		for (; idx < idx_end; idx++) {
-			uint64_t oid = vid_to_data_oid(qe->vid, idx);
 
-			ret = sd_remove_object(oid);
-			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
-				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
-					 oid, sd_strerror(ret));
-				return NVME_SC_INTERNAL;
-			}
+		/* Clean the entire range in the inode */
+		sd_mutex_lock(&qe->ns->inode_lock);
+		for (; idx < idx_end; idx++) {
+			uint32_t data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+			if (data_vid)
+				break;
+		}
+		if (idx == idx_end) {
+			sd_mutex_unlock(&qe->ns->inode_lock);
+			continue;
 		}
 		ret = sd_inode_set_vid_range(qe->ns->inode, idx, idx_end, 0);
 		if (ret == SD_RES_SUCCESS) {
