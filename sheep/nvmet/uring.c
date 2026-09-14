@@ -80,11 +80,157 @@ static void uring_write_retry_done(struct request *req)
 		uring_complete(qe->ep, qe);
 }
 
+/*
+ * A write to this VDI's inode or data objects can come back with
+ * SD_RES_INODE_INVALIDATED: another node sharing this VDI (nofuse
+ * exposes the same VDI through every sheep node for NVMe multipath)
+ * created a data object of its own and invalidated our cached inode
+ * via the cluster-wide coherence protocol (sheep/vdi.c,
+ * invalidate_other_nodes()/is_refresh_required()). The protocol
+ * requires re-reading the whole inode (a "refresh read": the VDI
+ * object, offset 0, length exactly covering the full data_vdi_id[]
+ * array -- see is_inode_refresh_req() in sheep/gateway.c) before
+ * retrying; that read both clears our invalidated state
+ * (validate_myself()) and gives us the current data_vdi_id[] map.
+ */
+struct uring_refresh_ctx {
+	struct ep_qe *qe;
+	uint64_t idx;
+	off_t off;
+	char *data;
+	size_t len;
+	bool is_inode_write;
+};
+
+static void uring_inode_write_done(struct request *req);
+static void uring_write_object_complete(struct request *req);
+
+/* Runs on the sheepdog main thread (put_request()). */
+static void uring_refresh_done(struct request *req)
+{
+	struct uring_refresh_ctx *ctx = req->local_done_arg;
+	struct ep_qe *qe = ctx->qe;
+
+	if (req->rp.result != SD_RES_SUCCESS) {
+		ctrl_err(qe->ep, "tag %d VDI %"PRIx32" inode refresh failed: %s",
+			 qe->tag, qe->vid, sd_strerror(req->rp.result));
+		qe->async_result = req->rp.result;
+		free(req->data);
+		free(ctx);
+		if (refcount_dec(&qe->async_pending) == 0)
+			uring_complete(qe->ep, qe);
+		return;
+	}
+
+	sd_mutex_lock(&qe->ns->inode_lock);
+	memcpy(qe->ns->inode, req->data, data_vid_offset(SD_INODE_DATA_INDEX));
+	sd_mutex_unlock(&qe->ns->inode_lock);
+	free(req->data);
+
+	if (ctx->is_inode_write) {
+		off_t inode_off = offsetof(struct sd_inode, data_vdi_id[ctx->idx]);
+
+		qe->inode_vid_buf = qe->vid;
+		sd_write_object_async(vid_to_vdi_oid(qe->vid), 0,
+				      (char *)&qe->inode_vid_buf,
+				      sizeof(qe->inode_vid_buf),
+				      inode_off, false,
+				      uring_inode_write_done, qe);
+	} else {
+		uint64_t oid, old_oid = 0;
+		uint32_t inode_vid, data_vid;
+		bool create = false, is_writeable;
+
+		sd_mutex_lock(&qe->ns->inode_lock);
+		inode_vid = qe->ns->inode->header.vdi_id;
+		data_vid = sd_inode_get_vid(qe->ns->inode, ctx->idx);
+		is_writeable = (inode_vid == data_vid);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (!data_vid)
+			create = true;
+		else if (!is_writeable) {
+			create = true;
+			old_oid = vid_to_data_oid(data_vid, ctx->idx);
+		}
+		oid = vid_to_data_oid(inode_vid, ctx->idx);
+		sd_write_object_async(oid, old_oid, ctx->data, ctx->len,
+				      ctx->off, create,
+				      uring_write_object_complete, qe);
+	}
+	free(ctx);
+}
+
+static void uring_refresh_and_retry(struct ep_qe *qe, uint64_t idx, off_t off,
+				    char *data, size_t len, bool is_inode_write)
+{
+	struct uring_refresh_ctx *ctx = xmalloc(sizeof(*ctx));
+	size_t refresh_len = data_vid_offset(SD_INODE_DATA_INDEX);
+	char *buf = xmalloc(refresh_len);
+
+	ctx->qe = qe;
+	ctx->idx = idx;
+	ctx->off = off;
+	ctx->data = data;
+	ctx->len = len;
+	ctx->is_inode_write = is_inode_write;
+
+	/*
+	 * No SD_FLAG_CMD_TGT: this read must go through even while we're
+	 * marked invalidated (that's the whole point), and
+	 * is_inode_refresh_req() doesn't require the flag to run
+	 * validate_myself() on success.
+	 */
+	sd_read_object_async(vid_to_vdi_oid(qe->vid), buf, refresh_len, 0,
+			     uring_refresh_done, ctx);
+}
+
+/*
+ * Runs on the sheepdog main thread (put_request()), once the async
+ * inode-index write kicked off by uring_write_object_complete() below
+ * has finished.
+ */
+static void uring_inode_write_done(struct request *req)
+{
+	struct ep_qe *qe = req->local_done_arg;
+	uint64_t idx = (req->rq.obj.offset -
+			offsetof(struct sd_inode, data_vdi_id)) /
+		       sizeof(uint32_t);
+
+	if (req->rp.result == SD_RES_INODE_INVALIDATED) {
+		uring_refresh_and_retry(qe, idx, 0, NULL, 0, true);
+		return;
+	}
+	if (req->rp.result != SD_RES_SUCCESS) {
+		ctrl_err(qe->ep, "tag %d VDI %"PRIx32
+			 " idx %"PRIx64" failed to update inode: %s",
+			 qe->tag, qe->vid, idx, sd_strerror(req->rp.result));
+		sd_mutex_lock(&qe->ns->inode_lock);
+		sd_inode_set_vid(qe->ns->inode, idx, 0);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		qe->async_result = req->rp.result;
+	}
+	if (refcount_dec(&qe->async_pending) == 0)
+		uring_complete(qe->ep, qe);
+}
+
+/*
+ * Runs on the sheepdog main thread (put_request()). sd_inode_write_vid()
+ * (like sd_write_object()) calls the blocking, worker-thread-only
+ * exec_local_req(), which would deadlock the single-threaded main
+ * reactor if called from here -- so the inode-index update has to go
+ * through sd_write_object_async() like everything else in this file,
+ * not through sd_inode_write_vid().
+ */
 static void uring_write_object_complete(struct request *req)
 {
 	struct ep_qe *qe = req->local_done_arg;
 	uint64_t idx = data_oid_to_idx(req->rq.obj.oid);
 
+	if (req->rp.result == SD_RES_INODE_INVALIDATED) {
+		uring_refresh_and_retry(qe, idx, req->rq.obj.offset,
+					req->data, req->data_length, false);
+		return;
+	}
 	if (req->rp.result != SD_RES_SUCCESS) {
 		ctrl_err(qe->ep, "tag %d VDI %"PRIx32
 			 " idx %"PRIx64" write failed: %s",
@@ -93,21 +239,24 @@ static void uring_write_object_complete(struct request *req)
 		goto out_done;
 	}
 	if (req->rq.opcode == SD_OP_CREATE_AND_WRITE_OBJ) {
-		uint32_t inode_vid;
-		int ret;
+		off_t inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
 
 		sd_mutex_lock(&qe->ns->inode_lock);
-		inode_vid = qe->ns->inode->header.vdi_id;
-		sd_inode_set_vid(qe->ns->inode, idx, inode_vid);
-		ret = sd_inode_write_vid(qe->ns->inode, idx,
-					 inode_vid, inode_vid,
-					 SD_FLAG_CMD_TGT,
-					 false, false);
-		if (ret != SD_RES_SUCCESS) {
-			sd_inode_set_vid(qe->ns->inode, idx, 0);
-			req->rp.result = ret;
-		}
+		sd_inode_set_vid(qe->ns->inode, idx, qe->vid);
 		sd_mutex_unlock(&qe->ns->inode_lock);
+		/*
+		 * qe->inode_vid_buf, not a local variable: sd_write_object_async()
+		 * only stores this pointer, it doesn't copy the bytes -- the
+		 * actual write reads it back later, asynchronously, quite
+		 * possibly after this function has already returned.
+		 */
+		qe->inode_vid_buf = qe->vid;
+		sd_write_object_async(vid_to_vdi_oid(qe->vid), 0,
+				      (char *)&qe->inode_vid_buf,
+				      sizeof(qe->inode_vid_buf),
+				      inode_off, false,
+				      uring_inode_write_done, qe);
+		return;
 	}
  out_done:
 	uring_write_retry_done(req);
