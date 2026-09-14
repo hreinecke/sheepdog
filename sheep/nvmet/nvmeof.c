@@ -510,7 +510,7 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
         desc->nidl = NVME_NIDT_UUID_LEN;
 	desc_list += sizeof(*desc);
 	desc_len -= sizeof(*desc);
-	memcpy(&desc_list[4], ns->uuid, desc->nidl);
+	memcpy(desc_list, ns->uuid, desc->nidl);
 	desc_list += desc->nidl;
 	desc_len -= desc->nidl;
 

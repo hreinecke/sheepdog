@@ -763,8 +763,8 @@ int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
 			/* Can happen during start up */
 			sd_debug("Namespace '%06x' already present", nsid);
 			free(ns);
+			ret = 0;
 		}
-		ret = 0;
 	} else {
 		ret = configdb_add_namespace(oid, ns);
 		if (ret < 0) {
