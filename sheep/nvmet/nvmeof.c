@@ -463,6 +463,9 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 	id.nsfeat |= NVME_NS_FEAT_THIN | NVME_NS_FEAT_IO_OPT;
 	id.npdg = htole16(SD_DATA_OBJ_SIZE / ns->blksize - 1);
 	id.npda = id.npdg;
+	id.nows = htole16(SD_DATA_OBJ_SIZE / ns->blksize);
+	id.noiob = id.nows;
+
 	/* Deallocated logical blocks read back as all-zero. */
 	id.dlfeat = 0x1;
 
