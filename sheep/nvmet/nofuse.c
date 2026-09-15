@@ -67,6 +67,7 @@ enum nofuse_event_type {
 	NOFUSE_EVENT_ACL_CHANGE,
 	NOFUSE_EVENT_NODE_CHANGE,
 	NOFUSE_EVENT_LOCK_CHANGE,
+	NOFUSE_EVENT_MEMBER_CHANGE,
 };
 
 /* Queued via nvmet_notify_acl_change(), drained by nofuse_main()'s loop. */
@@ -77,6 +78,53 @@ struct nofuse_event {
 	uint32_t old_acl;
 	uint32_t new_acl;
 };
+
+static int subsys_cmp(const struct nofuse_subsystem *a,
+		      const struct nofuse_subsystem *b)
+{
+	return intcmp(a->id, b->id);
+}
+
+struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id)
+{
+	struct nofuse_subsystem key = { .id = subsys_id };
+
+	return rb_search(&this_ctx->subsys_root, &key, rb, subsys_cmp);
+}
+
+static int subsys_nqn_cmp(const struct nofuse_subsystem *a,
+		      const struct nofuse_subsystem *b)
+{
+	return strcmp(a->nqn, b->nqn);
+}
+
+struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn)
+{
+	struct nofuse_subsystem key;
+
+	strcpy(key.nqn, nqn);
+	return rb_search(&this_ctx->subsys_root, &key, rb, subsys_nqn_cmp);
+}
+
+static inline int ns_cmp(const struct nofuse_namespace *a,
+			 const struct nofuse_namespace *b)
+{
+	int cmp = intcmp(a->subsys_id, b->subsys_id);
+	if (cmp != 0)
+		return cmp;
+	return intcmp(a->nsid, b->nsid);
+}
+
+struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
+					  uint32_t nsid)
+{
+	struct nofuse_namespace key = {
+		.subsys_id = ctrl->subsys->id,
+		.nsid = nsid,
+	};
+
+	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+}
 
 static int lookup_nodes(struct nofuse_context *ctx)
 {
@@ -187,26 +235,6 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 	}
 	free(buf);
 	return ret;
-}
-
-static inline int ns_cmp(const struct nofuse_namespace *a,
-			 const struct nofuse_namespace *b)
-{
-	int cmp = intcmp(a->subsys_id, b->subsys_id);
-	if (cmp != 0)
-		return cmp;
-	return intcmp(a->nsid, b->nsid);
-}
-
-struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
-					  uint32_t nsid)
-{
-	struct nofuse_namespace key = {
-		.subsys_id = ctrl->subsys->id,
-		.nsid = nsid,
-	};
-
-	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
 }
 
 static int register_namespace(struct nofuse_subsystem *subsys, uint32_t nsid,
@@ -362,6 +390,30 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 	hdr->ngrps = htole16(ngrps);
 	sd_debug("%s: %d ana groups", __func__, ngrps);
 	return grp_ptr - log;
+}
+
+bool check_allowed_hosts(const char *hostnqn, const char *subsysnqn)
+{
+	struct nofuse_subsystem *subsys =
+		lookup_subsystem_by_nqn(subsysnqn);
+	bool allowed = false;
+	int i, num_allowed_hosts = 0;
+
+	if (!subsys)
+		return false;
+	sd_mutex_lock(&subsys->inode_lock);
+	for (i = 0; i < sizeof(subsys->inode->metadata); i += SD_MAX_VDI_LEN) {
+		char *host = (char *)&subsys->inode->metadata[i];
+		if (!strlen(host))
+			continue;
+		if (!strcmp(host, hostnqn))
+			allowed = true;
+		num_allowed_hosts++;
+	}
+	sd_mutex_unlock(&subsys->inode_lock);
+	if (!num_allowed_hosts)
+		allowed = true;
+	return allowed;
 }
 
 static void update_vdi_lock_state(struct nofuse_namespace *ns,
@@ -550,6 +602,24 @@ void nvmet_notify_lock_change(uint32_t vid, uint32_t acl)
 	eventfd_write(this_ctx->event_evtfd, 1);
 }
 
+void nvmet_notify_member_change(uint32_t acl)
+{
+	struct nofuse_event *ev;
+
+	if (!this_ctx)
+		return;
+
+	ev = xmalloc(sizeof(*ev));
+	ev->type = NOFUSE_EVENT_MEMBER_CHANGE;
+	ev->new_acl = acl;
+
+	sd_mutex_lock(&this_ctx->event_lock);
+	list_add_tail(&ev->node, &this_ctx->event_list);
+	sd_mutex_unlock(&this_ctx->event_lock);
+
+	eventfd_write(this_ctx->event_evtfd, 1);
+}
+
 void nvmet_notify_recovery_change(bool recovery)
 {
 	if (recovery)
@@ -667,6 +737,45 @@ static void process_lock_event(struct nofuse_event *ev)
 	update_vdi_lock_state(ns, ev->vid, ev->new_acl);
 }
 
+static void process_member_event(struct nofuse_event *ev)
+{
+	struct nofuse_subsystem *subsys =
+		lookup_subsystem_by_id(ev->new_acl);
+	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
+	int ret, i;
+
+	if (!subsys || !inode)
+		return;
+	sd_mutex_lock(&subsys->inode_lock);
+	ret = sd_read_object(vid_to_vdi_oid(subsys->id), (char *)inode,
+					    SD_INODE_HEADER_SIZE, 0);
+	if (ret != SD_RES_SUCCESS) {
+		sd_warn("Failed to read ACL %"PRIx32" metadata", subsys->id);
+	} else {
+		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
+			char *old = (char *)&subsys->inode->metadata[i];
+			char *new = (char *)&inode->metadata[i];
+
+			if (!strlen(old)) {
+				if (!strlen(new))
+					continue;
+				configdb_add_host_subsys(new, subsys->nqn);
+			} else if (!strlen(new)) {
+				configdb_del_host_subsys(old, subsys->nqn);
+			} else if (strcmp(new, old)) {
+				configdb_del_host_subsys(old, subsys->nqn);
+				configdb_add_host_subsys(new, subsys->nqn);
+			}
+		}
+		free(subsys->inode);
+		subsys->inode = inode;
+		inode = NULL;
+	}
+	sd_mutex_unlock(&subsys->inode_lock);
+	if (inode)
+		free(inode);
+}
+
 static void process_nofuse_event(struct nofuse_event *ev)
 {
 	switch (ev->type) {
@@ -681,6 +790,10 @@ static void process_nofuse_event(struct nofuse_event *ev)
 	case NOFUSE_EVENT_LOCK_CHANGE:
 		sd_debug("process 'LOCK CHANGE' event");
 		process_lock_event(ev);
+		break;
+	case NOFUSE_EVENT_MEMBER_CHANGE:
+		sd_debug("process 'MEMBER CHANGE' event");
+		process_member_event(ev);
 		break;
 	default:
 		sd_warn("Unhandled event %d", ev->type);
@@ -707,12 +820,6 @@ static int register_ana_groups(struct nofuse_context *ctx,
 	return ret;
 }
 
-static int subsys_cmp(const struct nofuse_subsystem *a,
-		      const struct nofuse_subsystem *b)
-{
-	return intcmp(a->id, b->id);
-}
-
 int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 {
 	int ret;
@@ -722,6 +829,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	sd_mutex_lock(&this_ctx->subsys_lock);
 	subsys->id = subsys_id;
 	subsys->type = NVME_NQN_NVM;
+	sd_init_mutex(&subsys->inode_lock);
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {
 		sd_debug("update subsystem '%s' (%06x)", new->nqn, new->id);
@@ -758,27 +866,6 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 		sd_warn("Failed to add port %u for subsystem '%s'",
 			this_ctx->portid, subsysnqn);
 	return ret;
-}
-
-struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id)
-{
-	struct nofuse_subsystem key = { .id = subsys_id };
-
-	return rb_search(&this_ctx->subsys_root, &key, rb, subsys_cmp);
-}
-
-static int subsys_nqn_cmp(const struct nofuse_subsystem *a,
-		      const struct nofuse_subsystem *b)
-{
-	return strcmp(a->nqn, b->nqn);
-}
-
-struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn)
-{
-	struct nofuse_subsystem key;
-
-	strcpy(key.nqn, nqn);
-	return rb_search(&this_ctx->subsys_root, &key, rb, subsys_nqn_cmp);
 }
 
 int nvmet_unregister_subsystem(uint32_t subsys_id)
@@ -919,6 +1006,9 @@ static int register_subsystems(unsigned int agid)
 				inode->name);
 			continue;
 		}
+		sd_mutex_lock(&subsys->inode_lock);
+		if (subsys->inode)
+			free(subsys->inode);
 		subsys->inode = inode;
 		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
 			char *host = (char *)&inode->metadata[i];
@@ -931,6 +1021,7 @@ static int register_subsystems(unsigned int agid)
 			else
 				num_allowed_hosts++;
 		}
+		sd_mutex_unlock(&subsys->inode_lock);
 		if (!num_allowed_hosts) {
 			char value[3];
 

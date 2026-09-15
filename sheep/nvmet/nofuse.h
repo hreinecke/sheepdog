@@ -152,6 +152,7 @@ struct nofuse_queue {
 struct nofuse_subsystem {
 	struct rb_node rb;
 	struct sd_inode_header *inode;
+	struct sd_mutex inode_lock;
 	char nqn[MAX_NQN_SIZE];
 	uint32_t id;
 	enum nvme_subsys_type type;
@@ -298,6 +299,8 @@ int disable_namespace(const char *subsysnqn, uint32_t nsid);
 
 struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id);
 struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn);
+
+bool check_allowed_hosts(const char *hostnqn, const char *subsysnqn);
 
 bool nofuse_node_in_recovery(void);
 unsigned int nofuse_genctr(void);

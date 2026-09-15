@@ -640,6 +640,14 @@ static inline bool is_data_vid_update(const struct sd_req *hdr)
 			data_vid_offset(SD_INODE_DATA_INDEX);
 }
 
+static inline bool is_metadata_vid_update(const struct sd_req *hdr)
+{
+	return is_vdi_obj(hdr->obj.oid) &&
+		metadata_vid_offset(0) <= hdr->obj.offset &&
+		hdr->obj.offset + hdr->data_length <=
+		metadata_vid_offset(SD_INODE_META_INDEX * 4);
+}
+
 /* store layout migration */
 int sd_migrate_store(int from, int to);
 
@@ -724,6 +732,7 @@ void nvmet_notify_acl_change(uint32_t vid, uint32_t old_acl,
 void nvmet_notify_node_change(void);
 void nvmet_notify_lock_change(uint32_t vid, uint32_t acl);
 void nvmet_notify_recovery_change(bool in_recovery);
+void nvmet_notify_member_change(uint32_t acl);
 #endif
 
 #endif

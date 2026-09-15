@@ -77,7 +77,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 	}
 
 	if (!is_discovery &&
-	    configdb_check_allowed_host(hostnqn, nqn, ep->port->portid) <= 0) {
+	    check_allowed_hosts(hostnqn, nqn) <= 0) {
 		sd_err("rejecting host NQN '%s' for subsys '%s'",
 		       hostnqn, nqn);
 		ret = -EPERM;

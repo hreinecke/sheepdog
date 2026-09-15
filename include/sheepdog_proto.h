@@ -675,4 +675,9 @@ static inline uint64_t data_vid_offset(int idx)
 	return offsetof(struct sd_inode, data_vdi_id[idx]);
 }
 
+static inline uint64_t metadata_vid_offset(int idx)
+{
+	return offsetof(struct sd_inode_header, metadata[idx]);
+}
+
 #endif
