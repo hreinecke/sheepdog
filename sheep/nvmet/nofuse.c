@@ -922,7 +922,13 @@ static int register_subsystems(unsigned int agid)
 		subsys->inode = inode;
 		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
 			char *host = (char *)&inode->metadata[i];
-			if (strlen(host))
+			if (!strlen(host))
+				continue;
+			ret = configdb_add_host_subsys(host, inode->name);
+			if (ret < 0)
+				sd_warn("failed to add host %s to subsys %s",
+					host, inode->name);
+			else
 				num_allowed_hosts++;
 		}
 		if (!num_allowed_hosts) {
