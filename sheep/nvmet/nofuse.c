@@ -209,6 +209,109 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
 }
 
+static int register_namespace(uint32_t subsys_id, uint32_t nsid,
+			      struct sd_inode *inode)
+{
+	struct nofuse_namespace *ns, *new = NULL;
+	struct nofuse_subsystem *subsys;
+	struct sd_vnode *vnode;
+	bool do_register = false;
+	uint64_t oid;
+	int ret;
+
+	oid = vid_to_vdi_oid(nsid);
+	vnode = oid_to_first_vnode(oid, &this_ctx->vroot);
+
+	subsys = lookup_subsystem_by_id(subsys_id);
+	if (!subsys) {
+		sd_warn("subsystem %"PRIx32" not registered", subsys_id);
+		return -EINVAL;
+	}
+	sd_debug("register namespace %06x ('%s')",
+		 nsid, inode->header.name);
+
+	ns = xzalloc(sizeof(*ns));
+	ns->subsys = subsys;
+	ns->subsys_id = subsys_id;
+	ns->nsid = nsid;
+	ns->size = inode->header.vdi_size;
+	ns->blksize = SECTOR_SIZE;
+	ns->readonly = false;
+	ns->enabled = true;
+	ns->ana_grpid = vnode->node->zone + 1;
+	memcpy(ns->uuid, inode->header.uuid, sizeof(ns->uuid));
+	ns->inode = inode;
+	sd_init_mutex(&ns->inode_lock);
+#ifdef HAVE_IO_URING
+	ns->ops = uring_register_ops();
+#else
+	ns->ops = vdi_register_ops();
+#endif
+
+	subsys->nn++;
+	sd_mutex_lock(&this_ctx->ns_lock);
+	new = rb_insert(&this_ctx->ns_root, ns, rb, ns_cmp);
+	if (new) {
+		if (memcmp(new->uuid, ns->uuid, sizeof(ns->uuid))) {
+			/* Namespace has changed */
+			sd_warn("Namespace '%06x' has changed", nsid);
+			ret = -1;
+			errno = EBUSY;
+		} else {
+			/* Can happen during start up */
+			sd_debug("Namespace '%06x' already present", nsid);
+			free(ns);
+			ret = 0;
+		}
+	} else {
+		ret = configdb_add_namespace(oid, ns);
+		if (ret < 0) {
+			sd_warn("Failed to add namespace '%06x'", nsid);
+			rb_erase(&ns->rb, &this_ctx->ns_root);
+		} else
+			do_register = true;
+	}
+	sd_mutex_unlock(&this_ctx->ns_lock);
+
+	if (ret < 0)
+		free(ns);
+	else if (do_register)
+		ret = register_vdi(ns, false);
+	return ret;
+}
+
+static int unregister_namespace(uint32_t subsys_id, uint32_t nsid)
+{
+	struct nofuse_namespace *ns, key = {
+		.subsys_id = subsys_id,
+		.nsid = nsid,
+	};
+	int ret;
+
+	sd_debug("unregister namespace %06x", nsid);
+	sd_mutex_lock(&this_ctx->ns_lock);
+	ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+	if (ns)
+		rb_erase(&ns->rb, &this_ctx->ns_root);
+	sd_mutex_unlock(&this_ctx->ns_lock);
+	if (!ns) {
+		sd_warn("namespace '%06x' not found", nsid);
+		return -ENODEV;
+	}
+	ret = register_vdi(ns, true);
+	if (ret < 0)
+		sd_warn("Failed to unregister namespace '%06x'", nsid);
+
+	sd_mutex_lock(&this_ctx->ns_lock);
+	ret = configdb_del_namespace(subsys_id, nsid);
+	if (ret < 0)
+		sd_warn("Failed to delete namespace '%06x'", nsid);
+	ns->subsys->nn--;
+	free(ns->inode);
+	free(ns);
+	return ret;
+}
+
 /*
  * Fill in the ANA group descriptors for 'subsys_id' as seen from 'portid',
  * walking the live namespace list instead of querying configdb. A port
@@ -485,12 +588,12 @@ static void process_acl_event(struct nofuse_event *ev)
 			free(inode);
 			return;
 		}
-		if (nvmet_register_namespace(ev->new_acl, ev->vid, inode) < 0) {
+		if (register_namespace(ev->new_acl, ev->vid, inode) < 0) {
 			sd_err("failed to register namespace %"PRIx32
 			       " with nvmet", ev->vid);
 			free(inode);
 		}
-	} else if (nvmet_unregister_namespace(ev->old_acl, ev->vid) < 0)
+	} else if (unregister_namespace(ev->old_acl, ev->vid) < 0)
 		sd_err("failed to unregister namespace %"PRIx32
 		       " with nvmet", ev->vid);
 }
@@ -712,109 +815,6 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 	return ret;
 }
 
-int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
-			     struct sd_inode *inode)
-{
-	struct nofuse_namespace *ns, *new = NULL;
-	struct nofuse_subsystem *subsys;
-	struct sd_vnode *vnode;
-	bool do_register = false;
-	uint64_t oid;
-	int ret;
-
-	oid = vid_to_vdi_oid(nsid);
-	vnode = oid_to_first_vnode(oid, &this_ctx->vroot);
-
-	subsys = lookup_subsystem_by_id(subsys_id);
-	if (!subsys) {
-		sd_warn("subsystem %"PRIx32" not registered", subsys_id);
-		return -EINVAL;
-	}
-	sd_debug("register namespace %06x ('%s')",
-		 nsid, inode->header.name);
-
-	ns = xzalloc(sizeof(*ns));
-	ns->subsys = subsys;
-	ns->subsys_id = subsys_id;
-	ns->nsid = nsid;
-	ns->size = inode->header.vdi_size;
-	ns->blksize = SECTOR_SIZE;
-	ns->readonly = false;
-	ns->enabled = true;
-	ns->ana_grpid = vnode->node->zone + 1;
-	memcpy(ns->uuid, inode->header.uuid, sizeof(ns->uuid));
-	ns->inode = inode;
-	sd_init_mutex(&ns->inode_lock);
-#ifdef HAVE_IO_URING
-	ns->ops = uring_register_ops();
-#else
-	ns->ops = vdi_register_ops();
-#endif
-
-	subsys->nn++;
-	sd_mutex_lock(&this_ctx->ns_lock);
-	new = rb_insert(&this_ctx->ns_root, ns, rb, ns_cmp);
-	if (new) {
-		if (memcmp(new->uuid, ns->uuid, sizeof(ns->uuid))) {
-			/* Namespace has changed */
-			sd_warn("Namespace '%06x' has changed", nsid);
-			ret = -1;
-			errno = EBUSY;
-		} else {
-			/* Can happen during start up */
-			sd_debug("Namespace '%06x' already present", nsid);
-			free(ns);
-			ret = 0;
-		}
-	} else {
-		ret = configdb_add_namespace(oid, ns);
-		if (ret < 0) {
-			sd_warn("Failed to add namespace '%06x'", nsid);
-			rb_erase(&ns->rb, &this_ctx->ns_root);
-		} else
-			do_register = true;
-	}
-	sd_mutex_unlock(&this_ctx->ns_lock);
-
-	if (ret < 0)
-		free(ns);
-	else if (do_register)
-		ret = register_vdi(ns, false);
-	return ret;
-}
-
-int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid)
-{
-	struct nofuse_namespace *ns, key = {
-		.subsys_id = subsys_id,
-		.nsid = nsid,
-	};
-	int ret;
-
-	sd_debug("unregister namespace %06x", nsid);
-	sd_mutex_lock(&this_ctx->ns_lock);
-	ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
-	if (ns)
-		rb_erase(&ns->rb, &this_ctx->ns_root);
-	sd_mutex_unlock(&this_ctx->ns_lock);
-	if (!ns) {
-		sd_warn("namespace '%06x' not found", nsid);
-		return -ENODEV;
-	}
-	ret = register_vdi(ns, true);
-	if (ret < 0)
-		sd_warn("Failed to unregister namespace '%06x'", nsid);
-
-	sd_mutex_lock(&this_ctx->ns_lock);
-	ret = configdb_del_namespace(subsys_id, nsid);
-	if (ret < 0)
-		sd_warn("Failed to delete namespace '%06x'", nsid);
-	ns->subsys->nn--;
-	free(ns->inode);
-	free(ns);
-	return ret;
-}
-
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
 
 static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
@@ -847,7 +847,7 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 		    inode->header.acl_id != subsys_id)
 			continue;
 
-		nvmet_register_namespace(subsys_id, nsid, inode);
+		register_namespace(subsys_id, nsid, inode);
 		inode = xmalloc(sizeof(*inode));
 	}
 	free(inode);

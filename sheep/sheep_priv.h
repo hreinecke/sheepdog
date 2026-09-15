@@ -713,9 +713,6 @@ void xio_send_reply(struct client_info *ci);
 #ifdef HAVE_NVMET
 int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn);
 int nvmet_unregister_subsystem(uint32_t subsys_id);
-int nvmet_register_namespace(uint32_t subsys_id, uint32_t nsid,
-			     struct sd_inode *inode);
-int nvmet_unregister_namespace(uint32_t subsys_id, uint32_t nsid);
 /*
  * Queues (vid, old_acl, new_acl) for the nofuse thread's own event
  * loop to pick up and pass to nvmet_register_namespace()/
