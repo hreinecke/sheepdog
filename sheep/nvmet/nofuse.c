@@ -209,11 +209,10 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
 }
 
-static int register_namespace(uint32_t subsys_id, uint32_t nsid,
+static int register_namespace(struct nofuse_subsystem *subsys, uint32_t nsid,
 			      struct sd_inode *inode)
 {
 	struct nofuse_namespace *ns, *new = NULL;
-	struct nofuse_subsystem *subsys;
 	struct sd_vnode *vnode;
 	bool do_register = false;
 	uint64_t oid;
@@ -222,17 +221,12 @@ static int register_namespace(uint32_t subsys_id, uint32_t nsid,
 	oid = vid_to_vdi_oid(nsid);
 	vnode = oid_to_first_vnode(oid, &this_ctx->vroot);
 
-	subsys = lookup_subsystem_by_id(subsys_id);
-	if (!subsys) {
-		sd_warn("subsystem %"PRIx32" not registered", subsys_id);
-		return -EINVAL;
-	}
 	sd_debug("register namespace %06x ('%s')",
 		 nsid, inode->header.name);
 
 	ns = xzalloc(sizeof(*ns));
 	ns->subsys = subsys;
-	ns->subsys_id = subsys_id;
+	ns->subsys_id = subsys->id;
 	ns->nsid = nsid;
 	ns->size = inode->header.vdi_size;
 	ns->blksize = SECTOR_SIZE;
@@ -577,6 +571,7 @@ unsigned int nofuse_genctr(void)
 static void process_acl_event(struct nofuse_event *ev)
 {
 	if (ev->new_acl) {
+		struct nofuse_subsystem *subsys;
 		struct sd_inode *inode = xmalloc(sizeof(*inode));
 		int ret;
 
@@ -588,7 +583,14 @@ static void process_acl_event(struct nofuse_event *ev)
 			free(inode);
 			return;
 		}
-		if (register_namespace(ev->new_acl, ev->vid, inode) < 0) {
+		subsys = lookup_subsystem_by_id(ev->new_acl);
+		if (!subsys) {
+			sd_warn("subsystem %"PRIx32" not registered",
+				ev->new_acl);
+			free(inode);
+			return;
+		}
+		if (register_namespace(subsys, ev->vid, inode) < 0) {
 			sd_err("failed to register namespace %"PRIx32
 			       " with nvmet", ev->vid);
 			free(inode);
@@ -817,9 +819,9 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 
 #define FOR_EACH_VDI(nr, vdis) FOR_EACH_BIT(nr, vdis, SD_NR_VDIS)
 
-static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
-				unsigned long *vdi_inuse,
-				unsigned long *vdi_deleted)
+static void register_ns_root(struct nofuse_subsystem *subsys,
+			     unsigned long *vdi_inuse,
+			     unsigned long *vdi_deleted)
 {
 	unsigned long nsid;
 	struct sd_inode *inode = xmalloc(sizeof(*inode));
@@ -844,10 +846,10 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 			continue;
 		/* We are only interested in VDIs which belong to this ACL */
 		if (vdi_is_acl(&inode->header) ||
-		    inode->header.acl_id != subsys_id)
+		    inode->header.acl_id != subsys->id)
 			continue;
 
-		register_namespace(subsys_id, nsid, inode);
+		register_namespace(subsys, nsid, inode);
 		inode = xmalloc(sizeof(*inode));
 	}
 	free(inode);
@@ -856,7 +858,7 @@ static void register_ns_root(char *subsysnqn, uint32_t subsys_id,
 static int register_subsystems(unsigned int agid)
 {
 	int ret;
-	unsigned long nr;
+	uint32_t vid;
 	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
 	struct sd_req req;
 	struct sd_rsp *rsp = (struct sd_rsp *)&req;
@@ -884,13 +886,14 @@ static int register_subsystems(unsigned int agid)
 		goto out;
 	}
 
-	FOR_EACH_VDI(nr, vdi_inuse) {
+	FOR_EACH_VDI(vid, vdi_inuse) {
+		struct nofuse_subsystem *subsys;
 		uint64_t oid;
 
-		if (test_bit(nr, vdi_deleted))
+		if (test_bit(vid, vdi_deleted))
 			continue;
 
-		oid = vid_to_vdi_oid(nr);
+		oid = vid_to_vdi_oid(vid);
 
 		ret = sd_read_object(oid, (char *)inode,
 				     SD_INODE_HEADER_SIZE, 0);
@@ -908,13 +911,18 @@ static int register_subsystems(unsigned int agid)
 
 		uatomic_inc(&genctr);
 
-		ret = nvmet_register_subsystem(nr, inode->name);
+		ret = nvmet_register_subsystem(vid, inode->name);
 		if (ret < 0) {
 			sd_warn("Failed add subsystem '%s'", inode->name);
 			continue;
 		}
-		register_ns_root(inode->name, nr,
-				   vdi_inuse, vdi_deleted);
+		subsys = lookup_subsystem_by_nqn(inode->name);
+		if (!subsys) {
+			sd_warn("subsystem %s not registered",
+				inode->name);
+			continue;
+		}
+		register_ns_root(subsys, vdi_inuse, vdi_deleted);
 	}
 out:
 	free(inode);
