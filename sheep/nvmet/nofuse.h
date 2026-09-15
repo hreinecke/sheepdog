@@ -124,8 +124,6 @@ struct nofuse_queue {
 	struct ep_qe *qes;
 	uint32_t qes_map[NVMF_SQ_DEPTH / 8];
 	unsigned int qes_map_index;
-	unsigned int qes_busy;
-	unsigned int qes_busy_max;
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;

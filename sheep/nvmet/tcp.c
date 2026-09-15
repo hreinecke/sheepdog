@@ -207,11 +207,6 @@ retry:
 	qe = &ep->qes[cid];
 	qe->busy = true;
 	qe->ccid = ccid;
-	ep->qes_busy++;
-	if (ep->qes_busy > ep->qes_busy_max) {
-		ep->qes_busy_max = ep->qes_busy;
-		tcp_err(ep, "qid %d qes_busy_max %u", ep->qid, ep->qes_busy_max);
-	}
 	if (len) {
 		qe->data = malloc(len);
 		if (!qe->data) {
@@ -268,7 +263,6 @@ static void tcp_release_tag(struct nofuse_queue *ep, struct ep_qe *qe)
 	qe->busy = false;
 	qe->aen = false;
 	qe->async_started = false;
-	ep->qes_busy--;
 	if (qe->data) {
 		free(qe->data);
 		qe->data = NULL;
