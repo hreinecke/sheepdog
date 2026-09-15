@@ -870,7 +870,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
 
 	/* Kick off namespace op */
-	return handle_data(ep, qe, -EAGAIN);
+	return handle_data(ep, qe, -EINPROGRESS);
 }
 
 static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
@@ -907,7 +907,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 				 qe->tag, ret);
 			return ret;
 		}
-		return handle_data(ep, qe, -EAGAIN);
+		return handle_data(ep, qe, -EINPROGRESS);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		ctrl_err(ep, "Invalid sgl type %x", sgl_type);
@@ -962,7 +962,7 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 				 qe->tag, ret);
 			return ret;
 		}
-		return handle_data(ep, qe, -EAGAIN);
+		return handle_data(ep, qe, -EINPROGRESS);
 	}
 	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
 		ctrl_err(ep, "dsm: invalid sgl type %x", sgl_type);

@@ -785,7 +785,7 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 		 */
 		qe->iovec.iov_base = qe->data;
 		qe->iovec.iov_len = qe->data_len;
-		return handle_data(ep, qe, -EAGAIN);
+		return handle_data(ep, qe, -EINPROGRESS);
 	}
 
 	/*

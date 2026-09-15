@@ -193,7 +193,7 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 }
 
 /*
- * res == -EAGAIN means "not started yet, run it now" (handle_read()/
+ * res == -EINPROGRESS means "not started yet, run it now" (handle_read()/
  * handle_write()/handle_dsm() in nvmeof.c and tcp_handle_h2c_data() in
  * tcp.c use this to kick off the actual I/O once a command's data --
  * inline, or received via H2CData -- is ready). Any other value is a
@@ -215,7 +215,7 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
                 status = NVME_SC_INVALID_OPCODE;
                 goto out_rsp;
         }
-	if (res == -EAGAIN) {
+	if (res == -EINPROGRESS) {
 		ctrl_info(ep, "tag %#x retry", qe->tag);
 		switch (qe->opcode) {
 		case nvme_cmd_read:

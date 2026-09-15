@@ -304,7 +304,7 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		pos += len;
 		data_len -= len;
 	}
-	return -EAGAIN;
+	return -EINPROGRESS;
 }
 
 static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
@@ -336,7 +336,7 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 			oid = vid_to_data_oid(data_vid, idx);
 			sd_read_object_async(oid, (char *)data, len,
 					     off, uring_io_done, qe);
-			ret = -EAGAIN;
+			ret = -EINPROGRESS;
 		} else {
 			/* Todo: re-check inode */
 			memset(data, 0, len);
@@ -443,7 +443,7 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 	ctrl_info(ep, "tag %#x ccid %#x handle qe res %d pending %u res %d",
 		  qe->tag, qe->ccid, res, pending, qe->async_result);
 
-	if (res == -EAGAIN) {
+	if (res == -EINPROGRESS) {
 		if (!qe->async_started) {
 			qe->async_started = true;
 			switch (qe->opcode) {
@@ -460,8 +460,8 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 				ret = NVME_SC_INVALID_OPCODE;
 				break;
 			}
-			if (ret == -EAGAIN)
-				return -EAGAIN;
+			if (ret == -EINPROGRESS)
+				return -EINPROGRESS;
 			qe->async_started = false;
 			if (ret == NVME_SC_SUCCESS && qe->opcode == nvme_cmd_read)
 				return ep->ops->rma_write(ep, qe, qe->data_len);

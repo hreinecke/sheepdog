@@ -416,11 +416,26 @@ void *queue_thread(void *arg)
 					kato_reset_counter(ep->ctrl);
 			}
 			if (!ret && ep->recv_state == HANDLE_PDU) {
+				/*
+				 * By the time handle_msg() runs, the PDU
+				 * (and, for h2c data, its RMA-read payload)
+				 * is already fully drained off the wire, so
+				 * the receive framing must advance regardless
+				 * of what handle_msg() returns. Its return
+				 * value keeps meaning "how did the command
+				 * turn out" for the kato/error handling below
+				 * -- e.g. uring_handle_qe() returns -EINPROGRESS
+				 * to mean "write submitted asynchronously",
+				 * which is a different sentinel than read_msg()'s
+				 * own -EAGAIN ("PDU incomplete, retry the read")
+				 * precisely so the two can't be conflated here.
+				 * Gating the reset on ret used to do exactly that,
+				 * leaving recv_state stuck at HANDLE_PDU and the
+				 * socket never read again.
+				 */
 				ret = ep->ops->handle_msg(ep);
-				if (!ret) {
-					ep->recv_pdu_len = 0;
-					ep->recv_state = RECV_PDU;
-				}
+				ep->recv_pdu_len = 0;
+				ep->recv_state = RECV_PDU;
 			}
 		} else if (cqe_data == &ep->io_evtfd) {
 			LIST_HEAD(done_list);
@@ -437,7 +452,7 @@ void *queue_thread(void *arg)
 			ret = 0;
 			list_for_each_entry_safe(qe, next, &done_list, io_node) {
 				list_del(&qe->io_node);
-				ret = handle_data(ep, qe, -EAGAIN);
+				ret = handle_data(ep, qe, -EINPROGRESS);
 			}
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
@@ -451,7 +466,7 @@ void *queue_thread(void *arg)
 			ctrl_err(ep, "cancel cqe");
 		}
 	skip_cqe:
-		if (ret == -EAGAIN || ret == -ETIME) {
+		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
 			if (!ep->ctrl) {
 				sd_err("qid %d no controller timeout",
 				       ep->qid);

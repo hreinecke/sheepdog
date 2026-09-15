@@ -98,9 +98,9 @@ struct ep_qe {
 	int async_result;
 	/*
 	 * Distinguishes the initial kickoff call into ns_handle_qe() (res
-	 * == -EAGAIN, nothing submitted yet) from the later completion
+	 * == -EINPROGRESS, nothing submitted yet) from the later completion
 	 * call once all of a command's sub-I/Os have finished (also res
-	 * == -EAGAIN, async_pending back down to 0) -- async_pending
+	 * == -EINPROGRESS, async_pending back down to 0) -- async_pending
 	 * alone can't tell the two apart, since it reads 0 in both cases.
 	 */
 	bool async_started;
