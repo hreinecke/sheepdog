@@ -246,6 +246,9 @@ static struct ep_qe *tcp_get_aen(struct nofuse_queue *ep)
 {
 	int i;
 
+	if (!ep->qes)
+		return NULL;
+
 	for (i = 0; i < ep->qsize; i++) {
 		struct ep_qe *qe = &ep->qes[i];
 
