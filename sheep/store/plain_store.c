@@ -104,7 +104,6 @@ static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
 static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 {
 	struct store_cache_entry *entry, *new = xzalloc(sizeof(*new));
-	pthread_mutexattr_t attr;
 
 	if (!new)
 		return NULL;
@@ -113,15 +112,7 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 	new->fd = -1;
 	new->size = get_store_objsize(oid);
 	new->map = MAP_FAILED;
-	/*
-	 * Recursive: default_read_from_path() calls default_exist(), which
-	 * looks up (and locks) the same oid's entry again on this same
-	 * thread -- a plain mutex would self-deadlock there.
-	 */
-	pthread_mutexattr_init(&attr);
-	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-	sd_init_mutex_attr(&new->lock, &attr);
-	pthread_mutexattr_destroy(&attr);
+	sd_init_mutex(&new->lock);
 	refcount_set(&new->refcnt, 1); /* the cache's own reference */
 	entry = rb_insert(&store_cache_root, new, node, store_cache_cmp);
 	if (entry) {
@@ -159,6 +150,7 @@ static void store_cache_remove(struct store_cache_entry *entry)
 	found = rb_search(&store_cache_root, &key, node, store_cache_cmp);
 	if (found == entry) {
 		rb_erase(&entry->node, &store_cache_root);
+		RB_CLEAR_NODE(&entry->node);
 		sys->cache_stat.nr_cache_entries--;
 	}
 	sd_mutex_unlock(&store_cache_lock);
@@ -190,6 +182,7 @@ static struct store_cache_entry *store_cache_remove_by_oid(uint64_t oid)
 	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
 	if (entry) {
 		rb_erase(&entry->node, &store_cache_root);
+		RB_CLEAR_NODE(&entry->node);
 		sys->cache_stat.nr_cache_entries--;
 	}
 	sd_mutex_unlock(&store_cache_lock);
@@ -256,6 +249,25 @@ static int get_store_stale_path(uint64_t oid, uint32_t epoch, uint8_t ec_index,
 	return md_get_stale_path(oid, epoch, ec_index, path);
 }
 
+static bool default_cache_exist(struct store_cache_entry *entry)
+{
+	struct stat st;
+
+	if (entry->fd < 0)
+		return false;
+
+	/*
+	 * A changed inode means the path was atomically
+	 * replaced (e.g. an out-of-band repair/restore), not
+	 * that nothing is there anymore -- fall through to a
+	 * fresh, path-based check instead of reporting the
+	 * object missing.
+	 */
+	if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
+		return false;
+	return true;
+}
+
 /*
  * Check if oid is in this nodes (if oid is in the wrong place, it will be moved
  * to the correct one after this call in a MD setup.
@@ -268,27 +280,16 @@ bool default_exist(uint64_t oid, uint8_t ec_index)
 
 	entry = store_cache_lookup_by_oid(oid);
 	if (entry) {
-		sd_mutex_lock(&entry->lock);
-		if (entry->fd >= 0) {
-			struct stat st;
+		bool exists;
 
-			/*
-			 * A changed inode means the path was atomically
-			 * replaced (e.g. an out-of-band repair/restore), not
-			 * that nothing is there anymore -- fall through to a
-			 * fresh, path-based check instead of reporting the
-			 * object missing.
-			 */
-			if (fstat(entry->fd, &st) < 0 || st.st_nlink == 0)
-				store_cache_cleanup(entry);
-			else {
-				sd_mutex_unlock(&entry->lock);
-				store_cache_put(entry);
-				return true;
-			}
-		}
+		sd_mutex_lock(&entry->lock);
+		exists = default_cache_exist(entry);
+		if (!exists)
+			store_cache_cleanup(entry);
 		sd_mutex_unlock(&entry->lock);
 		store_cache_put(entry);
+		if (exists)
+			return true;
 	}
 	ret = get_store_path(oid, ec_index, &path);
 	if (ret < 0)
@@ -496,6 +497,7 @@ int default_cleanup(void)
 	sd_mutex_lock(&store_cache_lock);
 	rb_for_each_entry(entry, &store_cache_root, node) {
 		rb_erase(&entry->node, &store_cache_root);
+		RB_CLEAR_NODE(&entry->node);
 		sys->cache_stat.nr_cache_entries--;
 		/* Drop the cache's own reference; leave cleanup/free to
 		 * whichever concurrent holder releases the last one. */
@@ -587,16 +589,21 @@ static int default_read_from_path(struct store_cache_entry *entry,
 	ssize_t size;
 
 	/*
-	 * Make sure oid is in the right place because oid might be misplaced
-	 * in a wrong place, due to 'shutdown/restart with less disks' or any
-	 * bugs. We need call err_to_sderr() to return EIO if disk is broken.
-	 *
-	 * For stale path, get_store_stale_path already does default_exist job.
+	 * Open-code default_exists() to avoid livelocking on the
+	 * cache entry lock.
 	 */
 	if (!is_stale_path(entry->path) &&
-	    !default_exist(entry->oid, iocb->ec_index))
-		return err_to_sderr(entry->path, entry->oid, ENOENT);
+	    !default_cache_exist(entry)) {
+		char *path;
 
+		ret = get_store_path(entry->oid, iocb->ec_index, &path);
+		if (ret < 0)
+			return SD_RES_NO_OBJ;
+		if (!md_exist(entry->oid, iocb->ec_index, path))
+			return SD_RES_NO_OBJ;
+
+		entry->path = path;
+	}
 	if (entry->fd < 0) {
 		entry->fd = open(entry->path, flags);
 		if (entry->fd < 0)
