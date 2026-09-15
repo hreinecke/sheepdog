@@ -716,7 +716,6 @@ static int subsys_cmp(const struct nofuse_subsystem *a,
 int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 {
 	int ret;
-	char value[8];
 	struct nofuse_subsystem *new, *subsys = xzalloc(sizeof(*subsys));
 
 	strcpy(subsys->nqn, subsysnqn);
@@ -748,14 +747,6 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 			return ret;
 	}
 
-	sprintf(value, "1");
-	ret = configdb_set_subsys_attr(subsys_id,
-				       "allow_any_host", value);
-	if (ret) {
-		sd_warn("failed to set 'allow_any_host'");
-		configdb_del_subsys(subsys_id);
-		return ret;
-	}
 	/*
 	 * Without this, the subsystem is never joined to the local
 	 * port in 'subsys_port', so it can never show up in the
@@ -813,6 +804,8 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 	ret = configdb_del_subsys(subsys->id);
 	if (ret < 0)
 		sd_warn("Failed to delete subsystem %06x", subsys->id);
+	if (subsys->inode)
+		free(subsys->inode);
 	free(subsys);
 	return ret;
 }
@@ -859,7 +852,7 @@ static int register_subsystems(unsigned int agid)
 {
 	int ret;
 	uint32_t vid;
-	struct sd_inode_header *inode = xmalloc(sizeof(*inode));
+	struct sd_inode_header *inode = NULL;
 	struct sd_req req;
 	struct sd_rsp *rsp = (struct sd_rsp *)&req;
 	static DECLARE_BITMAP(vdi_inuse, SD_NR_VDIS);
@@ -889,6 +882,10 @@ static int register_subsystems(unsigned int agid)
 	FOR_EACH_VDI(vid, vdi_inuse) {
 		struct nofuse_subsystem *subsys;
 		uint64_t oid;
+		int i, num_allowed_hosts = 0;
+
+		if (!inode)
+			inode = xmalloc(sizeof(*inode));
 
 		if (test_bit(vid, vdi_deleted))
 			continue;
@@ -922,7 +919,24 @@ static int register_subsystems(unsigned int agid)
 				inode->name);
 			continue;
 		}
+		subsys->inode = inode;
+		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
+			char *host = (char *)&inode->metadata[i];
+			if (strlen(host))
+				num_allowed_hosts++;
+		}
+		if (!num_allowed_hosts) {
+			char value[3];
+
+			sprintf(value, "1");
+			ret = configdb_set_subsys_attr(vid,
+					"allow_any_host", value);
+			if (ret)
+				sd_warn("failed to set 'allow_any_host'");
+		}
+
 		register_ns_root(subsys, vdi_inuse, vdi_deleted);
+		inode = NULL;
 	}
 out:
 	free(inode);

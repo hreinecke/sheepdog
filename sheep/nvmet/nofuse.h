@@ -151,6 +151,7 @@ struct nofuse_queue {
 
 struct nofuse_subsystem {
 	struct rb_node rb;
+	struct sd_inode_header *inode;
 	char nqn[MAX_NQN_SIZE];
 	uint32_t id;
 	enum nvme_subsys_type type;
