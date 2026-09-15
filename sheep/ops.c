@@ -1098,6 +1098,7 @@ static int peer_write_obj(struct request *req)
 	struct sd_req *hdr = &req->rq;
 	struct siocb iocb = { };
 	uint64_t oid = hdr->obj.oid;
+	int ret;
 
 	iocb.epoch = hdr->epoch;
 	iocb.buf = req->data;
@@ -1106,7 +1107,13 @@ static int peer_write_obj(struct request *req)
 	iocb.ec_index = hdr->obj.ec_index;
 	iocb.copy_policy = hdr->obj.copy_policy;
 
-	return sd_store->write(oid, &iocb);
+	ret = sd_store->write(oid, &iocb);
+#ifdef HAVE_NVMET
+	if (ret == SD_RES_SUCCESS &&
+	    is_metadata_vid_update(req))
+		nvmet_notify_member_update();
+#endif
+	return ret;
 }
 
 static int peer_create_and_write_obj(struct request *req)
