@@ -494,7 +494,6 @@ static int handle_identify_ns_desc_list(struct nofuse_queue *ep, uint32_t nsid,
 	struct nofuse_namespace *ns;
 	int desc_len = len;
 	struct nvme_ns_id_desc *desc;
-	uint8_t *desc_list_save = desc_list;
 	uint64_t nguid;
 
 	ns = lookup_namespace(ep->ctrl, nsid);
@@ -558,8 +557,6 @@ parse_eui64:
 	desc_list[0] = 0;
 	desc_list += desc->nidl;
 	desc_len -= desc->nidl;
-	printf("%s: desc nidt %d nidl %d len %ld\n", __func__,
-	       desc->nidt, desc->nidl, desc_list - desc_list_save);
 
 	return len;
 }
@@ -601,7 +598,7 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 				return NVME_SC_INTERNAL;
 			break;
 		}
-		ctrl_err(ep, "unsupported identify ctrl csi %u\n", csi);
+		ctrl_err(ep, "unsupported identify ctrl csi %u", csi);
 		return NVME_SC_BAD_ATTRIBUTES | NVME_SC_DNR;
 	default:
 		ctrl_err(ep, "unexpected identify command cns %u", cns);
@@ -852,8 +849,8 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	}
 
 	if ((cmd->rw.dptr.sgl.type >> 4) != NVME_TRANSPORT_SGL_DATA_DESC) {
-		ctrl_err(ep, "unhandled sgl type %d\n",
-			  cmd->rw.dptr.sgl.type >> 4);
+		ctrl_err(ep, "unhandled sgl type %d",
+			 cmd->rw.dptr.sgl.type >> 4);
 		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
