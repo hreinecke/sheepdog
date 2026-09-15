@@ -197,6 +197,9 @@ static void uring_inode_write_done(struct request *req)
 		       sizeof(uint32_t);
 
 	if (req->rp.result == SD_RES_INODE_INVALIDATED) {
+		ctrl_info(qe->ep, "tag %d VDI %"PRIx32
+			  " idx %"PRIx64" inode invalidated",
+			  qe->tag, qe->vid, idx);
 		uring_refresh_and_retry(qe, idx, 0, NULL, 0, true);
 		return;
 	}
@@ -227,6 +230,9 @@ static void uring_write_object_complete(struct request *req)
 	uint64_t idx = data_oid_to_idx(req->rq.obj.oid);
 
 	if (req->rp.result == SD_RES_INODE_INVALIDATED) {
+		ctrl_info(qe->ep, "tag %d VDI %"PRIx32
+			  " idx %"PRIx64" inode invalidated",
+			  qe->tag, qe->vid, idx);
 		uring_refresh_and_retry(qe, idx, req->rq.obj.offset,
 					req->data, req->data_length, false);
 		return;
