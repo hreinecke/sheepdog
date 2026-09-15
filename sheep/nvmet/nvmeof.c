@@ -1066,7 +1066,8 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 	}
 
 	if (ret < 0) {
-		ctrl_err(ep, "handle_request error %d\n", ret);
+		if (ret != -EINPROGRESS)
+			ctrl_err(ep, "handle_request error %d", ret);
 		return ret;
 	}
 
