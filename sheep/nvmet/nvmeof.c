@@ -917,7 +917,6 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_read;
-	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
@@ -947,7 +946,6 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_write;
-	qe->vid = nsid;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
@@ -1006,7 +1004,6 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_dsm;
-	qe->vid = nsid;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 	qe->data_remaining = qe->data_len;

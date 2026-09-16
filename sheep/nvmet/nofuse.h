@@ -84,7 +84,7 @@ struct ep_qe {
 	uint64_t data_pos;
 	uint64_t data_remaining;
 	uint64_t iovec_offset;
-	uint32_t vid;
+
 	/*
 	 * Backing store for the inode-index write in
 	 * uring_create_object_complete() (uring.c). sd_write_object_async()

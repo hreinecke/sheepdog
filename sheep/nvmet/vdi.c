@@ -27,7 +27,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid = vid_to_data_oid(qe->vid, idx), old_oid = 0;
+		uint64_t oid = vid_to_data_oid(qe->ns->nsid, idx), old_oid = 0;
 		uint32_t inode_vid, data_vid;
 		bool create = false;
 		bool is_writeable;
@@ -55,7 +55,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 			sd_mutex_lock(&qe->ns->inode_lock);
 			sd_inode_set_vid(qe->ns->inode, idx, inode_vid);
 			ret = sd_inode_write_vid(qe->ns->inode, idx,
-						 qe->vid, qe->vid,
+						 qe->ns->nsid, qe->ns->nsid,
 						 SD_FLAG_CMD_TGT,
 						 false, false);
 			if (ret != SD_RES_SUCCESS)
@@ -64,7 +64,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 			if (ret != SD_RES_SUCCESS) {
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " idx %"PRIx64" failed to update inode: %s",
-					 qe->tag, qe->vid, idx,
+					 qe->tag, qe->ns->nsid, idx,
 					 sd_strerror(ret));
 				return NVME_SC_INTERNAL;
 			}
@@ -88,7 +88,7 @@ static int vdi_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 		unsigned int idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid = vid_to_data_oid(qe->vid, idx);
+		uint64_t oid = vid_to_data_oid(qe->ns->nsid, idx);
 		uint32_t data_vid;
 
 		sd_mutex_lock(&qe->ns->inode_lock);
@@ -166,7 +166,7 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 		ret = sd_inode_set_vid_range(qe->ns->inode, idx, idx_end, 0);
 		if (ret == SD_RES_SUCCESS) {
 			inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
-			ret = sd_write_object(vid_to_vdi_oid(qe->vid),
+			ret = sd_write_object(vid_to_vdi_oid(qe->ns->nsid),
 					      (char *)qe->ns->inode + inode_off,
 					      nr_idx * sizeof(uint32_t),
 					      inode_off, false);
@@ -179,7 +179,7 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 			return NVME_SC_INTERNAL;
 		}
 		for (; idx < idx_end; idx++) {
-			uint64_t oid = vid_to_data_oid(qe->vid, idx);
+			uint64_t oid = vid_to_data_oid(qe->ns->nsid, idx);
 
 			ret = sd_remove_object(oid);
 			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
