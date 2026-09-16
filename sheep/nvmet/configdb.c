@@ -431,8 +431,13 @@ int configdb_add_host(const char *nqn)
 	char *sql;
 	int ret;
 
+	/* OR IGNORE: callers (process_member_event(), the nvmet startup
+	 * scan) call this every time a host shows up in an ACL's member
+	 * list, including ones already known from another subsystem or a
+	 * previous scan -- nqn is UNIQUE NOT NULL, so a plain INSERT would
+	 * fail on the second sighting. */
 	ret = asprintf(&sql,
-		"INSERT INTO hosts (nqn, ctime) "
+		"INSERT OR IGNORE INTO hosts (nqn, ctime) "
 		"VALUES ('%s', CURRENT_TIMESTAMP);",
 		nqn);
 	if (ret < 0)

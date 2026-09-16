@@ -792,11 +792,25 @@ static void process_member_event(struct nofuse_event *ev)
 			if (!old || !strlen(old)) {
 				if (!strlen(new))
 					continue;
+				/*
+				 * The subsystem was registered with no
+				 * explicit members (nofuse.c's startup scan
+				 * defaults a member-less ACL to
+				 * allow_any_host=1), and configdb_add_host_
+				 * subsys() below refuses to link a host to a
+				 * subsys that still has it set -- clear it
+				 * before adding, now that we know there's a
+				 * real member to restrict to.
+				 */
+				configdb_set_subsys_attr(subsys->id,
+							 "allow_any_host", "0");
+				configdb_add_host(new);
 				configdb_add_host_subsys(new, subsys->nqn);
 			} else if (!strlen(new)) {
 				configdb_del_host_subsys(old, subsys->nqn);
 			} else if (strcmp(new, old)) {
 				configdb_del_host_subsys(old, subsys->nqn);
+				configdb_add_host(new);
 				configdb_add_host_subsys(new, subsys->nqn);
 			}
 		}
@@ -1044,10 +1058,29 @@ static int register_subsystems(unsigned int agid)
 		if (subsys->inode)
 			free(subsys->inode);
 		subsys->inode = inode;
+
+		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN)
+			if (strlen((char *)&inode->metadata[i]))
+				num_allowed_hosts++;
+		/*
+		 * configdb_add_host_subsys() below refuses to link a host to
+		 * a subsystem that still has allow_any_host set, so a
+		 * subsystem that already has explicit members by the time we
+		 * scan it (e.g. a restart) needs this cleared *before* the
+		 * add loop runs, not after -- otherwise every link attempt
+		 * in that loop silently no-ops.
+		 */
+		ret = configdb_set_subsys_attr(vid, "allow_any_host",
+					       num_allowed_hosts ? "0" : "1");
+		if (ret)
+			sd_warn("failed to set 'allow_any_host'");
+
+		num_allowed_hosts = 0;
 		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
 			char *host = (char *)&inode->metadata[i];
 			if (!strlen(host))
 				continue;
+			configdb_add_host(host);
 			ret = configdb_add_host_subsys(host, inode->name);
 			if (ret < 0)
 				sd_warn("failed to add host %s to subsys %s",
@@ -1056,15 +1089,6 @@ static int register_subsystems(unsigned int agid)
 				num_allowed_hosts++;
 		}
 		sd_mutex_unlock(&subsys->inode_lock);
-		if (!num_allowed_hosts) {
-			char value[3];
-
-			sprintf(value, "1");
-			ret = configdb_set_subsys_attr(vid,
-					"allow_any_host", value);
-			if (ret)
-				sd_warn("failed to set 'allow_any_host'");
-		}
 
 		register_ns_root(subsys, vdi_inuse, vdi_deleted);
 		inode = NULL;
