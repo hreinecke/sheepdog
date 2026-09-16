@@ -283,7 +283,8 @@ int del_host(const char *nqn);
 int add_subsys(const char *nqn, int type);
 int del_subsys(const char *nqn);
 
-struct nofuse_port *add_port(unsigned int id, const char *ifaddr, int portnum);
+struct nofuse_port *add_port(unsigned int id, const char *traddr,
+			     int trsvcid, int tls_keyring);
 int del_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);

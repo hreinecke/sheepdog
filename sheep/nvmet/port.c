@@ -18,7 +18,8 @@ LIST_HEAD(port_linked_list);
 
 static void *run_port(void *arg);
 
-struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
+struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid,
+			     int tls_keyring)
 {
 	struct nofuse_port *port;
 	const char *adrfam = "ipv4";
@@ -47,6 +48,17 @@ struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid)
 		free(port);
 		return NULL;
 	}
+	if (tls_keyring > 0) {
+		ret = configdb_set_port_attr(port->portid, "addr_tsas",
+					     "tls1.3");
+		if (!ret) {
+			ret = configdb_set_port_attr(port->portid, "addr_treq",
+						     "not required");
+			if (!ret)
+                               port->tls = true;
+		}
+	}
+
 	pthread_mutex_init(&port->ep_mutex, NULL);
 	INIT_LIST_HEAD(&port->ep_list);
 	INIT_LIST_NODE(&port->node);

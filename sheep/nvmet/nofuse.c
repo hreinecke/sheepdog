@@ -54,6 +54,7 @@ struct nofuse_context {
 	struct sd_mutex event_lock;
 	char *dbname;
 	char *traddr;
+	int tls_keyring;
 	unsigned int portid;
 	int trsvcid;
 	int nr_nodes;
@@ -205,6 +206,8 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 		 ns->nsid);
 	buf = xzalloc(256);
 	sprintf(buf, "%s:%u", this_ctx->traddr, this_ctx->trsvcid);
+	if (this_ctx->tls_keyring > 0)
+		strcat(buf, ":tls");
 	sd_init_req(&req, unregister ?
 		    SD_OP_UNREGISTER_VDI : SD_OP_REGISTER_VDI);
 	req.vdi_lock.vid = ns->nsid;
@@ -496,6 +499,7 @@ retry:
 		const char *adrfam = "ipv4";
 		uint16_t trsvcid;
 		bool port_present;
+		bool tls = false;
 
 		if (rsp->data_length - i < sizeof(*vls))
 			break;
@@ -513,7 +517,7 @@ retry:
 		}
 		port_present = configdb_check_port(node->zone + 1);
 
-		traddr = str_to_tr(vls->owner, &trsvcid);
+		traddr = str_to_tr(vls->owner, &trsvcid, &tls);
 		if (!traddr) {
 			sd_warn("failed to parse owner '%s'", vls->owner);
 			vls++;
@@ -545,6 +549,12 @@ retry:
 					free(traddr);
 				vls++;
 				continue;
+			}
+			if (tls) {
+				configdb_set_port_attr(portid, "addr_tsas",
+						       "tls1.3");
+				configdb_set_port_attr(portid, "addr_treq",
+						       "not required");
 			}
 			ret = configdb_add_ana_port_group(portid);
 			if (ret < 0) {
@@ -1122,14 +1132,13 @@ static void nofuse_cleanup(void *arg)
 	rb_destroy(&ctx->subsys_root, struct nofuse_subsystem, rb);
 	free(ctx->traddr);
 	free(ctx->dbname);
-	free(arg);
+	free(ctx);
 }
 
 static void *nofuse_main(void *arg)
 {
 	struct nofuse_context *ctx = arg;
 	struct nofuse_subsystem *disc_subsys, *new;
-	int tls_keyring;
 	int ret, agid;
 	struct nofuse_port *port = NULL;
 
@@ -1147,6 +1156,8 @@ static void *nofuse_main(void *arg)
 		goto out_pop;
 	}
 
+	ctx->tls_keyring = tls_global_init();
+
 	agid = sys->this_node.zone + 1;
 	ctx->portid = agid;
 
@@ -1158,7 +1169,7 @@ static void *nofuse_main(void *arg)
 
 	sd_debug("register nvmet port traddr '%s' trsvcid '%d'",
 		 ctx->traddr, ctx->trsvcid);
-	port = add_port(agid, ctx->traddr, ctx->trsvcid);
+	port = add_port(agid, ctx->traddr, ctx->trsvcid, ctx->tls_keyring);
 	if (!port) {
 		sd_err("failed to add nvmet port");
 		goto out_close;
@@ -1193,19 +1204,6 @@ static void *nofuse_main(void *arg)
 		goto out_destroy;
 	}
 
-	tls_keyring = tls_global_init();
-	if (tls_keyring > 0) {
-		sd_info("Enabling TLS");
-		port->tls = true;
-		ret = configdb_set_port_attr(port->portid, "addr_tsas",
-					     "tls1.3");
-		if (!ret) {
-			ret = configdb_set_port_attr(port->portid, "addr_treq",
-						     "not required");
-			if (ret < 0)
-				port->tls = false;
-		}
-	}
 	stopped = 0;
 
 	ret = start_port(port);

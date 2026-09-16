@@ -416,10 +416,10 @@ char *sockaddr_in_to_str(struct sockaddr_in *sockaddr)
 	return str;
 }
 
-char *str_to_tr(const char *ipstr, uint16_t *port)
+char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls)
 {
 	char *hoststr = strdup(ipstr);
-	char *portstr = NULL;
+	char *portstr = NULL, *t;
 
 	if (ipstr[0] == '[') {
 		char *p = strchr(hoststr, ']');
@@ -432,13 +432,22 @@ char *str_to_tr(const char *ipstr, uint16_t *port)
 			portstr = p + 2;
 		}
 	} else {
-		char *p = strrchr(hoststr, ':');
+		char *p = strchr(hoststr, ':');
 		if (p) {
 			p[0] = '\0';
 			portstr = p + 1;
 		}
 	}
-	if (portstr && port) {
+	if (!portstr)
+		return hoststr;
+
+	t = strchr(portstr, ':');
+	if (t) {
+		if (tls && !strcmp(t, ":tls"))
+			*tls = true;
+		t[0] = '\0';
+	}
+	if (port) {
 		unsigned long p;
 		char *end = NULL;
 
@@ -462,7 +471,7 @@ int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
 	int addr_start_idx;
 	char *hoststr = NULL;
 
-	hoststr = str_to_tr(ipstr, port);
+	hoststr = str_to_tr(ipstr, port, NULL);
 	if (!hoststr)
 		return -EINVAL;
 
