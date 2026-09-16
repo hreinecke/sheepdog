@@ -512,6 +512,134 @@ forward_info_advance(struct forward_info *fi, const struct node_id *nid,
 	fi->nr_sent++;
 }
 
+/*
+ * Write-cache replication: bookkeeping for a single replica write whose
+ * ack we no longer wait for synchronously (see forward_write_async()).
+ */
+struct async_write_ack {
+	uint64_t oid;
+	const struct node_id *nid;
+	struct sockfd *sfd;
+	struct sd_rsp rsp;
+};
+
+/*
+ * Runs later, off gateway_forward_request()'s call stack -- on the thread
+ * that's running the main event loop when the io_uring backend is in use,
+ * or synchronously out of aio_read() itself on the calling (gway) thread
+ * under the epoll backend (see the aio_read()/aio_writev() doc comment in
+ * include/event.h). Either way this is the only place responsible for
+ * returning sfd to the pool, since nothing else knows the peer's response
+ * has actually been drained off the wire yet.
+ */
+static void async_write_ack_done(int res, void *data)
+{
+	struct async_write_ack *ack = data;
+
+	if (res < 0) {
+		sd_err("%016"PRIx64": failed to read async replica ack, %s",
+		       ack->oid, strerror(-res));
+		sockfd_cache_del(ack->nid, ack->sfd);
+	} else if (ack->rsp.result != SD_RES_SUCCESS) {
+		sd_err("%016"PRIx64": async replica write failed, %s",
+		       ack->oid, sd_strerror(ack->rsp.result));
+		sockfd_cache_del(ack->nid, ack->sfd);
+	} else if (unlikely(ack->rsp.data_length)) {
+		/* Never expected for WRITE_PEER/CREATE_AND_WRITE_PEER; bail
+		 * out rather than silently leaving unread bytes on a
+		 * connection we're about to hand back to the pool. */
+		sd_err("%016"PRIx64": unexpected %u bytes in async replica ack",
+		       ack->oid, ack->rsp.data_length);
+		sockfd_cache_del(ack->nid, ack->sfd);
+	} else {
+		sockfd_cache_put(ack->nid, ack->sfd);
+	}
+
+	free(ack);
+}
+
+/*
+ * Send hdr/ri to a single replica and, once the send succeeds, hand the
+ * response off to be read asynchronously instead of blocking the caller
+ * on it -- the caller only needs to know the write was successfully
+ * started, not that it has completed. sfd is checked out of the pool
+ * for the lifetime of the pending ack; async_write_ack_done() is what
+ * eventually returns or evicts it.
+ */
+static int forward_write_async(const struct node_id *nid, struct sd_req *hdr,
+			       struct req_iter *ri, uint32_t epoch)
+{
+	struct sockfd *sfd;
+	struct async_write_ack *ack;
+	int ret;
+
+	sfd = sockfd_cache_get(nid);
+	if (!sfd)
+		return SD_RES_NETWORK_ERROR;
+
+	hdr->data_length = ri->dlen;
+	hdr->obj.offset = ri->off;
+
+	ret = send_req(sfd->fd, hdr, ri->buf, ri->wlen, sheep_need_retry,
+		       epoch, MAX_RETRY_COUNT);
+	if (ret) {
+		sockfd_cache_del_node(nid);
+		sd_debug("fail %d", ret);
+		return SD_RES_NETWORK_ERROR;
+	}
+
+	ack = xzalloc(sizeof(*ack));
+	ack->oid = hdr->obj.oid;
+	ack->nid = nid;
+	ack->sfd = sfd;
+	aio_read(sfd->fd, &ack->rsp, sizeof(ack->rsp), async_write_ack_done, ack);
+
+	return SD_RES_SUCCESS;
+}
+
+/* Runs the local replica's write in-process, without a loopback round
+ * trip through the network stack. */
+static int forward_write_local(struct request *req)
+{
+	switch (req->rq.opcode) {
+	case SD_OP_WRITE_OBJ:
+		return peer_write_obj(req);
+	case SD_OP_CREATE_AND_WRITE_OBJ:
+		return peer_create_and_write_obj(req);
+	default:
+		panic("unexpected opcode %d", req->rq.opcode);
+	}
+}
+
+/*
+ * Write-cache semantics: run the local replica's write first (cheap, no
+ * network round trip), then kick off the remaining replicas' writes and
+ * return as soon as they've been successfully sent, without waiting for
+ * their acks. This trades the usual "success means durable on every
+ * copy" guarantee for lower latency -- a peer write that fails or times
+ * out after we've already returned success is logged and its connection
+ * dropped (see async_write_ack_done()), but is not actively repaired;
+ * that's left to whatever later recovery/refresh path notices the
+ * replicas have diverged.
+ *
+ * Only used for plain (non-erasure-coded) WRITE_OBJ/CREATE_AND_WRITE_OBJ,
+ * and only when the local node is actually one of the replicas for this
+ * oid -- otherwise there is no "local first" step to anchor on, and we
+ * fall back to gateway_forward_request()'s normal, fully-synchronous
+ * path so durability isn't silently weakened for writes we merely happen
+ * to gateway.
+ */
+static bool use_write_cache(struct request *req)
+{
+	switch (req->rq.opcode) {
+	case SD_OP_WRITE_OBJ:
+	case SD_OP_CREATE_AND_WRITE_OBJ:
+		return !is_erasure_oid(req->rq.obj.oid);
+	default:
+		return false;
+	}
+}
+
 #endif	/* HAVE_ACCELIO */
 
 static int gateway_forward_request(struct request *req)
@@ -566,6 +694,40 @@ static int gateway_forward_request(struct request *req)
 	}
 
 #ifndef HAVE_ACCELIO
+
+	if (use_write_cache(req)) {
+		int local_idx;
+
+		for (local_idx = 0; local_idx < nr_to_send; local_idx++)
+			if (node_is_local(target_nodes[local_idx]))
+				break;
+
+		if (local_idx < nr_to_send) {
+			err_ret = forward_write_local(req);
+			if (err_ret != SD_RES_SUCCESS)
+				goto out;
+
+			for (i = 0; i < nr_to_send; i++) {
+				if (i == local_idx)
+					continue;
+
+				hdr.obj.ec_index = i;
+				hdr.obj.copy_policy = req->rq.obj.copy_policy;
+				err_ret = forward_write_async(&target_nodes[i]->nid,
+							      &hdr, &reqs[i],
+							      req->rq.epoch);
+				if (err_ret != SD_RES_SUCCESS)
+					break;
+			}
+			goto out;
+		}
+		/*
+		 * Local node isn't a replica for this oid -- fall through to
+		 * the fully-synchronous path below instead of making every
+		 * copy's ack async, which would silently weaken durability
+		 * for writes we merely happen to gateway.
+		 */
+	}
 
 	for (i = 0; i < nr_to_send; i++) {
 		struct sockfd *sfd;

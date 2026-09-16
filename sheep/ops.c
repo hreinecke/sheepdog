@@ -1093,7 +1093,7 @@ out:
 	return ret;
 }
 
-static int peer_write_obj(struct request *req)
+int peer_write_obj(struct request *req)
 {
 	struct sd_req *hdr = &req->rq;
 	struct siocb iocb = { };
@@ -1116,7 +1116,7 @@ static int peer_write_obj(struct request *req)
 	return ret;
 }
 
-static int peer_create_and_write_obj(struct request *req)
+int peer_create_and_write_obj(struct request *req)
 {
 	struct sd_req *hdr = &req->rq;
 	struct siocb iocb = { };

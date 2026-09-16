@@ -592,6 +592,8 @@ int do_process_main(const struct sd_op_template *op, const struct sd_req *req,
 		    struct sd_rsp *rsp, void *data,
 		    const struct sd_node *sender);
 int gateway_to_peer_opcode(int opcode);
+int peer_write_obj(struct request *req);
+int peer_create_and_write_obj(struct request *req);
 
 extern uint32_t last_gathered_epoch;
 
