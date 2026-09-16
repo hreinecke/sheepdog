@@ -1194,9 +1194,18 @@ static void *nofuse_main(void *arg)
 	}
 
 	tls_keyring = tls_global_init();
-	if (tls_keyring)
+	if (tls_keyring > 0) {
+		sd_info("Enabling TLS");
 		port->tls = true;
-
+		ret = configdb_set_port_attr(port->portid, "addr_tsas",
+					     "tls1.3");
+		if (!ret) {
+			ret = configdb_set_port_attr(port->portid, "addr_treq",
+						     "not required");
+			if (ret < 0)
+				port->tls = false;
+		}
+	}
 	stopped = 0;
 
 	ret = start_port(port);

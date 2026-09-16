@@ -118,7 +118,7 @@ void tls_log(int level, const char *msg)
 	fprintf(stderr, "gnutls(%d): %s", level, msg);
 }
 
-void tls_global_init(void)
+int tls_global_init(void)
 {
 	key_serial_t serial;
 	int ret;
@@ -130,14 +130,16 @@ void tls_global_init(void)
 	gnutls_global_set_log_level(9);
 
 	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
-	if (!serial) {
+	if (serial < 0) {
 		tls_log(3, "default '.nvme' keyring not found\n");
-		return;
+		return -1;
 	}
 	ret = keyctl_link(serial, KEY_SPEC_SESSION_KEYRING);
 	if (ret < 0) {
 		tls_log(3, "failed to link '.nvme' into session keyring");
+		return ret;
 	}
+	return serial;
 }
 
 int tls_handshake(struct nofuse_queue *ep)

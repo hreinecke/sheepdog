@@ -285,23 +285,23 @@ int tls_global_init(void)
 {
 	key_serial_t serial;
 	int ret;
-#if 0
+
 	SSL_library_init();
 	SSL_load_error_strings();
 	ERR_load_crypto_strings();
-#endif
+
 	OpenSSL_add_all_algorithms();
 	OpenSSL_add_all_digests();
 
 	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
-	if (!serial) {
-		fprintf(stderr, "default '.nvme' keyring not found\n");
+	if (serial < 0) {
+		sd_err("default '.nvme' keyring not found\n");
 		return -1;
 	}
 	ret = keyctl_link(serial, KEY_SPEC_SESSION_KEYRING);
 	if (ret < 0) {
-		fprintf(stderr, "failed to link '.nvme' into session keyring");
-		serial = -1;
+		sd_err("failed to link '.nvme' into session keyring");
+		return ret;
 	}
 	return serial;
 }
