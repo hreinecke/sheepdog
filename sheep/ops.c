@@ -113,6 +113,12 @@ static int cluster_new_vdi(struct request *req)
 		sd_debug("reduce number of copies to %d", iocb.nr_copies);
 	}
 
+	/*
+	 * ACL VDIs need to be replicated across all nodes in the cluster.
+	 */
+	if (!hdr->vdi.copies && (hdr->vdi.vdi_flags & SD_VDI_FLAG_ACL))
+		iocb.nr_copies = SD_MAX_COPIES;
+
 	if (!hdr->vdi.block_size_shift)
 		iocb.block_size_shift = sys->cinfo.block_size_shift;
 
