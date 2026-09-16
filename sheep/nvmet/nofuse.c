@@ -379,8 +379,8 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 		desc->state = ((uint32_t)grpid == portid) ?
 			NVME_ANA_OPTIMIZED : NVME_ANA_NONOPTIMIZED;
 		memset(desc->rsvd17, 0, sizeof(desc->rsvd17));
-		sd_debug("%s: grpid %u %u nsids state %d",
-			 __func__, grpid, nnsids, desc->state);
+		sd_debug("grpid %u %u nsids state %d",
+			 grpid, nnsids, desc->state);
 
 		grp_ptr = (uint8_t *)&desc->nsids[nnsids];
 		ngrps++;
@@ -388,8 +388,35 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 	sd_mutex_unlock(&this_ctx->ns_lock);
 
 	hdr->ngrps = htole16(ngrps);
-	sd_debug("%s: %d ana groups", __func__, ngrps);
 	return grp_ptr - log;
+}
+
+int identify_active_ns(struct nofuse_subsystem *subsys,
+		       uint32_t start_nsid, char *id, size_t len)
+{
+	uint32_t *nsid = (uint32_t *)id;
+	struct nofuse_namespace *ns;
+	size_t id_len = 0;
+
+	sd_mutex_lock(&this_ctx->ns_lock);
+	rb_for_each_entry(ns, &this_ctx->ns_root, rb) {
+		uint32_t n = htole32(ns->nsid);
+		if (ns->subsys_id != subsys->id)
+			continue;
+		if (ns->nsid < start_nsid)
+			continue;
+		if (id_len + sizeof(nsid) > len)
+			break;
+		if (!ns->enabled)
+			continue;
+		memcpy(nsid, &n, sizeof(uint32_t));
+		nsid++;
+		id_len += sizeof(nsid);
+	}
+	sd_mutex_unlock(&this_ctx->ns_lock);
+	sd_debug("subsys %s %d active namespaces",
+		 subsys->nqn, id_len / sizeof(uint32_t));
+	return id_len;
 }
 
 bool check_allowed_hosts(const char *hostnqn, const char *subsysnqn)

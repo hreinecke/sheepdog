@@ -292,6 +292,8 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 					  uint32_t nsid);
 int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 		    uint8_t *log, int log_len);
+int identify_active_ns(struct nofuse_subsystem *subsys,
+		       uint32_t start_nsid, char *id, size_t len);
 int add_namespace(const char *subsysnqn, uint32_t nsid);
 int del_namespace(const char *subsysnqn, uint32_t nsid);
 int enable_namespace(const char *subsysnqn, uint32_t nsid);

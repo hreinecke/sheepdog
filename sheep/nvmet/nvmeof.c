@@ -477,14 +477,14 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 	return len;
 }
 
-static int handle_identify_active_ns(struct nofuse_queue *ep,
+static int handle_identify_active_ns(struct nofuse_queue *ep, uint32_t nsid,
 				     uint8_t *id_buf, size_t len)
 {
 	int ret;
 
 	memset(id_buf, 0, len);
-	ret = configdb_identify_active_ns(ep->ctrl->subsys->id,
-					  id_buf, len);
+	ret = identify_active_ns(ep->ctrl->subsys, nsid,
+				 id_buf, len);
 	if (ret < 0)
 		return ret;
 
@@ -587,7 +587,8 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		}
 		break;
 	case NVME_ID_CNS_NS_ACTIVE_LIST:
-		id_len = handle_identify_active_ns(ep, qe->data, qe->data_len);
+		id_len = handle_identify_active_ns(ep, nsid,
+						   qe->data, qe->data_len);
 		break;
 	case NVME_ID_CNS_NS_DESC_LIST:
 		id_len = handle_identify_ns_desc_list(ep, nsid,
