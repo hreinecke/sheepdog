@@ -3,9 +3,13 @@
 DOG=../dog/dog
 SHEEP=../sheep/sheep
 
+[ -d /srv/sheep ] || mkdir /srv/sheep
 for node in $(seq 0 4); do
     [ -d /srv/sheep/${node} ] || mkdir /srv/sheep/${node}
-    $SHEEP -c local /srv/sheep/${node} -l level=debug -p 700${node} -z ${node} -t 127.0.0.1 -s 800${node}
+    cp $SHEEP /srv/sheep/${node}
+    pushd /srv/sheep/${node} > /dev/null
+    ./sheep -c local /srv/sheep/${node} -l level=debug -p 700${node} -z ${node} -t 127.0.0.1 -s 800${node}
+    popd > /dev/null
 done
 
 $DOG cluster format -l
