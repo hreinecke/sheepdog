@@ -634,10 +634,13 @@ static bool use_write_cache(struct request *req)
 	switch (req->rq.opcode) {
 	case SD_OP_WRITE_OBJ:
 	case SD_OP_CREATE_AND_WRITE_OBJ:
-		return !is_erasure_oid(req->rq.obj.oid);
+		if (!is_erasure_oid(req->rq.obj.oid) &&
+		    !(req->rq.flags & SD_FLAG_CMD_FUA))
+			return true;
 	default:
-		return false;
+		break;
 	}
+	return false;
 }
 
 #endif	/* HAVE_ACCELIO */

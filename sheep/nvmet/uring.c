@@ -134,7 +134,7 @@ static void uring_refresh_done(struct request *req)
 		sd_write_object_async(vid_to_vdi_oid(qe->vid), 0,
 				      (char *)&qe->inode_vid_buf,
 				      sizeof(qe->inode_vid_buf),
-				      inode_off, false,
+				      inode_off, false, qe->fua,
 				      uring_inode_write_done, qe);
 	} else {
 		uint64_t oid, old_oid = 0;
@@ -154,7 +154,7 @@ static void uring_refresh_done(struct request *req)
 		}
 		oid = vid_to_data_oid(inode_vid, ctx->idx);
 		sd_write_object_async(oid, old_oid, ctx->data, ctx->len,
-				      ctx->off, create,
+				      ctx->off, create, qe->fua,
 				      uring_write_object_complete, qe);
 	}
 	free(ctx);
@@ -260,7 +260,7 @@ static void uring_write_object_complete(struct request *req)
 		sd_write_object_async(vid_to_vdi_oid(qe->vid), 0,
 				      (char *)&qe->inode_vid_buf,
 				      sizeof(qe->inode_vid_buf),
-				      inode_off, false,
+				      inode_off, false, qe->fua,
 				      uring_inode_write_done, qe);
 		return;
 	}
@@ -304,7 +304,7 @@ static int uring_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		}
 		oid = vid_to_data_oid(inode_vid, idx);
 		sd_write_object_async(oid, old_oid, (char *)data, len,
-				      off, create,
+				      off, create, qe->fua,
 				      uring_write_object_complete, qe);
 		data += len;
 		pos += len;

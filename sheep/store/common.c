@@ -598,7 +598,7 @@ int sd_write_object_tgt(uint64_t oid, uint64_t cow_oid,
 
 void sd_write_object_async(uint64_t oid, uint64_t cow_oid,
 			   char *data, unsigned int datalen,
-			   uint64_t offset, bool create,
+			   uint64_t offset, bool create, bool fua,
 			   local_req_cb_t done, void *arg)
 {
 	struct sd_req hdr;
@@ -608,6 +608,8 @@ void sd_write_object_async(uint64_t oid, uint64_t cow_oid,
 	else
 		sd_init_req(&hdr, SD_OP_WRITE_OBJ);
 	hdr.flags = SD_FLAG_CMD_WRITE | SD_FLAG_CMD_TGT;
+	if (fua)
+		hdr.flags |= SD_FLAG_CMD_FUA;
 	hdr.data_length = datalen;
 	hdr.obj.oid = oid;
 	hdr.obj.cow_oid = cow_oid;

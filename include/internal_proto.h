@@ -123,6 +123,7 @@
 /* internal flags for hdr.flags, must be above 0x80 */
 #define SD_FLAG_CMD_RECOVERY 0x0080
 #define SD_FLAG_CMD_WILDCARD 0x0100
+#define SD_FLAG_CMD_FUA      0x0200
 
 /* flags for VDI attribute operations */
 #define SD_FLAG_CMD_CREAT    0x0100

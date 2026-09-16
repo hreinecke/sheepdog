@@ -592,8 +592,6 @@ static int handle_identify_cs_indep_ns(struct nofuse_queue *ep,
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
 	memset(&id, 0, sizeof(id));
-	/* Volative write cache not present */
-	id.nsfeat = (1 << 5);
 	if (ep->ctrl->subsys->recycle_vid)
 		id.nsfeat |= (1 << 3);
 	/* It is a shared namespace */
@@ -936,6 +934,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	uint8_t sgl_type = cmd->rw.dptr.sgl.type;
 	uint32_t nsid = le32toh(cmd->rw.nsid);
+	uint32_t cdw12 = le64toh(cmd->common.cdw12);
 	int ret;
 
 	qe->ns = lookup_namespace(ep->ctrl, nsid);
@@ -953,6 +952,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 	qe->data_remaining = qe->data_len;
+	qe->fua = (cdw12 & ((uint32_t)1 << 30));
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
