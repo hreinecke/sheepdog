@@ -391,8 +391,8 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 	return grp_ptr - log;
 }
 
-int identify_active_ns(struct nofuse_subsystem *subsys,
-		       uint32_t start_nsid, char *id, size_t len)
+int identify_active_ns(struct nofuse_subsystem *subsys, uint32_t start_nsid,
+		       char *id, size_t len, bool enabled)
 {
 	uint32_t *nsid = (uint32_t *)id;
 	struct nofuse_namespace *ns;
@@ -407,15 +407,15 @@ int identify_active_ns(struct nofuse_subsystem *subsys,
 			continue;
 		if (id_len + sizeof(nsid) > len)
 			break;
-		if (!ns->enabled)
+		if (enabled && !ns->enabled)
 			continue;
 		memcpy(nsid, &n, sizeof(uint32_t));
 		nsid++;
 		id_len += sizeof(nsid);
 	}
 	sd_mutex_unlock(&this_ctx->ns_lock);
-	sd_debug("subsys %s %d active namespaces",
-		 subsys->nqn, id_len / sizeof(uint32_t));
+	sd_debug("subsys %s %lu active namespaces",
+		 subsys->nqn, (unsigned long)id_len / sizeof(uint32_t));
 	return id_len;
 }
 
@@ -862,6 +862,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	sd_mutex_lock(&this_ctx->subsys_lock);
 	subsys->id = subsys_id;
 	subsys->type = NVME_NQN_NVM;
+	subsys->recycle_vid = sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID;
 	sd_init_mutex(&subsys->inode_lock);
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {

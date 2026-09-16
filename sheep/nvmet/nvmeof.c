@@ -477,14 +477,30 @@ static int handle_identify_ns(struct nofuse_queue *ep, uint32_t nsid,
 	return len;
 }
 
-static int handle_identify_active_ns(struct nofuse_queue *ep, uint32_t nsid,
-				     uint8_t *id_buf, size_t len)
+static int handle_identify_ns_active_list(struct nofuse_queue *ep,
+					  uint32_t nsid,
+					  uint8_t *id_buf, size_t len)
 {
 	int ret;
 
 	memset(id_buf, 0, len);
 	ret = identify_active_ns(ep->ctrl->subsys, nsid,
-				 id_buf, len);
+				 (char *)id_buf, len, true);
+	if (ret < 0)
+		return ret;
+
+	return len;
+}
+
+static int handle_identify_ns_present_list(struct nofuse_queue *ep,
+					   uint32_t nsid,
+					   uint8_t *id_buf, size_t len)
+{
+	int ret;
+
+	memset(id_buf, 0, len);
+	ret = identify_active_ns(ep->ctrl->subsys, nsid,
+				 (char *)id_buf, len, false);
 	if (ret < 0)
 		return ret;
 
@@ -564,6 +580,37 @@ parse_eui64:
 	return len;
 }
 
+static int handle_identify_cs_indep_ns(struct nofuse_queue *ep,
+				       uint32_t nsid,
+				       uint8_t *id_buf, uint64_t len)
+{
+	struct nofuse_namespace *ns;
+	struct nvme_id_ns_cs_indep id;
+
+	ns = lookup_namespace(ep->ctrl, nsid);
+	if (!ns)
+		return NVME_SC_INVALID_NS | NVME_SC_DNR;
+
+	memset(&id, 0, sizeof(id));
+	/* Volative write cache not present */
+	id.nsfeat = (1 << 5);
+	if (ep->ctrl->subsys->recycle_vid)
+		id.nsfeat |= (1 << 3);
+	/* It is a shared namespace */
+	id.nmic = (1 << 0);
+	id.anagrpid = ns->ana_grpid;
+	if (ns->readonly)
+		id.nsattr = (1 << 0);
+	if (ns->enabled)
+		id.nstat = (1 << 0);
+	if (len > sizeof(id))
+		len = sizeof(id);
+
+	memcpy(id_buf, &id, len);
+
+	return len;
+}
+
 static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
 {
@@ -587,8 +634,9 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		}
 		break;
 	case NVME_ID_CNS_NS_ACTIVE_LIST:
-		id_len = handle_identify_active_ns(ep, nsid,
-						   qe->data, qe->data_len);
+		id_len = handle_identify_ns_active_list(ep, nsid,
+							qe->data,
+							qe->data_len);
 		break;
 	case NVME_ID_CNS_NS_DESC_LIST:
 		id_len = handle_identify_ns_desc_list(ep, nsid,
@@ -604,6 +652,15 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		}
 		ctrl_err(ep, "unsupported identify ctrl csi %u", csi);
 		return NVME_SC_BAD_ATTRIBUTES | NVME_SC_DNR;
+	case NVME_ID_CNS_NS_CS_INDEP:
+		id_len = handle_identify_cs_indep_ns(ep, nsid,
+						     qe->data, qe->data_len);
+		break;
+	case NVME_ID_CNS_NS_PRESENT_LIST:
+		id_len = handle_identify_ns_present_list(ep, nsid,
+							 qe->data,
+							 qe->data_len);
+		break;
 	default:
 		ctrl_err(ep, "unexpected identify command cns %u", cns);
 		return NVME_SC_BAD_ATTRIBUTES | NVME_SC_DNR;

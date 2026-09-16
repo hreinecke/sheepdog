@@ -415,6 +415,21 @@ struct nvme_id_ns_zns {
 	__u8			vs[256];
 };
 
+/* I/O Command Set Independent Identify Namespace Data Structure */
+struct nvme_id_ns_cs_indep {
+	__u8			nsfeat;
+	__u8			nmic;
+	__u8			rescap;
+	__u8			fpi;
+	__u32			anagrpid;
+	__u8			nsattr;
+	__u8			rsvd9;
+	__u16			nvmsetid;
+	__u16			endgid;
+	__u8			nstat;
+	__u8			rsvd15[4081];
+};
+
 struct nvme_id_ctrl_zns {
 	__u8	zasl;
 	__u8	rsvd1[4095];
