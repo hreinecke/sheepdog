@@ -622,6 +622,9 @@ void nvmet_notify_member_change(uint32_t acl)
 
 void nvmet_notify_recovery_change(bool recovery)
 {
+	if (!this_ctx)
+		return;
+
 	if (recovery)
 		uatomic_set_true(&this_ctx->in_recovery);
 	else
@@ -630,6 +633,8 @@ void nvmet_notify_recovery_change(bool recovery)
 
 bool nofuse_node_in_recovery(void)
 {
+	if (!this_ctx)
+		return true;
 	return uatomic_is_true(&this_ctx->in_recovery);
 }
 
@@ -753,10 +758,11 @@ static void process_member_event(struct nofuse_event *ev)
 		sd_warn("Failed to read ACL %"PRIx32" metadata", subsys->id);
 	} else {
 		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
-			char *old = (char *)&subsys->inode->metadata[i];
+			char *old = subsys->inode ?
+				(char *)&subsys->inode->metadata[i] : NULL;
 			char *new = (char *)&inode->metadata[i];
 
-			if (!strlen(old)) {
+			if (!old || !strlen(old)) {
 				if (!strlen(new))
 					continue;
 				configdb_add_host_subsys(new, subsys->nqn);
@@ -1049,6 +1055,9 @@ static void nofuse_cleanup(void *arg)
 		list_del(&ev->node);
 		free(ev);
 	}
+
+	this_ctx = NULL;
+
 	if (ctx->event_evtfd >= 0)
 		close(ctx->event_evtfd);
 	sd_destroy_mutex(&ctx->event_lock);
@@ -1202,34 +1211,36 @@ out_pop:
 
 int nofuse_init(const char *traddr, int trsvcid)
 {
+	struct nofuse_context *ctx;
 	int err;
 
 	if (!traddr)
 		return 0;
 
-	this_ctx = malloc(sizeof(struct nofuse_context));
-	if (!this_ctx)
-		return 1;
-	memset(this_ctx, 0, sizeof(struct nofuse_context));
-	this_ctx->traddr = strdup(traddr);
-	this_ctx->trsvcid = trsvcid;
-	this_ctx->dbname = strdup("nofuse.sqlite");
-	INIT_RB_ROOT(&this_ctx->nroot);
-	INIT_RB_ROOT(&this_ctx->vroot);
-	sd_init_mutex(&this_ctx->root_lock);
-	INIT_RB_ROOT(&this_ctx->ns_root);
-	sd_init_mutex(&this_ctx->ns_lock);
-	INIT_RB_ROOT(&this_ctx->subsys_root);
-	sd_init_mutex(&this_ctx->subsys_lock);
-	INIT_LIST_HEAD(&this_ctx->event_list);
-	sd_init_mutex(&this_ctx->event_lock);
-	this_ctx->event_evtfd = eventfd(0, EFD_NONBLOCK);
-	if (this_ctx->event_evtfd < 0) {
+	ctx = malloc(sizeof(struct nofuse_context));
+	if (!ctx)
+		return -1;
+	memset(ctx, 0, sizeof(struct nofuse_context));
+	ctx->traddr = strdup(traddr);
+	ctx->trsvcid = trsvcid;
+	ctx->dbname = strdup("nofuse.sqlite");
+	INIT_RB_ROOT(&ctx->nroot);
+	INIT_RB_ROOT(&ctx->vroot);
+	sd_init_mutex(&ctx->root_lock);
+	INIT_RB_ROOT(&ctx->ns_root);
+	sd_init_mutex(&ctx->ns_lock);
+	INIT_RB_ROOT(&ctx->subsys_root);
+	sd_init_mutex(&ctx->subsys_lock);
+	INIT_LIST_HEAD(&ctx->event_list);
+	sd_init_mutex(&ctx->event_lock);
+	ctx->event_evtfd = eventfd(0, EFD_NONBLOCK);
+	if (ctx->event_evtfd < 0) {
 		sd_err("failed to create nofuse event eventfd: %m");
-		nofuse_cleanup(this_ctx);
-		this_ctx = NULL;
+		nofuse_cleanup(ctx);
 		return -1;
 	}
+
+	this_ctx = ctx;
 
 	err = sd_thread_create("nofuse", &this_ctx->thread, nofuse_main,
 			       this_ctx);
