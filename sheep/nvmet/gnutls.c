@@ -159,7 +159,7 @@ int tls_global_init(void)
 
 int tls_handshake(struct nofuse_queue *ep)
 {
-	const char *tls_priority = "SECURE256:+SECURE128:-COMP-ALL:-VERS-ALL:+VERS-TLS1.3:%NO_TICKETS:+PSK:+DHE-PSK:+ECDHE-PSK";
+	const char *tls_priority = "SECURE256:+SECURE128:-COMP-ALL:-VERS-ALL:+VERS-TLS1.3:+PSK:+DHE-PSK:+ECDHE-PSK";
 	int ret;
 	const char *err_pos;
 
