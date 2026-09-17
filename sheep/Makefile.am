@@ -61,7 +61,7 @@ if BUILD_SHEPHERD
 sheep_SOURCES		+= cluster/shepherd.c
 endif
 if BUILD_ETCD
-sheep_SOURCES		+= cluster/etcd.c etcd/client.c etcd/socket.c etcd/base64.c
+sheep_SOURCES		+= cluster/etcd.c etcd/client.c etcd/socket.c
 endif
 
 if BUILD_TRACE
