@@ -793,41 +793,43 @@ static void process_member_event(struct nofuse_event *ev)
 					    SD_INODE_HEADER_SIZE, 0);
 	if (ret != SD_RES_SUCCESS) {
 		sd_warn("Failed to read ACL %"PRIx32" metadata", subsys->id);
-	} else {
-		for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
-			char *old = subsys->inode ?
-				(char *)&subsys->inode->metadata[i] : NULL;
-			char *new = (char *)&inode->metadata[i];
-
-			if (!old || !strlen(old)) {
-				if (!strlen(new))
-					continue;
-				/*
-				 * The subsystem was registered with no
-				 * explicit members (nofuse.c's startup scan
-				 * defaults a member-less ACL to
-				 * allow_any_host=1), and configdb_add_host_
-				 * subsys() below refuses to link a host to a
-				 * subsys that still has it set -- clear it
-				 * before adding, now that we know there's a
-				 * real member to restrict to.
-				 */
-				configdb_set_subsys_attr(subsys->id,
-							 "allow_any_host", "0");
-				configdb_add_host(new);
-				configdb_add_host_subsys(new, subsys->nqn);
-			} else if (!strlen(new)) {
-				configdb_del_host_subsys(old, subsys->nqn);
-			} else if (strcmp(new, old)) {
-				configdb_del_host_subsys(old, subsys->nqn);
-				configdb_add_host(new);
-				configdb_add_host_subsys(new, subsys->nqn);
-			}
-		}
-		free(subsys->inode);
-		subsys->inode = inode;
-		inode = NULL;
+		goto out_unlock;
 	}
+	for (i = 0; i < sizeof(inode->metadata); i += SD_MAX_VDI_LEN) {
+		char *old = subsys->inode ?
+			(char *)&subsys->inode->metadata[i] : NULL;
+		char *new = (char *)&inode->metadata[i];
+
+		if (!old || !strlen(old)) {
+			if (!strlen(new))
+				continue;
+			/*
+			 * The subsystem was registered with no
+			 * explicit members (nofuse.c's startup scan
+			 * defaults a member-less ACL to
+			 * allow_any_host=1), and configdb_add_host_
+			 * subsys() below refuses to link a host to a
+			 * subsys that still has it set -- clear it
+			 * before adding, now that we know there's a
+			 * real member to restrict to.
+			 */
+			configdb_set_subsys_attr(subsys->id,
+						 "allow_any_host", "0");
+			configdb_add_host(new);
+			configdb_add_host_subsys(new, subsys->nqn);
+		} else if (!strlen(new)) {
+			configdb_del_host_subsys(old, subsys->nqn);
+		} else if (strcmp(new, old)) {
+			configdb_del_host_subsys(old, subsys->nqn);
+			configdb_add_host(new);
+			configdb_add_host_subsys(new, subsys->nqn);
+		}
+	}
+	free(subsys->inode);
+	subsys->inode = inode;
+	inode = NULL;
+
+out_unlock:
 	sd_mutex_unlock(&subsys->inode_lock);
 	if (inode)
 		free(inode);
