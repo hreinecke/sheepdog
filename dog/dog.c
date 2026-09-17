@@ -158,7 +158,7 @@ static const struct sd_option *find_opt(int ch)
 		}
 	}
 
-	sd_err("Internal error");
+	sd_err("Internal error, option '%c' not handled", ch);
 	exit(EXIT_SYSFAIL);
 }
 

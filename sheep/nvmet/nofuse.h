@@ -219,6 +219,13 @@ struct nofuse_ctrl {
 	uint64_t cc;
 };
 
+struct nofuse_tls_psk {
+	char subsysnqn[MAX_NQN_SIZE];
+	uint8_t version[8];
+	uint8_t hash[64];
+	uint8_t key[64];
+};
+
 #define ctrl_info(e, f, x...)					\
 	if (cmd_debug) {					\
 		if ((e)->ctrl) {				\

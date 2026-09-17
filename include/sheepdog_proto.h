@@ -379,6 +379,8 @@ struct recovery_throttling {
 
 /* flags for sd_inode_header.vdi_flags */
 #define SD_VDI_FLAG_ACL 0x00000001 /* VDI holds an access control list */
+#define SD_VDI_FLAG_MEMBER 0x00000002 /* VDI holds a member record */
+
 #define SD_INODE_META_INDEX (OLD_MAX_CHILDREN - 8)
 
 struct sd_inode_header {
@@ -658,6 +660,11 @@ static inline bool vdi_is_snapshot(const struct sd_inode_header *inode)
 static inline bool vdi_is_acl(const struct sd_inode_header *inode)
 {
 	return !!(inode->vdi_flags & SD_VDI_FLAG_ACL);
+}
+
+static inline bool vdi_is_member(const struct sd_inode_header *inode)
+{
+	return !!(inode->vdi_flags & SD_VDI_FLAG_MEMBER);
 }
 
 static inline uint64_t ledger_oid_to_data_oid(uint64_t oid)

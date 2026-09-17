@@ -69,6 +69,66 @@ static int read_acl_inode(const char *aclname, uint32_t *acl_vid,
 	return SD_RES_SUCCESS;
 }
 
+static int acl_create_vdi(const char *vdiname, unsigned int flags,
+			  uint32_t *vid)
+{
+	char buf[SD_MAX_VDI_LEN];
+	int ret;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+
+	memset(buf, 0, sizeof(buf));
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+
+	sd_init_req(&hdr, SD_OP_NEW_VDI);
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.data_length = SD_MAX_VDI_LEN;
+	hdr.vdi.vdi_size = SD_INODE_SIZE;
+	hdr.vdi.vdi_flags = flags;
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to create VDI %s: error %d",
+		       vdiname, ret);
+		return SD_RES_EIO;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to create VDI %s: %s",
+		       vdiname, sd_strerror(rsp->result));
+		ret = rsp->result;;
+	} else
+		*vid = rsp->vdi.vdi_id;
+
+	return ret;
+}
+
+static int acl_delete_vdi(const char *vdiname)
+{
+	char buf[SD_MAX_VDI_LEN];
+	int ret;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+
+	sd_init_req(&hdr, SD_OP_DEL_VDI);
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.data_length = sizeof(buf);
+	memset(buf, 0, sizeof(buf));
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to execute SD_OP_DEL_VDI");
+		return SD_RES_EIO;
+	}
+
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to delete %s: %s", vdiname,
+		       sd_strerror(rsp->result));
+		ret = rsp->result;
+	}
+	return ret;
+}
+
 struct acl_vdi_info {
 	uint32_t acl;
 	unsigned int count;
@@ -87,7 +147,6 @@ static void count_acl_objs(uint32_t vid, const char *name, const char *tag,
 static int acl_create(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
-	char buf[SD_MAX_VDI_LEN];
 	struct acl_vdi_info info;
 	uint32_t acl_vid;
 	int ret;
@@ -110,38 +169,22 @@ static int acl_create(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (!rsp->cluster.ctime) {
-		sd_err("Failed to create VDI %s: %s", aclname,
-		       sd_strerror(SD_RES_WAIT_FOR_FORMAT));
-		return EXIT_FAILURE;
-	}
+	if (rsp->result == SD_RES_SUCCESS &&
+	    !rsp->cluster.ctime)
+		rsp->result = SD_RES_WAIT_FOR_FORMAT;
 
 	if (rsp->result != SD_RES_SUCCESS) {
-		sd_err("%s", sd_strerror(rsp->result));
+		sd_err("Failed to get cluster status: %s",
+		       sd_strerror(rsp->result));
 		return EXIT_FAILURE;
 	}
 
-	memset(buf, 0, sizeof(buf));
-	pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
-
-	sd_init_req(&hdr, SD_OP_NEW_VDI);
-	hdr.flags = SD_FLAG_CMD_WRITE;
-	hdr.data_length = SD_MAX_VDI_LEN;
-	hdr.vdi.vdi_size = SD_INODE_SIZE;
-	hdr.vdi.vdi_flags = SD_VDI_FLAG_ACL;
-
-	ret = dog_exec_req(&sd_nid, &hdr, buf);
-	if (ret < 0) {
-		sd_err("Failed to create ACL %s",
-		       aclname);
+	ret = acl_create_vdi(aclname, SD_VDI_FLAG_ACL, &acl_vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to create ACL %s: %s",
+		       aclname, sd_strerror(ret));
 		return EXIT_FAILURE;
 	}
-	if (rsp->result != SD_RES_SUCCESS) {
-		sd_err("%s", sd_strerror(rsp->result));
-		return EXIT_FAILURE;
-	}
-
-	acl_vid = rsp->vdi.vdi_id;
 
 	/* Sanity check: the ACL should not be referenced by any VDI objects */
 	memset(&info, 0, sizeof(info));
@@ -153,17 +196,9 @@ static int acl_create(int argc, char **argv)
 		sd_err("ACL %"PRIx32" referenced by %u VDI ACLs",
 		       acl_vid, info.count);
 		if (!acl_cmd_data.force) {
-			sd_init_req(&hdr, SD_OP_DEL_VDI);
-			hdr.flags = SD_FLAG_CMD_WRITE;
-			hdr.data_length = sizeof(buf);
-			memset(buf, 0, sizeof(buf));
-			pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
-
-			ret = dog_exec_req(&sd_nid, &hdr, buf);
-			if (ret < 0) {
-				sd_err("Failed to execute SD_OP_DEL_VDI");
+			ret = acl_delete_vdi(aclname);
+			if (ret != SD_RES_SUCCESS)
 				return EXIT_SYSFAIL;
-			}
 			return EXIT_FAILURE;
 		}
 	}
@@ -187,9 +222,6 @@ static int acl_create(int argc, char **argv)
 static int acl_delete(int args, char **argv)
 {
 	const char *aclname = argv[optind++];
-	char buf[SD_MAX_VDI_LEN];
-	struct sd_req hdr;
-	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
 	struct sd_inode *inode;
 	struct acl_vdi_info info;
 	uint32_t acl_vid;
@@ -214,22 +246,11 @@ static int acl_delete(int args, char **argv)
 		if (!acl_cmd_data.force)
 			return EXIT_FAILURE;
 	}
-	sd_init_req(&hdr, SD_OP_DEL_VDI);
-	hdr.flags = SD_FLAG_CMD_WRITE;
-	hdr.data_length = sizeof(buf);
-	memset(buf, 0, sizeof(buf));
-	pstrcpy(buf, SD_MAX_VDI_LEN, aclname);
-
-	ret = dog_exec_req(&sd_nid, &hdr, buf);
-	if (ret < 0) {
-		sd_err("Failed to execute SD_OP_DEL_VDI");
-		return EXIT_SYSFAIL;
-	}
-
-	if (rsp->result != SD_RES_SUCCESS) {
+	ret = acl_delete_vdi(aclname);
+	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to delete %s: %s", aclname,
-		       sd_strerror(rsp->result));
-		if (rsp->result == SD_RES_NO_VDI)
+		       sd_strerror(ret));
+		if (ret == SD_RES_NO_VDI)
 			ret = EXIT_MISSING;
 		else
 			ret = EXIT_FAILURE;
@@ -776,7 +797,7 @@ static int acl_add_member(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	char *member = NULL;
-	uint32_t acl_vid;
+	uint32_t acl_vid, vid;
 	struct sd_inode *inode = NULL;
 	int ret, i, free_idx = -1, num_entries;
 
@@ -815,6 +836,13 @@ static int acl_add_member(int argc, char **argv)
 		ret = EXIT_FAILURE;
 		goto out;
 	}
+
+	ret = acl_create_vdi(member, SD_VDI_FLAG_MEMBER, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
 	memcpy(&inode->header.metadata[free_idx], member, strlen(member));
 
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
@@ -827,6 +855,7 @@ static int acl_add_member(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64": %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		acl_delete_vdi(member);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -1003,6 +1032,13 @@ static int acl_remove_member(int argc, char **argv)
 		goto out;
 	}
 
+	ret = acl_delete_vdi(member);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to delete ACL member '%s': %s",
+		       member, sd_strerror(ret));
+		ret = EXIT_FAILURE;
+		goto out;
+	}
 	if (verbose)
 		print_acl_member_list(inode, acl_vid);
 out:
@@ -1024,7 +1060,7 @@ static int acl_remove(int argc, char **argv)
 }
 
 static struct subcommand acl_cmd[] = {
-	{"create", "<aclname>", "cfajphrvT", "create an acl",
+	{"create", "<aclname>", "fajphrvT", "create an acl",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_create, acl_options},
 	{"delete", "<aclname>", "sfajphrvT", "delete an acl",
