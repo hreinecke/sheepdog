@@ -141,6 +141,18 @@ struct nofuse_queue {
 	int io_evtfd;
 	struct list_head io_done_list;
 	pthread_mutex_t io_done_lock;
+	/*
+	 * Set once tls_handshake() has been called for this ep, successfully
+	 * or not. tcp_accept_connection() detects TLS by peeking the raw
+	 * socket bytes for something that isn't a plaintext icreq header --
+	 * which, once a handshake has happened, is *always* true (the bytes
+	 * are ciphertext), so without this guard a caller that retries
+	 * tcp_accept_connection() on -EAGAIN (start_queue()'s retry loop,
+	 * when e.g. the rest of the icreq PDU hasn't arrived yet) ends up
+	 * calling tls_handshake() a second time on an already-established
+	 * session, corrupting it.
+	 */
+	bool tls_started;
 #ifdef HAVE_GNUTLS
 	gnutls_session_t session;
 	gnutls_psk_server_credentials_t psk_cred;

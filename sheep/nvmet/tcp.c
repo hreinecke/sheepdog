@@ -392,7 +392,18 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 		return -errno;
 	}
 
-	if (icreq->hdr.type != nvme_tcp_icreq) {
+	if (icreq->hdr.type != nvme_tcp_icreq && !ep->tls_started) {
+		/*
+		 * A retry of this whole function (start_queue()'s "goto
+		 * retry" on -EAGAIN, e.g. because the rest of the icreq PDU
+		 * below hasn't arrived yet) would otherwise land here again:
+		 * the raw bytes peeked off an already-TLS-established socket
+		 * are ciphertext, so they never look like a plaintext icreq
+		 * header either. Calling tls_handshake() a second time on a
+		 * session that's already past its handshake corrupts it
+		 * (observed as GnuTLS reporting the session invalidated on
+		 * the next read) instead of erroring out cleanly.
+		 */
 		ret = tls_handshake(ep);
 		if (ret)
 			return ret;
@@ -423,6 +434,12 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 		goto out_free;
 	}
 	len = icreq->hdr.hlen - hdr_len;
+	ret = ep->io_ops->io_wait(ep, POLLIN);
+	if (ret < 0) {
+		tcp_err(ep, "timeout waiting for rest of icreq");
+		ret = -ETIMEDOUT;
+		goto out_free;
+	}
 	ret = ep->io_ops->io_read(ep, (uint8_t *)icreq + hdr_len, len);
 	if (ret < 0) {
 		tcp_err(ep, "icreq read error %d", errno);

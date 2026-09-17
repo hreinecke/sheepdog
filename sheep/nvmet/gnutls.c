@@ -22,66 +22,44 @@
 
 static int gnutls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
-	char *_buf = buf;
 	int ret;
 
-	do {
-		ret = gnutls_record_send(ep->session, _buf, buf_len);
-		if (ret < 0) {
-			if (gnutls_error_is_fatal(ret)) {
-				sd_err("tls fatal error (%s)",
-					gnutls_strerror(ret));
-			} else {
-				sd_warn("tls warning (%s)",
-					gnutls_strerror(ret));
-				ret = 1;
-			}
-		} else if (ret < buf_len) {
-			sd_debug("tls short write (%d of %ld bytes)",
-				 ret, buf_len);
-			_buf += ret;
-			buf_len -= ret;
-		}
-	} while (ret >= 0);
-	if (ret < 0) {
-		errno = EIO;
+	ret = gnutls_record_send(ep->session, buf, buf_len);
+	if (ret >= 0)
+		return ret;
+	if (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED) {
+		errno = EAGAIN;
 		return -1;
 	}
-	return 0;
+	if (gnutls_error_is_fatal(ret)) {
+		sd_err("tls fatal error (%s)", gnutls_strerror(ret));
+		errno = EIO;
+	} else {
+		sd_warn("tls warning (%s)", gnutls_strerror(ret));
+		errno = EAGAIN;
+	}
+	return -1;
 }
 
 static int gnutls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
-	char *_buf = buf;
 	int ret;
 
-	do {
-		ret = gnutls_record_recv(ep->session, _buf, buf_len);
-		if (ret < 0) {
-			if (ret == GNUTLS_E_AGAIN) {
-				errno = EAGAIN;
-				return -1;
-			}
-			if (gnutls_error_is_fatal(ret)) {
-				sd_err("tls fatal error (%s)",
-					gnutls_strerror(ret));
-			} else {
-				sd_warn("tls warning (%s)",
-					gnutls_strerror(ret));
-				ret = 1;
-			}
-		} else if (ret < buf_len) {
-			sd_debug("tls short read (%d of %ld bytes)",
-				 ret, buf_len);
-			_buf += ret;
-			buf_len -= ret;
-		}
-	} while (ret >= 0);
-	if (ret < 0) {
-		errno = EIO;
+	ret = gnutls_record_recv(ep->session, buf, buf_len);
+	if (ret >= 0)
+		return ret;
+	if (ret == GNUTLS_E_AGAIN || ret == GNUTLS_E_INTERRUPTED) {
+		errno = EAGAIN;
 		return -1;
 	}
-	return 0;
+	if (gnutls_error_is_fatal(ret)) {
+		sd_err("tls fatal error (%s)", gnutls_strerror(ret));
+		errno = EIO;
+	} else {
+		sd_warn("tls warning (%s)", gnutls_strerror(ret));
+		errno = EAGAIN;
+	}
+	return -1;
 }
 
 #define IO_WAIT_TIMEOUT_MS 5000
@@ -185,6 +163,7 @@ int tls_handshake(struct nofuse_queue *ep)
 	int ret;
 	const char *err_pos;
 
+	ep->tls_started = true;
 	gnutls_psk_allocate_server_credentials(&ep->psk_cred);
 
 	gnutls_psk_set_server_credentials_function(ep->psk_cred,

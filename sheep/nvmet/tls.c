@@ -124,6 +124,7 @@ int tls_handshake(struct nofuse_queue *ep)
 	long ssl_opts;
 	int ret, ssl_err;
 
+	ep->tls_started = true;
 	ep->ctx = SSL_CTX_new(TLS_server_method());
 	if (!ep->ctx) {
 		ret = -ENOMEM;
