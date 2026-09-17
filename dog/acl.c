@@ -28,7 +28,6 @@ static struct json_object *out_obj;
 
 static struct sd_option acl_options[] = {
 	{'s', "snapshot", true, "specify a snapshot id or tag name"},
-	{'c', "copies", true, "specify the data redundancy level"},
 	{'f', "force", false, "do operation forcibly"},
 	{ 0, NULL, false, NULL },
 };
@@ -36,9 +35,6 @@ static struct sd_option acl_options[] = {
 static struct acl_cmd_data {
 	int snapshot_id;
 	char snapshot_tag[SD_MAX_VDI_TAG_LEN];
-	int nr_copies;
-	uint8_t copy_policy;
-	uint8_t store_policy;
 	bool force;
 } acl_cmd_data = { ~0, };
 
@@ -426,8 +422,6 @@ struct get_acl_info {
 	const char *tag;
 	uint32_t snapid;
 	uint32_t acl;
-	uint8_t nr_copies;
-	uint8_t copy_policy;
 };
 
 static void print_acl_list(uint32_t vid, const char *name, const char *tag,
@@ -737,8 +731,7 @@ static int acl_add_vdi(int argc, char **argv)
 			       offsetof(struct sd_inode,
 					data_vdi_id[new_idx]),
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       inode->header.nr_copies,
-			       inode->header.copy_policy, false);
+			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64": %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
@@ -760,8 +753,7 @@ static int acl_add_vdi(int argc, char **argv)
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       inode, sizeof(*inode), 0,
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       inode->header.nr_copies,
-			       inode->header.copy_policy, false);
+			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
@@ -831,8 +823,7 @@ static int acl_add_member(int argc, char **argv)
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       inode->header.nr_copies,
-			       inode->header.copy_policy, false);
+			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64": %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
@@ -939,8 +930,7 @@ update_inode:
 	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
 			       inode, sizeof(*inode), 0,
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       inode->header.nr_copies,
-			       inode->header.copy_policy, false);
+			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
@@ -1005,8 +995,7 @@ static int acl_remove_member(int argc, char **argv)
 			       offsetof(struct sd_inode_header,
 					metadata[free_idx]),
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       inode->header.nr_copies,
-			       inode->header.copy_policy, false);
+			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("failed to update ACL inode %"PRIx64" header: %s",
 		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
@@ -1070,20 +1059,6 @@ static int acl_parser(int ch, const char *opt)
 		} else if (acl_cmd_data.snapshot_id == 0) {
 			fprintf(stderr,
 				"The snapshot id must be larger than zero\n");
-			exit(EXIT_FAILURE);
-		}
-		break;
-	case 'c':
-		acl_cmd_data.nr_copies = parse_copy(opt,
-						    &acl_cmd_data.copy_policy);
-		if (!acl_cmd_data.nr_copies) {
-			sd_err("Invalid parameter %s\n"
-			       "To create replicated acl, set -c x\n"
-			       "  x(1 to %d)   - number of replicated copies\n"
-			       "To create erasure coded acl, set -c x:y\n"
-			       "  x(2,4,8,16)  - number of data strips\n"
-			       "  y(1 to 15)   - number of parity strips",
-			       opt, SD_MAX_COPIES);
 			exit(EXIT_FAILURE);
 		}
 		break;
