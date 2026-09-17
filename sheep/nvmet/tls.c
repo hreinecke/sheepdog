@@ -61,36 +61,31 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 	void *psk_key;
 	size_t psk_len;
 
-	fprintf(stdout, "%s: identity %s len %lu\n",
-		__func__, identity, identity_len);
+	sd_debug("identity %s len %lu", identity, identity_len);
 
 	keyring_id = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (keyring_id < 0) {
-		fprintf(stderr, "%s: '.nvme' keyring not available\n",
-			__func__);
+		sd_debug("'.nvme' keyring not available");
 		*sess = NULL;
 		return 0;
 	}
 
 	psk = keyctl_search(keyring_id, "psk", (const char *)identity, 0);
 	if (psk < 0) {
-		fprintf(stdout, "%s: psk identity %s (not found\n",
-			__func__, identity);
+		sd_debug("psk identity '%s' not found", identity);
 		*sess = NULL;
 		return 0;
 	}
 	psk_len = keyctl_read_alloc(psk, &psk_key);
 	if (psk_len < 0) {
-		fprintf(stdout, "%s: failed to read key %u\n",
-			__func__, psk);
+		sd_warn("failed to read key %u", psk);
 		*sess = NULL;
 		return 0;
 	}
 
 	if (sscanf((char *)identity,
 		   "NVMe%01hhu%c%02hhu %*s", &ver, &type, &hash) < 3) {
-		fprintf(stderr, "%s: cannot parse psk identity '%s'\n",
-			__func__, identity);
+		sd_warn("cannot parse psk identity '%s'", identity);
 	}
 	if (hash == NVME_TCP_TLS_CIPHER_SHA256) {
 		/* TLS_AES_128_GCM_SHA256 */
@@ -100,16 +95,15 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
 		cipher = SSL_CIPHER_find(ssl, psk_cipher_sha384);
 	}
 	if (cipher == NULL) {
-		fprintf(stderr, "%s: Error finding suitable ciphersuite\n",
-			__func__);
+		sd_warn("No suitable ciphersuite for hash %d", hash);
 		return 0;
 	}
-	fprintf(stdout, "%s: tls %s using cipher %s\n",
-		__func__, SSL_get_version(ssl), SSL_CIPHER_get_name(cipher));
+	sd_debug("tls %s using cipher %s",
+		 SSL_get_version(ssl), SSL_CIPHER_get_name(cipher));
 	cipher = SSL_get_pending_cipher(ssl);
 	if (cipher) {
-		fprintf(stdout, "%s: pending cipher %s\n",
-			__func__, SSL_CIPHER_get_name(cipher));
+		sd_debug("pending cipher %s",
+			SSL_CIPHER_get_name(cipher));
 	}
 
 	tmpsess = SSL_SESSION_new();
@@ -117,7 +111,7 @@ static int psk_find_session_cb(SSL *ssl, const unsigned char *identity,
             || !SSL_SESSION_set1_master_key(tmpsess, psk_key, psk_len)
             || !SSL_SESSION_set_cipher(tmpsess, cipher)
             || !SSL_SESSION_set_protocol_version(tmpsess, SSL_version(ssl))) {
-		fprintf(stderr, "Error setting tls parameters\n");
+		sd_warn("Error setting tls parameters");
 		return 0;
 	}
 	*sess = tmpsess;
@@ -145,7 +139,7 @@ int tls_handshake(struct nofuse_queue *ep)
 
 	ep->ssl = SSL_new(ep->ctx);
 	if (!ep->ssl) {
-		fprintf(stderr, "ssl initialisation failed\n");
+		sd_warn("ssl initialisation failed");
 		ret = -ENOPROTOOPT;
 		goto out_ctx_free;
 	}
@@ -156,7 +150,7 @@ retry_handshake:
 	do {
 		ssl_err = SSL_do_handshake(ep->ssl);
 		if (ssl_err > 0) {
-			fprintf(stdout, "tls handshake succeeded\n");
+			sd_debug("tls handshake succeeded");
 			ep->io_ops = &tls_io_ops;
 			return 0;
 		}
@@ -166,44 +160,44 @@ retry_handshake:
 
 	switch (ret) {
 	case SSL_ERROR_SSL:
-		fprintf(stderr, "SSL library error\n");
+		sd_warn("SSL library error");
 		ERR_print_errors_fp(stderr);
 		break;
 	case SSL_ERROR_WANT_READ:
-		fprintf(stderr, "SSL want_read\n");
+		sd_warn("SSL want_read");
 		goto retry_handshake;
 		break;
 	case SSL_ERROR_WANT_WRITE:
-		fprintf(stderr, "SSL want_write\n");
+		sd_warn("SSL want_write\n");
 		goto retry_handshake;
 		break;
 	case SSL_ERROR_WANT_X509_LOOKUP:
-		fprintf(stderr, "SSL want_x509_lookup\n");
+		sd_warn("SSL want_x509_lookup\n");
 		break;
 	case SSL_ERROR_SYSCALL:
-		fprintf(stderr, "SSL syscall error \n");
+		sd_warn("SSL syscall error \n");
 		break;
 	case SSL_ERROR_ZERO_RETURN:
-		fprintf(stderr, "SSL zero return\n");
+		sd_warn("SSL zero return\n");
 		break;
 	case SSL_ERROR_WANT_CONNECT:
-		fprintf(stderr, "SSL want_connect\n");
+		sd_warn("SSL want_connect\n");
 		break;
 	case SSL_ERROR_WANT_ACCEPT:
-		fprintf(stderr, "SSL want_accept\n");
+		sd_warn("SSL want_accept\n");
 		break;
 	case SSL_ERROR_WANT_ASYNC:
-		fprintf(stderr, "SSL want_async\n");
+		sd_warn("SSL want_async\n");
 		break;
 	case SSL_ERROR_WANT_ASYNC_JOB:
-		fprintf(stderr, "SSL want_async_job\n");
+		sd_warn("SSL want_async_job\n");
 		break;
 	case SSL_ERROR_WANT_CLIENT_HELLO_CB:
-		fprintf(stderr, "SSL want_client_hello\n");
+		sd_warn("SSL want_client_hello\n");
 		break;
 	case SSL_ERROR_NONE:
 	default:
-		fprintf(stderr, "SSL unknown\n");
+		sd_warn("SSL unknown (%d)", ret);
 		ERR_print_errors_fp(stderr);
 		break;
 	}
@@ -235,45 +229,45 @@ ssize_t tls_io(struct nofuse_queue *ep, bool is_write, void *buf, size_t buf_len
 
 	switch (ret) {
 	case SSL_ERROR_SSL:
-		fprintf(stderr, "SSL library error\n");
+		sd_warn("SSL library error");
 		ERR_print_errors_fp(stderr);
 		errno = EIO;
 		break;
 	case SSL_ERROR_WANT_X509_LOOKUP:
-		fprintf(stderr, "SSL want_x509_lookup\n");
+		sd_warn("SSL want_x509_lookup");
 		errno = ENOKEY;
 		break;
 	case SSL_ERROR_SYSCALL:
-		fprintf(stderr, "SSL syscall error\n");
+		sd_warn("SSL syscall error");
 		ERR_print_errors_fp(stderr);
 		errno = ENXIO;
 		break;
 	case SSL_ERROR_ZERO_RETURN:
-		fprintf(stderr, "SSL zero return\n");
+		sd_warn("SSL zero return");
 		errno = ENODATA;
 		break;
 	case SSL_ERROR_WANT_CONNECT:
-		fprintf(stderr, "SSL want_connect\n");
+		sd_warn("SSL want_connect");
 		errno = ENOLINK;
 		break;
 	case SSL_ERROR_WANT_ACCEPT:
-		fprintf(stderr, "SSL want_accept\n");
+		sd_warn("SSL want_accept");
 		errno = EPROTO;
 		break;
 	case SSL_ERROR_WANT_ASYNC:
-		fprintf(stderr, "SSL want_async\n");
+		sd_warn("SSL want_async");
 		errno = EBUSY;
 		break;
 	case SSL_ERROR_WANT_ASYNC_JOB:
-		fprintf(stderr, "SSL want_async_job\n");
+		sd_warn("SSL want_async_job");
 		errno = EBUSY;
 		break;
 	case SSL_ERROR_WANT_CLIENT_HELLO_CB:
-		fprintf(stderr, "SSL want_client_hello\n");
+		sd_warn("SSL want_client_hello");
 		errno = EPROTO;
 		break;
 	default:
-		fprintf(stderr, "SSL unknown (%d)\n", ret);
+		sd_warn("SSL unknown (%d)", ret);
 		ERR_print_errors_fp(stderr);
 		errno = EIO;
 		break;

@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * gnutls.c
+ * NVMe-over-fabrics TCP transport GNUTLS support.
+ *
+ * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
+ */
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -7,31 +14,31 @@
 #include <zlib.h>
 #include <keyutils.h>
 
-#include "nvmet.h"
+#include "sheep.h"
+#include "nofuse.h"
 #include "tls.h"
 #include "ops.h"
 
-#ifdef _GNUTLS
-
 static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
+	char *_buf = buf;
 	int ret;
 
 	do {
-		ret = gnutls_record_send(ep->session, buf, buf_len);
+		ret = gnutls_record_send(ep->session, _buf, buf_len);
 		if (ret < 0) {
 			if (gnutls_error_is_fatal(ret)) {
-				fprintf(stderr, "tls fatal error (%s)\n",
+				sd_err("tls fatal error (%s)",
 					gnutls_strerror(ret));
 			} else {
-				fprintf(stderr, "tls warning (%s)\n",
+				sd_warn("tls warning (%s)",
 					gnutls_strerror(ret));
 				ret = 1;
 			}
 		} else if (ret < buf_len) {
-			fprintf(stderr, "tls short write (%d of %ld bytes)\n",
-				ret, buf_len);
-			buf += ret;
+			sd_debug("tls short write (%d of %ld bytes)",
+				 ret, buf_len);
+			_buf += ret;
 			buf_len -= ret;
 		}
 	} while (ret >= 0);
@@ -42,23 +49,24 @@ static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 
 static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
+	char *_buf = buf;
 	int ret;
 
 	do {
-		ret = gnutls_record_recv(ep->session, buf, buf_len);
+		ret = gnutls_record_recv(ep->session, _buf, buf_len);
 		if (ret < 0) {
 			if (gnutls_error_is_fatal(ret)) {
-				fprintf(stderr, "tls fatal error (%s)\n",
+				sd_err("tls fatal error (%s)",
 					gnutls_strerror(ret));
 			} else {
-				fprintf(stderr, "tls warning (%s)\n",
+				sd_warn("tls warning (%s)",
 					gnutls_strerror(ret));
 				ret = 1;
 			}
 		} else if (ret < buf_len) {
-			fprintf(stderr, "tls short read (%d of %ld bytes)\n",
-				ret, buf_len);
-			buf += ret;
+			sd_debug("tls short read (%d of %ld bytes)",
+				 ret, buf_len);
+			_buf += ret;
 			buf_len -= ret;
 		}
 	} while (ret >= 0);
@@ -80,28 +88,26 @@ static int psk_server_cb(gnutls_session_t session, const char *identity,
 	int psk_len;
 	const char *psk_key_type = "psk";
 
-	fprintf(stdout, "%s: identity %s\n", __func__, identity);
+	sd_debug("identity %s", identity);
 	if (identity == NULL) {
-		fprintf(stderr, "%s: no identity given\n", __func__);
+		sd_err("no identity given");
 		return -1;
 	}
 
 	keyring_id = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (keyring_id < 0) {
-		fprintf(stderr, "TLS keyring not available\n");
+		sd_err("TLS keyring not available");
 		return -1;
 	}
 
 	psk = keyctl_search(keyring_id, psk_key_type, identity, 0);
 	if (key < 0) {
-		fprintf(stdout, "%s: psk identity %s not found\n",
-			__func__, identity);
+		sd_info("psk identity %s not found", identity);
 		return -1;
 	}
 	psk_len = keyctl_read_alloc(psk, &psk_key);
 	if (psk_len < 0) {
-		fprintf(stdout, "%s: failed to read key %u\n",
-			__func__, psk);
+		sd_warn("failed to read key %u", psk);
 		return -1;
 	}
 	key->data = gnutls_malloc(psk_len);
@@ -113,9 +119,9 @@ static int psk_server_cb(gnutls_session_t session, const char *identity,
 	return 0;
 }
 
-void tls_log(int level, const char *msg)
+static void tls_log(int level, const char *msg)
 {
-	fprintf(stderr, "gnutls(%d): %s", level, msg);
+	sd_info("gnutls(%d): %s", level, msg);
 }
 
 int tls_global_init(void)
@@ -131,7 +137,7 @@ int tls_global_init(void)
 
 	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (serial < 0) {
-		tls_log(3, "default '.nvme' keyring not found\n");
+		tls_log(3, "default '.nvme' keyring not found");
 		return -1;
 	}
 	ret = keyctl_link(serial, KEY_SPEC_SESSION_KEYRING);
@@ -159,7 +165,7 @@ int tls_handshake(struct nofuse_queue *ep)
 
 	ret = gnutls_priority_set_direct(ep->session, tls_priority, &err_pos);
 	if (ret != GNUTLS_E_SUCCESS) {
-		fprintf(stderr,"failed to set priorities, err %s\n", err_pos);
+		sd_warn("failed to set priorities, err %s", err_pos);
 		ret = -EINVAL;
 		goto out_free;
 	}
@@ -168,12 +174,12 @@ int tls_handshake(struct nofuse_queue *ep)
 		ret = gnutls_handshake(ep->session);
 	} while (ret < 0 && !gnutls_error_is_fatal(ret));
 	if (ret < 0) {
-		fprintf(stderr,"handshaked failed (%s)\n",
+		sd_warn("handshaked failed (%s)",
 			gnutls_strerror(ret));
 		ret = -EOPNOTSUPP;
 		goto out_free;
 	}
-	printf("switching to TLS functions\n");
+	sd_info("switching to TLS functions");
 	ep->io_ops = &tls_io_ops;
 	return ret;
 out_free:
@@ -189,4 +195,3 @@ void tls_free_queue(struct nofuse_queue *ep)
 	gnutls_deinit(ep->session);
 	gnutls_psk_free_server_credentials(ep->psk_cred);
 }
-#endif

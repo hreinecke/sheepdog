@@ -24,7 +24,7 @@
 #include <uuid/uuid.h>
 #include <liburing.h>
 
-#ifdef _GNUTLS
+#ifdef HAVE_GNUTLS
 #include <gnutls/gnutls.h>
 #else
 #include <openssl/ssl.h>
@@ -141,7 +141,7 @@ struct nofuse_queue {
 	int io_evtfd;
 	struct list_head io_done_list;
 	pthread_mutex_t io_done_lock;
-#ifdef _GNUTLS
+#ifdef HAVE_GNUTLS
 	gnutls_session_t session;
 	gnutls_psk_server_credentials_t psk_cred;
 #else
