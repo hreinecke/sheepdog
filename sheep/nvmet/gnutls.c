@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <netinet/tcp.h>
 #include <gnutls/gnutls.h>
@@ -19,7 +20,7 @@
 #include "tls.h"
 #include "ops.h"
 
-static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
+static int gnutls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	char *_buf = buf;
 	int ret;
@@ -42,12 +43,14 @@ static int tls_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 			buf_len -= ret;
 		}
 	} while (ret >= 0);
-	if (ret < 0)
-		return -EIO;
+	if (ret < 0) {
+		errno = EIO;
+		return -1;
+	}
 	return 0;
 }
 
-static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
+static int gnutls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
 	char *_buf = buf;
 	int ret;
@@ -55,6 +58,10 @@ static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 	do {
 		ret = gnutls_record_recv(ep->session, _buf, buf_len);
 		if (ret < 0) {
+			if (ret == GNUTLS_E_AGAIN) {
+				errno = EAGAIN;
+				return -1;
+			}
 			if (gnutls_error_is_fatal(ret)) {
 				sd_err("tls fatal error (%s)",
 					gnutls_strerror(ret));
@@ -70,14 +77,38 @@ static int tls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 			buf_len -= ret;
 		}
 	} while (ret >= 0);
+	if (ret < 0) {
+		errno = EIO;
+		return -1;
+	}
+	return 0;
+}
+
+#define IO_WAIT_TIMEOUT_MS 5000
+
+static int gnutls_ep_wait(struct nofuse_queue *ep, short events)
+{
+	struct pollfd pfd = { .fd = ep->sockfd, .events = events };
+	int ret;
+
+	ret = gnutls_record_check_pending(ep->session);
+	if (ret > 0)
+		return 0;
+	do {
+		ret = poll(&pfd, 1, IO_WAIT_TIMEOUT_MS);
+	} while (ret < 0 && errno == EINTR);
+
 	if (ret < 0)
-		return -EIO;
+		return -errno;
+	if (ret == 0)
+		return -ETIMEDOUT;
 	return 0;
 }
 
 struct io_ops tls_io_ops = {
-	.io_read = tls_ep_read,
-	.io_write = tls_ep_write,
+	.io_read = gnutls_ep_read,
+	.io_write = gnutls_ep_write,
+	.io_wait = gnutls_ep_wait,
 };
 
 static int psk_server_cb(gnutls_session_t session, const char *identity,

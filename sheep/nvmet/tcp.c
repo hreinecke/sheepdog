@@ -398,6 +398,11 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 			return ret;
 	}
 
+	ret = ep->io_ops->io_wait(ep, POLLIN);
+	if (ret < 0) {
+		tcp_err(ep, "timeout waiting for icreq");
+		return -ETIMEDOUT;
+	}
 	ret = ep->io_ops->io_read(ep, icreq, hdr_len);
 	if (ret < 0) {
 		if (errno != EAGAIN)
