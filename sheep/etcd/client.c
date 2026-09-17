@@ -15,7 +15,7 @@
 #include <json-c/json.h>
 
 #include "util.h"
-#include "etcd/base64.h"
+#include "base64.h"
 #include "logger.h"
 #include "etcd/client.h"
 
