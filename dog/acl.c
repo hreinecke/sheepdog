@@ -460,34 +460,34 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 
 		for (j = 0; j < i->header.max_data_id_nr; j++) {
 			struct get_acl_info vdi_info = { .obj = acl_vdi_obj };
-			struct sd_inode *member_inode;
-			uint32_t member_vid = i->data_vdi_id[j];
-			uint32_t member_snapid;
+			struct sd_inode *vdi_inode;
+			uint32_t vdi_vid = i->data_vdi_id[j];
+			uint32_t vdi_snapid;
 
 			/* Print empty entries, too */
-			if (!member_vid) {
+			if (!vdi_vid) {
 				struct json_object *vdi_obj =
 					json_object_new_object();
 				json_object_array_add(vdi_info.obj, vdi_obj);
 				continue;
 			}
 
-			member_inode = xzalloc(SD_INODE_HEADER_SIZE);
-			if (dog_read_object(vid_to_vdi_oid(member_vid),
-					    member_inode, SD_INODE_HEADER_SIZE,
+			vdi_inode = xzalloc(SD_INODE_HEADER_SIZE);
+			if (dog_read_object(vid_to_vdi_oid(vdi_vid),
+					    vdi_inode, SD_INODE_HEADER_SIZE,
 					    0, true) == SD_RES_SUCCESS) {
-				member_snapid =
-					vdi_is_snapshot(&member_inode->header) ?
-					member_inode->header.snap_id : 0;
-				print_acl_list(member_vid,
-					       member_inode->header.name,
-					       member_inode->header.tag,
-					       member_snapid, 0, member_inode,
+				vdi_snapid =
+					vdi_is_snapshot(&vdi_inode->header) ?
+					vdi_inode->header.snap_id : 0;
+				print_acl_list(vdi_vid,
+					       vdi_inode->header.name,
+					       vdi_inode->header.tag,
+					       vdi_snapid, 0, vdi_inode,
 					       &vdi_info);
 			} else
 				sd_err("Failed to read inode of VDI %"PRIx32,
-				       member_vid);
-			free(member_inode);
+				       vdi_vid);
+			free(vdi_inode);
 		}
 		for (j = 0; j < sizeof(i->header.metadata);
 		     j += SD_MAX_VDI_LEN) {
