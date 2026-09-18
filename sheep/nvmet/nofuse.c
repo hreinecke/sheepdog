@@ -889,6 +889,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	subsys->id = subsys_id;
 	subsys->type = NVME_NQN_NVM;
 	subsys->recycle_vid = sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID;
+	subsys->wce = sys->nosync;
 	sd_init_mutex(&subsys->inode_lock);
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {

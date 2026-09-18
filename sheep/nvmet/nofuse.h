@@ -172,6 +172,7 @@ struct nofuse_subsystem {
 	unsigned int mnan;
 	unsigned int nn;
 	bool recycle_vid;
+	bool wce;
 };
 
 struct nofuse_namespace {

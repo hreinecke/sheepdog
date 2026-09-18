@@ -592,6 +592,9 @@ static int handle_identify_cs_indep_ns(struct nofuse_queue *ep,
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
 	memset(&id, 0, sizeof(id));
+	/* Announce write cache settings */
+	if (!ep->ctrl->subsys->wce)
+		id.nsfeat = (1 << 5);
 	if (ep->ctrl->subsys->recycle_vid)
 		id.nsfeat |= (1 << 3);
 	/* It is a shared namespace */

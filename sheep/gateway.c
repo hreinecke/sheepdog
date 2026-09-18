@@ -631,6 +631,8 @@ static int forward_write_local(struct request *req)
  */
 static bool use_write_cache(struct request *req)
 {
+	if (!sys->nosync)
+		return false;
 	switch (req->rq.opcode) {
 	case SD_OP_WRITE_OBJ:
 	case SD_OP_CREATE_AND_WRITE_OBJ:
