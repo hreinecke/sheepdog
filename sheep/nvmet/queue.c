@@ -164,7 +164,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	pthread_mutex_unlock(&ctrl->ctrl_mutex);
 	pthread_mutex_lock(&ctrl_list_mutex);
 	if (!num_queues) {
-		sd_debug("ctrl %u qid %d: deleting controller\n",
+		sd_debug("ctrl %u qid %d: deleting controller",
 			 ctrl->cntlid, ep->qid);
 		configdb_del_ctrl(ctrl->subsys->id, ctrl->cntlid);
 		list_del(&ctrl->node);
@@ -578,7 +578,7 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
 
 	pthread_mutex_lock(&port->ep_mutex);
 	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
-		sd_debug("%s: ctrl %d qid %d subsys %s\n",
+		sd_debug("%s: ctrl %d qid %d subsys %s",
 		       __func__,
 		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
 		       strlen(ep->ctrl->subsys->nqn) ?
@@ -635,7 +635,7 @@ void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 		return;
 	}
 	if (aen_pending(ep->ctrl)) {
-		sd_debug("subsys %s ctrl %d type %s pending %#x masked %#x\n",
+		sd_debug("subsys %s ctrl %d type %s pending %#x masked %#x",
 			 ep->ctrl->subsys->nqn, ep->ctrl->cntlid,
 			 aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
 		queue_submit_aen(ep);
