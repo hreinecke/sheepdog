@@ -286,7 +286,18 @@ AC_ARG_ENABLE([gnutls],
 	[ enable_gnutls=$have_gnutls ],)
 AM_CONDITIONAL(BUILD_GNUTLS, test x$enable_gnutls = xyes)
 
-PKG_CHECK_MODULES([openssl],[openssl],[have_openssl=yes],[have_openssl=no])
+PKG_CHECK_MODULES([openssl],[openssl],[have_openssl="yes"],[have_openssl=no])
+AC_ARG_ENABLE([openssl],
+	[  --enable-openssl	    : enable openssl (default yes) ],,
+	[ enable_openssl=$have_openssl ],)
+
+if test x$enable_gnutls = xyes -o x$enable_openssl = xyes; then
+	PKG_CHECK_MODULES([keyutils],[libkeyutils],[have_keyutils="yes"])
+	if test "x$have_keyutils" = "xyes"; then
+		AC_DEFINE(HAVE_KEYUTILS, 1, [Have keyutils])
+	fi
+fi
+
 AC_ARG_ENABLE([nvmet],
 	[  --enable-nvmet	    : enable nvme-over-fabric target (default yes)],,
 	[ enable_nvmet="yes" ],)
@@ -493,9 +504,18 @@ if test "x${enable_nvmet}" = xyes; then
 	if test "x${enable_gnutls}" = xyes; then
 		AC_CHECK_HEADERS([gnutls/gnutls.h],,
 		AC_MSG_ERROR(gnutls.h header missing))
-		AC_DEFINE_UNQUOTED(HAVE_GNUTLS, 1, [enable_gnutls])
+		AC_DEFINE_UNQUOTED(HAVE_GNUTLS, 1, [enable gnutls])
 		PACKAGE_FEATURES="$PACKAGE_FEATURES gnutls"
 	fi
+	if test "x${enable_openssl}" = xyes; then
+		AC_DEFINE_UNQUOTED(HAVE_OPENSSL, 1, [enable openssl])
+		AM_CONDITIONAL(BUILD_CRYPTO, test x$enable_openssl = xyes)
+		if test "x${enable_gnutls}" != xyes; then
+			PACKAGE_FEATURES="$PACKAGE_FEATURES crypto"
+		fi
+		PACKAGE_FEATURES="$PACKAGE_FEATURES crypto"
+	fi
+	AM_CONDITIONAL(BUILD_TLS,test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes)
 fi
 
 if test "x${enable_diskvnodes}" = xyes; then

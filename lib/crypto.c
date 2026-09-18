@@ -15,6 +15,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "config.h"
+
 #if NVME_HAVE_SYS_RANDOM
 #include <sys/random.h>
 #endif
@@ -27,7 +29,7 @@
 #include <openssl/core_names.h>
 #include <openssl/params.h>
 
-#ifdef CONFIG_KEYUTILS
+#ifdef HAVE_KEYUTILS
 #include <keyutils.h>
 
 #define NVME_TLS_DEFAULT_KEYRING ".nvme"
@@ -639,9 +641,8 @@ int nvme_generate_tls_key_identity(const char *hostnqn,
 	return 0;
 }
 
-#ifdef CONFIG_KEYUTILS
-int nvme_lookup_keyring(
-		struct libnvme_global_ctx *ctx, const char *keyring, long *key)
+#ifdef HAVE_KEYUTILS
+int nvme_lookup_keyring(const char *keyring, long *key)
 {
 	key_serial_t keyring_id;
 
@@ -655,29 +656,32 @@ int nvme_lookup_keyring(
 	return 0;
 }
 
-char *nvme_describe_key_serial(
-		struct libnvme_global_ctx *ctx, long key_id)
+char *nvme_describe_key_serial(long key_id)
 {
-	__cleanup_free char *str = NULL;
+	char *str = NULL, *serial;
 	char *last;
 
 	if (keyctl_describe_alloc(key_id, &str) < 0)
 		return NULL;
 
 	last = strrchr(str, ';');
-	if (!last)
+	if (!last) {
+		free(str);
 		return NULL;
+	}
 
 	last++;
-	if (strlen(last) == 0)
+	if (strlen(last) == 0) {
+		free(str);
 		return NULL;
-
-	return strdup(last);
+	}
+	serial = strdup(last);
+	free(str);
+	return serial;
 }
 
-int nvme_lookup_key(
-		struct libnvme_global_ctx *ctx, const char *type,
-		const char *identity, long *keyp)
+int nvme_lookup_key(const char *type,
+		    const char *identity, long *keyp)
 {
 	key_serial_t key;
 
@@ -689,13 +693,12 @@ int nvme_lookup_key(
 	return 0;
 }
 
-int nvme_set_keyring(
-		struct libnvme_global_ctx *ctx, long key_id)
+int nvme_set_keyring(long key_id)
 {
 	long err;
 
 	if (key_id == 0) {
-		if (nvme_lookup_keyring(ctx, NULL, &key_id))
+		if (nvme_lookup_keyring(NULL, &key_id))
 			return -ENOKEY;
 	}
 
@@ -705,14 +708,13 @@ int nvme_set_keyring(
 	return 0;
 }
 
-int nvme_read_key(
-		struct libnvme_global_ctx *ctx, long keyring_id, long key_id,
-		int *len, unsigned char **key)
+int nvme_read_key(long keyring_id, long key_id,
+		  int *len, unsigned char **key)
 {
 	void *buffer;
 	int ret;
 
-	ret = nvme_set_keyring(ctx, keyring_id);
+	ret = nvme_set_keyring(keyring_id);
 	if (ret < 0)
 		return ret;
 
@@ -725,10 +727,9 @@ int nvme_read_key(
 	return 0;
 }
 
-int nvme_update_key(
-		struct libnvme_global_ctx *ctx, long keyring_id,
-		const char *key_type, const char *identity,
-		unsigned char *key_data, int key_len, long *keyp)
+int nvme_update_key(long keyring_id, const char *key_type,
+		    const char *identity,
+		    unsigned char *key_data, int key_len, long *keyp)
 {
 	long key;
 
@@ -749,10 +750,10 @@ int nvme_update_key(
 static int __nvme_insert_tls_key(key_serial_t keyring_id, const char *key_type,
 		const char *hostnqn, const char *subsysnqn,
 		int version, int hmac, unsigned char *configured_key,
-		int key_len, bool compat, long *keyp)
+		int key_len, long *keyp)
 {
-	__cleanup_free unsigned char *psk = NULL;
-	__cleanup_free char *identity = NULL;
+	unsigned char *psk = NULL;
+	char *identity = NULL;
 	ssize_t identity_len;
 	long key;
 	int ret;
@@ -767,12 +768,16 @@ static int __nvme_insert_tls_key(key_serial_t keyring_id, const char *key_type,
 	memset(identity, 0, identity_len);
 
 	psk = malloc(key_len);
-	if (!psk)
+	if (!psk) {
+		free(identity);
 		return -ENOMEM;
+	}
 	memset(psk, 0, key_len);
 	ret = derive_nvme_keys(hostnqn, subsysnqn, identity, version, hmac,
-			       configured_key, psk, key_len, compat);
+			       configured_key, psk, key_len);
 	if (ret != key_len) {
+		free(psk);
+		free(identity);
 		if (ret < 0)
 			return ret;
 		return -ENOKEY;
@@ -780,11 +785,12 @@ static int __nvme_insert_tls_key(key_serial_t keyring_id, const char *key_type,
 
 	ret = nvme_update_key(keyring_id, key_type, identity,
 			      psk, key_len, &key);
-	if (ret)
-		return ret;
+	if (!ret)
+		*keyp = key;
 
-	*keyp = key;
-	return 0;
+	free(psk);
+	free(identity);
+	return ret;
 }
 
 int nvme_insert_tls_key(const char *keyring, const char *key_type,
@@ -793,10 +799,12 @@ int nvme_insert_tls_key(const char *keyring, const char *key_type,
 			unsigned char *configured_key, int key_len,
 			long *key)
 {
-	long keyring_id;
+	long keyring_id = 0;
 	int ret;
 
 	ret = nvme_lookup_keyring(keyring, &keyring_id);
+	if (!ret && !keyring_id)
+		ret = -ENOKEY;
 	if (ret)
 		return ret;
 
@@ -806,16 +814,18 @@ int nvme_insert_tls_key(const char *keyring, const char *key_type,
 
 	return __nvme_insert_tls_key(keyring_id, key_type,
 		hostnqn, subsysnqn, version, hmac,
-		configured_key, key_len, false, key);
+		configured_key, key_len, key);
 }
 
 int nvme_revoke_tls_key(const char *keyring, const char *key_type,
 			const char *identity)
 {
-	long keyring_id, key;
+	long keyring_id = 0, key;
 	int ret;
 
 	ret = nvme_lookup_keyring(keyring, &keyring_id);
+	if (!ret && !keyring_id)
+		ret = -ENOKEY;
 	if (ret)
 		return ret;
 
@@ -828,38 +838,6 @@ int nvme_revoke_tls_key(const char *keyring, const char *key_type,
 		return -errno;
 
 	return 0;
-}
-
-static int __nvme_import_tls_key(long keyring_id,
-		const char *hostnqn, const char *subsysnqn,
-		const char *identity, const char *key,
-		long *keyp)
-{
-	__cleanup_free unsigned char *key_data = NULL;
-	unsigned char version;
-	unsigned char hmac;
-	size_t key_len;
-	int ret;
-
-	ret = nvme_import_tls_key_versioned(key, &version,
-					    &hmac, &key_len, &key_data);
-	if (ret)
-		return ret;
-
-	if (hmac == NVME_HMAC_ALG_NONE || !identity) {
-		/*
-		 * This is a configured key (hmac 0) or we don't know the
-		 * identity and so the assumtion is it is also a
-		 * configured key. Derive a new key and load the newly
-		 * created key into the keystore.
-		 */
-		return __nvme_insert_tls_key(keyring_id, "psk",
-			hostnqn, subsysnqn, version, hmac,
-			key_data, key_len, false, keyp);
-	}
-
-	return nvme_update_key(keyring_id, "psk", identity,
-			      key_data, key_len, keyp);
 }
 
 #endif

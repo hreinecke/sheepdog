@@ -1047,7 +1047,7 @@ out:
 }
 
 static struct subcommand acl_remove_cmd[] = {
-	{"vdi", NULL, NULL, "rmove VDI from ACL", NULL,
+	{"vdi", NULL, NULL, "remove VDI from ACL", NULL,
 	 CMD_NEED_ARG, acl_remove_vdi},
 	{"member", NULL, NULL, "remove member from ACL", NULL,
 	 CMD_NEED_ARG, acl_remove_member},
@@ -1057,6 +1057,91 @@ static struct subcommand acl_remove_cmd[] = {
 static int acl_remove(int argc, char **argv)
 {
 	return do_generic_subcommand(acl_remove_cmd, argc, argv);
+}
+
+static int acl_import_psk(int argc, char **argv)
+{
+	const char *aclname = argv[optind++];
+	char *member = NULL;
+	uint32_t acl_vid, vid;
+	struct sd_inode *inode = NULL;
+	int ret, i, free_idx = -1, num_entries;
+
+	if (!argv[optind]) {
+		sd_err("Please specify the VDI to add");
+		return EXIT_USAGE;
+	}
+	member = argv[optind];
+	if (!strlen(member) || strlen(member) > SD_MAX_VDI_LEN) {
+		sd_err("Invalid ACL member name '%s'", member);
+		return EXIT_USAGE;
+	}
+
+	inode = xmalloc(SD_INODE_HEADER_SIZE);
+	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
+	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	num_entries = sizeof(inode->header.metadata) / SD_MAX_VDI_LEN;
+	for (i = 0; i < num_entries; i++) {
+		char *item = (char *)&inode->header.metadata[i * SD_MAX_VDI_LEN];
+		if (free_idx < 0 && !strlen(item))
+			free_idx = i * SD_MAX_VDI_LEN;
+		if (!strcmp(item, member)) {
+			sd_err("ACL %" PRIx32 " already contains member %s",
+			       acl_vid, member);
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
+	if (free_idx < 0) {
+		sd_err("ACL %" PRIx32 " member list full, cannot add",
+		       acl_vid);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	ret = acl_create_vdi(member, SD_VDI_FLAG_MEMBER, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	memcpy(&inode->header.metadata[free_idx], member, strlen(member));
+
+	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+			       &inode->header.metadata[free_idx],
+			       (unsigned int)SD_MAX_VDI_LEN,
+			       offsetof(struct sd_inode_header,
+					metadata[free_idx]),
+			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
+			       SD_MAX_COPIES, 0, false);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to update ACL inode %"PRIx64": %s",
+		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		acl_delete_vdi(member);
+		ret = EXIT_FAILURE;
+		goto out;
+	}
+
+	if (verbose)
+		print_acl_member_list(inode, acl_vid);
+out:
+	free(inode);
+	return ret;
+}
+
+static struct subcommand acl_import_cmd[] = {
+	{"psk", NULL, NULL, "import a TLS PSK", NULL,
+	 CMD_NEED_ARG, acl_import_psk},
+	{NULL},
+};
+
+static int acl_import(int argc, char **argv)
+{
+	return do_generic_subcommand(acl_import_cmd, argc, argv);
 }
 
 static struct subcommand acl_cmd[] = {
@@ -1076,8 +1161,11 @@ static struct subcommand acl_cmd[] = {
 	 NULL, 0, acl_list, acl_options},
 	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
 	 acl_add_cmd, CMD_NEED_ARG, acl_add, acl_options},
-	{"remove", "<aclname> <vdiname>", "fajprvhT", "remove an entry from ACL",
-	 acl_remove_cmd, CMD_NEED_ARG, acl_remove, acl_options},
+	{"remove", "<aclname> <vdiname>", "fajprvhT",
+	 "remove an entry from ACL", acl_remove_cmd, CMD_NEED_ARG,
+	 acl_remove, acl_options},
+	{"import", "<member>", "ajprhvT", "import data into an ACL",
+	 acl_import_cmd, CMD_NEED_ARG, acl_import, acl_options},
 	{NULL,},
 };
 
