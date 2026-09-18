@@ -12,6 +12,8 @@
 	unsigned long name[BITS_TO_LONGS(bits)]
 #define BITS_PER_LONG (BITS_PER_BYTE * sizeof(long))
 #define BITS_PER_UINT64 (BITS_PER_BYTE * sizeof(uint64_t))
+#define BIT_MASK(nr) ((unsigned long)(1) << ((nr) % BITS_PER_LONG))
+#define BIT_WORD(nr) ((nr) / BITS_PER_LONG)
 
 #define __ffs(x)  (x ? __builtin_ffsl(x) - 1 : 0)
 #define ffz(x)  __ffs(~(x))
@@ -160,6 +162,28 @@ static inline int test_bit(unsigned int nr, const unsigned long *addr)
 static inline void clear_bit(unsigned int nr, unsigned long *addr)
 {
 	addr[nr / BITS_PER_LONG] &= ~(1UL << (nr % BITS_PER_LONG));
+}
+
+static inline int test_and_set_bit(long nr, unsigned long *addr)
+{
+        unsigned long mask = BIT_MASK(nr);
+        long old;
+
+        addr += BIT_WORD(nr);
+
+        old = __sync_fetch_and_or(addr, mask);
+        return !!(old & mask);
+}
+
+static inline int test_and_clear_bit(long nr, unsigned long *addr)
+{
+        unsigned long mask = BIT_MASK(nr);
+        long old;
+
+        addr += BIT_WORD(nr);
+
+        old = __sync_fetch_and_and(addr, ~mask);
+        return !!(old & mask);
 }
 
 /*

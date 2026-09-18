@@ -38,7 +38,7 @@ libsd_a_SOURCES		= event.c logger.c net.c util.c rbtree.c strbuf.c \
 			  sha1.c option.c work.c sockfd_cache.c fec.c \
 			  sd_inode.c common.c json.c
 
-libsd_a_SOURCES		+= crypto.c crc32.c base64.c
+libsd_a_SOURCES		+= crypto.c crc32.c base64.c xarray.c
 
 if !X86_64
 arch = 32
