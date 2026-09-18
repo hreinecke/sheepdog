@@ -349,6 +349,7 @@ void *queue_thread(void *arg)
 	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
 	struct io_uring_sqe *io_evtfd_sqe = NULL;
+	int num_cqe = 0;
 	sigset_t set;
 	int ret;
 
@@ -398,6 +399,12 @@ void *queue_thread(void *arg)
 
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
+		num_cqe++;
+		if (num_cqe > 50) {
+			if (ep->io_ops->io_reset)
+				ep->io_ops->io_reset(ep);
+			num_cqe = 0;
+		}
 		if (cqe_data == ep) {
 			ret = cqe->res;
 			if (ret < 0) {

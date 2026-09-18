@@ -83,10 +83,23 @@ static int gnutls_ep_wait(struct nofuse_queue *ep, short events)
 	return 0;
 }
 
+static int gnutls_ep_reset(struct nofuse_queue *ep)
+{
+	int ret = gnutls_session_key_update(ep->session, GNUTLS_KU_PEER);
+	if (ret != GNUTLS_E_SUCCESS) {
+		if (ret == GNUTLS_E_AGAIN)
+			ret = -EAGAIN;
+		else
+			ret = -EIO;
+	}
+	return ret;
+}
+
 struct io_ops tls_io_ops = {
 	.io_read = gnutls_ep_read,
 	.io_write = gnutls_ep_write,
 	.io_wait = gnutls_ep_wait,
+	.io_reset = gnutls_ep_reset,
 };
 
 static int psk_server_cb(gnutls_session_t session, const char *identity,

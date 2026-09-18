@@ -47,6 +47,7 @@ struct io_ops {
 	int (*io_read)(struct nofuse_queue *ep, void *buf, size_t buf_len);
 	int (*io_write)(struct nofuse_queue *ep, void *buf, size_t buf_len);
 	int (*io_wait)(struct nofuse_queue *ep, short events);
+	int (*io_reset)(struct nofuse_queue *ep);
 };
 
 struct ns_ops *vdi_register_ops(void);
