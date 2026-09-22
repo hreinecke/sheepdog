@@ -400,7 +400,8 @@ void *queue_thread(void *arg)
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
 		num_cqe++;
-		if (num_cqe > 50) {
+		if (num_cqe > 500) {
+			ctrl_err(ep, "trigger rekey");
 			if (ep->io_ops->io_reset)
 				ep->io_ops->io_reset(ep);
 			num_cqe = 0;
