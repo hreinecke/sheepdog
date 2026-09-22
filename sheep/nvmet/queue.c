@@ -142,10 +142,47 @@ out_unlock:
 	return ret;
 }
 
+/*
+ * Async VDI I/O submitted for this queue's commands (uring_submit_read()/
+ * uring_submit_write() in uring.c) completes later on the sheepdog main
+ * thread, via put_request() -> uring_io_done()/uring_write_retry_done(),
+ * which dereference qe->ep and lock ep->io_done_lock. destroy_queue()
+ * below frees every qe (and the caller frees ep itself right after),
+ * so a command still in flight when the connection dies would leave
+ * that completion touching freed memory. Block until every busy
+ * command's sub-I/Os have drained -- tcp_destroy_queue() used to just
+ * warn about this ("still busy") and free anyway.
+ */
+static void wait_for_pending_io(struct nofuse_queue *ep)
+{
+	int i;
+	bool pending;
+
+	if (!ep->qes)
+		return;
+
+	do {
+		pending = false;
+		for (i = 0; i < ep->allocated_qsize; i++) {
+			struct ep_qe *qe = &ep->qes[i];
+
+			if (qe->busy && !qe->aen &&
+			    refcount_read(&qe->async_pending) > 0) {
+				pending = true;
+				break;
+			}
+		}
+		if (pending)
+			usleep(1000);
+	} while (pending);
+}
+
 static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
 	int num_queues = 0;
+
+	wait_for_pending_io(ep);
 
 	ep->ops->destroy_queue(ep);
 
