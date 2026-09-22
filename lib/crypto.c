@@ -23,11 +23,15 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 
+#ifdef HAVE_GNUTLS
+#include <gnutls/crypto.h>
+#else
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/kdf.h>
 #include <openssl/core_names.h>
 #include <openssl/params.h>
+#endif
 
 #ifdef HAVE_KEYUTILS
 #include <keyutils.h>
@@ -38,6 +42,7 @@
 #include "crc32.h"
 #include "base64.h"
 #include "crypto.h"
+
 static unsigned char default_hmac(size_t key_len)
 {
 	unsigned char hmac = NVME_HMAC_ALG_NONE;
@@ -58,6 +63,27 @@ static unsigned char default_hmac(size_t key_len)
 	return hmac;
 }
 
+#ifdef HAVE_GNUTLS
+static gnutls_mac_algorithm_t select_hmac(int hmac, size_t *hmac_len)
+{
+	gnutls_mac_algorithm_t mac = GNUTLS_MAC_UNKNOWN;
+
+	switch (hmac) {
+	case NVME_HMAC_ALG_SHA2_256:
+		mac = GNUTLS_MAC_SHA256;
+		*hmac_len = 32;
+		break;
+	case NVME_HMAC_ALG_SHA2_384:
+		mac = GNUTLS_MAC_SHA384;
+		*hmac_len = 48;
+		break;
+	default:
+		*hmac_len = 0;
+		break;
+	}
+	return mac;
+}
+#else
 static const EVP_MD *select_hmac(int hmac, size_t *hmac_len)
 {
 	const EVP_MD *md = NULL;
@@ -77,6 +103,7 @@ static const EVP_MD *select_hmac(int hmac, size_t *hmac_len)
 	}
 	return md;
 }
+#endif
 
 /* NVMe is using the TLS 1.3 HkdfLabel structure */
 #define HKDF_INFO_MAX_LEN 514
@@ -115,10 +142,16 @@ static int derive_retained_key(int hmac, const char *hostnqn,
 		unsigned char *configured, unsigned char *retained,
 		size_t key_len)
 {
-	EVP_PKEY_CTX *ectx = NULL;
 	uint8_t *hkdf_info = NULL;
 	const char *hkdf_label = "tls13 HostNQN";
+#ifdef HAVE_GNUTLS
+	gnutls_mac_algorithm_t mac;
+	gnutls_datum_t ikm, salt, prk, info;
+	unsigned char prk_buf[64];
+#else
+	EVP_PKEY_CTX *ectx = NULL;
 	const EVP_MD *md;
+#endif
 	size_t hmac_len;
 	char *pos;
 	int ret;
@@ -128,11 +161,59 @@ static int derive_retained_key(int hmac, const char *hostnqn,
 		return key_len;
 	}
 
+	if (key_len > USHRT_MAX)
+		return -EINVAL;
+
 	/* +1 byte so that the snprintf terminating null can not overflow */
 	hkdf_info = malloc(HKDF_INFO_MAX_LEN + 1);
 	if (!hkdf_info)
 		return -ENOMEM;
 
+	pos = (char *)hkdf_info;
+	*(uint16_t *)pos = htons(key_len & 0xFFFF);
+	pos += sizeof(uint16_t);
+
+	ret = snprintf(pos, HKDF_INFO_LABEL_MAX + 1, "%c%s",
+		       (int)strlen(hkdf_label), hkdf_label);
+	if (ret <= 0 || ret > HKDF_INFO_LABEL_MAX) {
+		ret = -ENOKEY;
+		goto out_free_hkdf;
+	}
+	pos += ret;
+
+	ret = snprintf(pos, HKDF_INFO_CONTEXT_MAX + 1, "%c%s",
+		       (int)strlen(hostnqn), hostnqn);
+	if (ret <= 0 || ret > HKDF_INFO_CONTEXT_MAX) {
+		ret = -ENOKEY;
+		goto out_free_hkdf;
+	}
+	pos += ret;
+
+#ifdef HAVE_GNUTLS
+	mac = select_hmac(hmac, &hmac_len);
+	if (!mac || !hmac_len) {
+		ret = -EINVAL;
+		goto out_free_hkdf;
+	}
+
+	ikm.data = configured;
+	ikm.size = key_len;
+	salt.data = NULL;
+	salt.size = 0;
+	if (gnutls_hkdf_extract(mac, &ikm, &salt, prk_buf) < 0) {
+		ret = -ENOKEY;
+		goto out_free_hkdf;
+	}
+	prk.data = prk_buf;
+	prk.size = hmac_len;
+	info.data = hkdf_info;
+	info.size = pos - (char *)hkdf_info;
+
+	if (gnutls_hkdf_expand(mac, &prk, &info, retained, key_len) < 0)
+		ret = -ENOKEY;
+	else
+		ret = 0;
+#else
 	md = select_hmac(hmac, &hmac_len);
 	if (!md || !hmac_len) {
 		ret = -EINVAL;
@@ -160,31 +241,6 @@ static int derive_retained_key(int hmac, const char *hostnqn,
 		goto out_free_evp;
 	}
 
-	if (key_len > USHRT_MAX) {
-		ret = -EINVAL;
-		goto out_free_evp;
-	}
-
-	pos = (char *)hkdf_info;
-	*(uint16_t *)pos = htons(key_len & 0xFFFF);
-	pos += sizeof(uint16_t);
-
-	ret = snprintf(pos, HKDF_INFO_LABEL_MAX + 1, "%c%s",
-		       (int)strlen(hkdf_label), hkdf_label);
-	if (ret <= 0 || ret > HKDF_INFO_LABEL_MAX) {
-		ret = -ENOKEY;
-		goto out_free_evp;
-	}
-	pos += ret;
-
-	ret = snprintf(pos, HKDF_INFO_CONTEXT_MAX + 1, "%c%s",
-		       (int)strlen(hostnqn), hostnqn);
-	if (ret <= 0 || ret > HKDF_INFO_CONTEXT_MAX) {
-		ret = -ENOKEY;
-		goto out_free_evp;
-	}
-	pos += ret;
-
 	if (EVP_PKEY_CTX_add1_hkdf_info(ectx, hkdf_info,
 					(pos - (char *)hkdf_info)) <= 0) {
 		ret = -ENOKEY;
@@ -197,6 +253,7 @@ static int derive_retained_key(int hmac, const char *hostnqn,
 		ret = 0;
 out_free_evp:
 	EVP_PKEY_CTX_free(ectx);
+#endif
 out_free_hkdf:
 	free(hkdf_info);
 	return ret < 0 ? ret : key_len;
@@ -229,10 +286,16 @@ static int derive_tls_key(int version, unsigned char cipher,
 		const char *context, unsigned char *retained,
 		unsigned char *psk, size_t key_len)
 {
-	EVP_PKEY_CTX *ectx = NULL;
 	uint8_t *hkdf_info = NULL;
 	const char *hkdf_label = "tls13 nvme-tls-psk";
+#ifdef HAVE_GNUTLS
+	gnutls_mac_algorithm_t mac;
+	gnutls_datum_t ikm, salt, prk, info;
+	unsigned char prk_buf[64];
+#else
+	EVP_PKEY_CTX *ectx = NULL;
 	const EVP_MD *md;
+#endif
 	size_t hmac_len;
 	char *pos;
 	int ret;
@@ -245,6 +308,68 @@ static int derive_tls_key(int version, unsigned char cipher,
 	if (!hkdf_info)
 		return -ENOMEM;
 
+	pos = (char *)hkdf_info;
+	*(uint16_t *)pos = htons(key_len & 0xFFFF);
+	pos += sizeof(uint16_t);
+
+	ret = snprintf(pos, HKDF_INFO_LABEL_MAX + 1, "%c%s",
+		       (int)strlen(hkdf_label), hkdf_label);
+	if (ret <= 0 || ret > HKDF_INFO_LABEL_MAX) {
+		ret = -ENOKEY;
+		goto out_free_hkdf;
+	}
+	pos += ret;
+
+	switch (version) {
+	case 0:
+		ret = snprintf(pos, HKDF_INFO_CONTEXT_MAX + 1, "%c%s",
+			       (int)strlen(context), context);
+		if (ret <= 0 || ret > HKDF_INFO_CONTEXT_MAX) {
+			ret = -ENOKEY;
+			goto out_free_hkdf;
+		}
+		pos += ret;
+		break;
+	case 1:
+		ret = snprintf(pos, HKDF_INFO_CONTEXT_MAX + 1, "%c%02d %s",
+			       (int)strlen(context) + 3, cipher, context);
+		if (ret <= 0 || ret > HKDF_INFO_CONTEXT_MAX) {
+			ret = -ENOKEY;
+			goto out_free_hkdf;
+		}
+		pos += ret;
+		break;
+	default:
+		ret = -ENOKEY;
+		goto out_free_hkdf;
+	}
+
+#ifdef HAVE_GNUTLS
+	mac = select_hmac(cipher, &hmac_len);
+	if (!mac || !hmac_len) {
+		ret = -EINVAL;
+		goto out_free_hkdf;
+	}
+
+	ikm.data = retained;
+	ikm.size = key_len;
+	salt.data = NULL;
+	salt.size = 0;
+	if (gnutls_hkdf_extract(mac, &ikm, &salt, prk_buf) < 0) {
+		ret = -ENOKEY;
+		goto out_free_hkdf;
+	}
+
+	prk.data = prk_buf;
+	prk.size = hmac_len;
+	info.data = hkdf_info;
+	info.size = pos - (char *)hkdf_info;
+
+	if (gnutls_hkdf_expand(mac, &prk, &info, psk, key_len) < 0)
+		ret = -ENOKEY;
+	else
+		ret = 0;
+#else
 	md = select_hmac(cipher, &hmac_len);
 	if (!md || !hmac_len) {
 		ret = -EINVAL;
@@ -272,42 +397,6 @@ static int derive_tls_key(int version, unsigned char cipher,
 		goto out_free_evp;
 	}
 
-	pos = (char *)hkdf_info;
-	*(uint16_t *)pos = htons(key_len & 0xFFFF);
-	pos += sizeof(uint16_t);
-
-	ret = snprintf(pos, HKDF_INFO_LABEL_MAX + 1, "%c%s",
-		       (int)strlen(hkdf_label), hkdf_label);
-	if (ret <= 0 || ret > HKDF_INFO_LABEL_MAX) {
-		ret = -ENOKEY;
-		goto out_free_evp;
-	}
-	pos += ret;
-
-	switch (version) {
-	case 0:
-		ret = snprintf(pos, HKDF_INFO_CONTEXT_MAX + 1, "%c%s",
-			       (int)strlen(context), context);
-		if (ret <= 0 || ret > HKDF_INFO_CONTEXT_MAX) {
-			ret = -ENOKEY;
-			goto out_free_evp;
-		}
-		pos += ret;
-		break;
-	case 1:
-		ret = snprintf(pos, HKDF_INFO_CONTEXT_MAX + 1, "%c%02d %s",
-			       (int)strlen(context) + 3, cipher, context);
-		if (ret <= 0 || ret > HKDF_INFO_CONTEXT_MAX) {
-			ret = -ENOKEY;
-			goto out_free_evp;
-		}
-		pos += ret;
-		break;
-	default:
-		ret = -ENOKEY;
-		goto out_free_evp;
-	}
-
 	if (EVP_PKEY_CTX_add1_hkdf_info(ectx, hkdf_info,
 					(pos - (char *)hkdf_info)) <= 0) {
 		ret = -ENOKEY;
@@ -321,6 +410,7 @@ static int derive_tls_key(int version, unsigned char cipher,
 
 out_free_evp:
 	EVP_PKEY_CTX_free(ectx);
+#endif
 out_free_hkdf:
 	free(hkdf_info);
 	return ret < 0 ? ret : key_len;
@@ -330,16 +420,56 @@ int nvme_gen_dhchap_key(char *hostnqn, enum nvme_hmac_alg hmac,
 		unsigned int key_len, unsigned char *secret,
 		unsigned char *key)
 {
-	const char hmac_seed[] = "NVMe-over-Fabrics";
+	static const char hmac_seed[] = "NVMe-over-Fabrics";
+#ifdef HAVE_GNUTLS
+	gnutls_hmac_hd_t hmac_ctx;
+	gnutls_mac_algorithm_t mac;
+#else
 	OSSL_LIB_CTX *lib_ctx = NULL;
 	EVP_MAC_CTX *mac_ctx = NULL;
 	EVP_MAC *mac = NULL;
 	OSSL_PARAM params[2], *p = params;
 	char *progq = NULL;
 	const char *digest;
+#endif
 	size_t len;
 	int ret = -ENOMEM;
 
+#ifdef HAVE_GNUTLS
+	switch (hmac) {
+	case NVME_HMAC_ALG_NONE:
+		memcpy(key, secret, key_len);
+		return 0;
+	case NVME_HMAC_ALG_SHA2_256:
+		mac = GNUTLS_MAC_SHA256;
+		break;
+	case NVME_HMAC_ALG_SHA2_384:
+		mac = GNUTLS_MAC_SHA384;
+		break;
+	case NVME_HMAC_ALG_SHA2_512:
+		mac = GNUTLS_MAC_SHA512;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	len = gnutls_hmac_get_len(mac);
+	if (len != key_len)
+		return -EINVAL;
+
+	if (gnutls_hmac_init(&hmac_ctx, mac, secret, key_len) < 0)
+		return -ENOKEY;
+
+	if (gnutls_hmac(hmac_ctx, hostnqn, strlen(hostnqn)) < 0 ||
+	    gnutls_hmac(hmac_ctx, hmac_seed, strlen(hmac_seed)) < 0) {
+		gnutls_hmac_deinit(hmac_ctx, key);
+		memset(key, 0, key_len);
+		ret = -ENOKEY;
+	} else {
+		gnutls_hmac_deinit(hmac_ctx, key);
+		ret = 0;
+	}
+#else
 	lib_ctx = OSSL_LIB_CTX_new();
 	if (!lib_ctx)
 		return ret;
@@ -390,9 +520,8 @@ int nvme_gen_dhchap_key(char *hostnqn, enum nvme_hmac_alg hmac,
 
 	if (!EVP_MAC_final(mac_ctx, key, &len, key_len))
 		goto out_free_mac_ctx;
-
 	if (len != key_len)
-		ret = -EMSGSIZE;
+		ret = -EINVAL;
 	else
 		ret = 0;
 
@@ -402,7 +531,8 @@ out_free_mac:
 	EVP_MAC_free(mac);
 out_free_lib:
 	OSSL_LIB_CTX_free(lib_ctx);;
-	return 0;
+#endif
+	return ret;
 }
 
 static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
@@ -411,28 +541,57 @@ static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
 		char *digest, size_t digest_len)
 {
 	static const char hmac_seed[] = "NVMe-over-Fabrics";
+	unsigned char *psk_ctx = NULL;
+#ifdef HAVE_GNUTLS
+	gnutls_hmac_hd_t hmac_ctx;
+	gnutls_mac_algorithm_t mac;
+#else
 	OSSL_LIB_CTX *lib_ctx = NULL;
 	EVP_MAC_CTX *mac_ctx = NULL;
-	unsigned char *psk_ctx = NULL;
 	EVP_MAC *mac = NULL;
 	OSSL_PARAM params[2], *p = params;
-	size_t hmac_len;
 	char *progq = NULL;
 	const char *dig = NULL;
-	int ret = -ENOMEM;
+#endif
+	size_t hmac_len;
+	int ret;
 
-	lib_ctx = OSSL_LIB_CTX_new();
-	if (!lib_ctx)
-		return ret;
+	psk_ctx = malloc(key_len);
+	if (!psk_ctx)
+		return -ENOMEM;
 
-	mac = EVP_MAC_fetch(lib_ctx, OSSL_MAC_NAME_HMAC, progq);
-	if (!mac)
-		goto out_free_lib;
+#ifdef HAVE_GNUTLS
+	switch (cipher) {
+	case NVME_HMAC_ALG_SHA2_256:
+		mac = GNUTLS_MAC_SHA256;
+		break;
+	case NVME_HMAC_ALG_SHA2_384:
+		mac = GNUTLS_MAC_SHA384;
+		break;
+	default:
+		return -EINVAL;
+	}
 
-	mac_ctx = EVP_MAC_CTX_new(mac);
-	if (!mac_ctx)
-		goto out_free_mac;
+	hmac_len = gnutls_hmac_get_len(mac);
+	if (hmac_len > key_len)
+		return -EINVAL;
 
+	ret = -ENOKEY;
+	if (gnutls_hmac_init(&hmac_ctx, mac, retained, key_len) < 0)
+		goto out_free_psk_ctx;
+
+	if (gnutls_hmac(hmac_ctx, hostnqn, strlen(hostnqn)) < 0 ||
+	    gnutls_hmac(hmac_ctx, " ", 1) < 0 ||
+	    gnutls_hmac(hmac_ctx, subsysnqn, strlen(subsysnqn)) < 0 ||
+	    gnutls_hmac(hmac_ctx, " ", 1) < 0 ||
+	    gnutls_hmac(hmac_ctx, hmac_seed, strlen(hmac_seed)) < 0) {
+		gnutls_hmac_deinit(hmac_ctx, psk_ctx);
+		goto out_free_psk_ctx;
+	}
+
+	gnutls_hmac_deinit(hmac_ctx, psk_ctx);
+	ret = 0;
+#else
 	switch (cipher) {
 	case NVME_HMAC_ALG_SHA2_256:
 		dig = OSSL_DIGEST_NAME_SHA2_256;
@@ -446,15 +605,23 @@ static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
 		break;
 	}
 
-	*p++ = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
-						(char *)dig, 0);
-	*p = OSSL_PARAM_construct_end();
-
-	psk_ctx = malloc(key_len);
-	if (!psk_ctx) {
+	lib_ctx = OSSL_LIB_CTX_new();
+	if (!lib_ctx) {
 		ret = -ENOMEM;
 		goto out_free_mac_ctx;
 	}
+
+	mac = EVP_MAC_fetch(lib_ctx, OSSL_MAC_NAME_HMAC, progq);
+	if (!mac)
+		goto out_free_lib;
+
+	mac_ctx = EVP_MAC_CTX_new(mac);
+	if (!mac_ctx)
+		goto out_free_mac;
+
+	*p++ = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
+						(char *)dig, 0);
+	*p = OSSL_PARAM_construct_end();
 
 	ret = -ENOKEY;
 	if (!EVP_MAC_init(mac_ctx, retained, key_len, params))
@@ -480,11 +647,7 @@ static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
 
 	if (!EVP_MAC_final(mac_ctx, psk_ctx, &hmac_len, key_len))
 		goto out_free_psk_ctx;
-
-	if (hmac_len > key_len) {
-		ret = -EMSGSIZE;
-		goto out_free_psk_ctx;
-	}
+#endif
 
 	if (hmac_len * 2 > digest_len) {
 		ret = -EINVAL;
@@ -494,15 +657,16 @@ static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
 	ret = base64_encode(psk_ctx, hmac_len, digest);
 	if (ret > 0)
 		ret = strlen(digest);
-
-out_free_psk_ctx:
-	free(psk_ctx);
-out_free_mac_ctx:
+#ifndef HAVE_GNUTLS
+	out_free_mac_ctx:
 	EVP_MAC_CTX_free(mac_ctx);
 out_free_mac:
 	EVP_MAC_free(mac);
 out_free_lib:
 	OSSL_LIB_CTX_free(lib_ctx);;
+#endif
+out_free_psk_ctx:
+	free(psk_ctx);
 	return ret;
 }
 
