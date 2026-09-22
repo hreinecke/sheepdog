@@ -583,7 +583,7 @@ static int forward_write_async(const struct node_id *nid, struct sd_req *hdr,
 	ret = send_req(sfd->fd, hdr, ri->buf, ri->wlen, sheep_need_retry,
 		       epoch, MAX_RETRY_COUNT);
 	if (ret) {
-		sockfd_cache_del_node(nid);
+		sockfd_cache_del(nid, sfd);
 		sd_debug("fail %d", ret);
 		return SD_RES_NETWORK_ERROR;
 	}
@@ -754,7 +754,7 @@ static int gateway_forward_request(struct request *req)
 			       sheep_need_retry, req->rq.epoch,
 			       MAX_RETRY_COUNT);
 		if (ret) {
-			sockfd_cache_del_node(nid);
+			sockfd_cache_del(nid, sfd);
 			err_ret = SD_RES_NETWORK_ERROR;
 			sd_debug("fail %d", ret);
 			break;
