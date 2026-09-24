@@ -101,7 +101,7 @@ static void print_psk_list(struct sd_inode *inode,
 	num_entries = sizeof(inode->data_vdi_id) /
 		sizeof(struct nvme_psk_data);
 	psk = (struct nvme_psk_data *)inode->data_vdi_id;
-	for (i = 0; i < num_entries; i++) {
+	for (i = 0; i < num_entries; i++, psk++) {
 		if (!strlen(psk->protocol))
 			break;
 
@@ -122,7 +122,6 @@ static void print_psk_list(struct sd_inode *inode,
 			printf("%s %s %s %s\n",
 			       psk->protocol, inode->header.name,
 			       psk->subsysnqn, psk->digest);
-		psk++;
 	}
 	if (json_output) {
 		const char *o = json_object_to_json_string(out_obj);
@@ -144,7 +143,6 @@ static int nvme_import_psk(int argc, char **argv)
 	unsigned char version, hmac;
 	struct nvme_psk_data *psk, *free_psk = NULL;
 	size_t key_len;
-	off_t psk_index = 0;
 
 	if (!argv[optind]) {
 		sd_err("No PSK data present");
@@ -156,18 +154,17 @@ static int nvme_import_psk(int argc, char **argv)
 		sd_err("ACL name not present");
 		return EXIT_USAGE;
 	}
-	if (!strcmp(nvme_cmd_data.aclname, "shared")) {
+	if (!strcmp(nvme_cmd_data.aclname, "shared") ||
+	    !strcmp(nvme_cmd_data.aclname, "any")) {
 		sd_err("Invalid ACL name %s", nvme_cmd_data.aclname);
 		return EXIT_USAGE;
 	}
 
-	if (strcmp(nvme_cmd_data.aclname, "any")) {
-		ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("Failed to open ACL %s: %s",
-			       nvme_cmd_data.aclname, sd_strerror(ret));
-			return EXIT_USAGE;
-		}
+	ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to open ACL %s: %s",
+		       nvme_cmd_data.aclname, sd_strerror(ret));
+		return EXIT_USAGE;
 	}
 
 	ret = nvme_import_tls_key(keydata, &version, &hmac,
@@ -225,23 +222,19 @@ static int nvme_import_psk(int argc, char **argv)
 			free_psk = psk;
 			break;
 		}
-		if (strcmp(psk->protocol, psk_protocol))
-			continue;
-		if (strcmp(psk->subsysnqn, psk_subsysnqn))
-			continue;
-		if (!strcmp(psk->digest, psk_digest)) {
+		if (!strcmp(psk->protocol, psk_protocol) &&
+		    !strcmp(psk->subsysnqn, psk_subsysnqn) &&
+		    !strcmp(psk->digest, psk_digest)) {
 			sd_err("Host %"PRIx32" duplicate PSK for '%s'",
 			       vid, psk_subsysnqn);
 			ret = EXIT_FAILURE;
 			break;
 		}
 		psk++;
-		psk_index = i * sizeof(struct nvme_psk_data) /
-			sizeof(uint32_t);
 	}
 	if (!free_psk) {
-		sd_err("Host %" PRIx32 " psk list full, cannot add",
-		       vid);
+		sd_err("Host %" PRIx32 " psk list full (%d entries), cannot add",
+		       vid, i);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -255,7 +248,7 @@ static int nvme_import_psk(int argc, char **argv)
 
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
 			       free_psk, sizeof(*free_psk),
-			       data_vid_offset(psk_index),
+			       (char *)free_psk - (char *)inode,
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
 			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
@@ -340,7 +333,6 @@ static int nvme_import_dhchap(int argc, char **argv)
 	unsigned char hmac;
 	struct nvme_psk_data *psk, *free_psk = NULL;
 	size_t decoded_len, expected_len = 0;
-	off_t psk_index = 0;
 
 	if (!argv[optind]) {
 		sd_err("No PSK data present");
@@ -419,6 +411,12 @@ static int nvme_import_dhchap(int argc, char **argv)
 		sd_err("ACL name not present");
 		return EXIT_USAGE;
 	}
+	if (!strcmp(nvme_cmd_data.aclname, "shared") ||
+	    !strcmp(nvme_cmd_data.aclname, "any")) {
+		sd_err("Invalid ACL name %s", nvme_cmd_data.aclname);
+		return EXIT_USAGE;
+	}
+
 	ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
 	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to find ACL %s: %s",
@@ -451,36 +449,33 @@ static int nvme_import_dhchap(int argc, char **argv)
 			free_psk = psk;
 			break;
 		}
-		if (strncmp(psk->protocol, keydata, 9))
-			continue;
-		if (strcmp(psk->subsysnqn, nvme_cmd_data.aclname))
-			continue;
-		if (!strcmp(psk->digest, psk_digest)) {
+		if (!strncmp(psk->protocol, keydata, 9) &&
+		    !strcmp(psk->subsysnqn, nvme_cmd_data.aclname) &&
+		    !strcmp(psk->digest, psk_digest)) {
 			sd_err("Host %"PRIx32" duplicate PSK for '%s'",
 			       vid, nvme_cmd_data.aclname);
 			ret = EXIT_FAILURE;
 			break;
 		}
 		psk++;
-		psk_index = i * sizeof(struct nvme_psk_data) /
-			sizeof(uint32_t);
 	}
 	if (!free_psk) {
-		sd_err("Host %" PRIx32 " psk list full, cannot add",
-		       vid);
+		sd_err("Host %" PRIx32 " dhchap list full (%d entries), cannot add",
+		       vid, i);
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 	memset(free_psk, 0, sizeof(*free_psk));
 	strncpy(free_psk->protocol, keydata, 9);
 	strcpy(free_psk->subsysnqn, nvme_cmd_data.aclname);
+	strcpy(free_psk->digest, psk_digest);
 	memcpy(free_psk->key, decoded_key, decoded_len);
 	free_psk->key_len = decoded_len;
 	free_psk->digest_len = strlen(psk_digest);
 
 	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
 			       free_psk, sizeof(*free_psk),
-			       data_vid_offset(psk_index),
+			       (char *)free_psk - (char *)inode,
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
 			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
