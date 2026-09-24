@@ -114,9 +114,12 @@ static int cluster_new_vdi(struct request *req)
 	}
 
 	/*
-	 * ACL VDIs need to be replicated across all nodes in the cluster.
+	 * ACL and member VDIs need to be replicated across all nodes in
+	 * the cluster, since hosts connect to and issue direct-target
+	 * requests against any node in the cluster.
 	 */
-	if (!hdr->vdi.copies && (hdr->vdi.vdi_flags & SD_VDI_FLAG_ACL))
+	if (!hdr->vdi.copies &&
+	    (hdr->vdi.vdi_flags & (SD_VDI_FLAG_ACL | SD_VDI_FLAG_MEMBER)))
 		iocb.nr_copies = SD_MAX_COPIES;
 
 	if (!hdr->vdi.block_size_shift)
