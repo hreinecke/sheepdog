@@ -46,8 +46,8 @@ struct nvme_psk_data {
 	uint64_t ctime;
 };
 
-static struct sd_option psk_options[] = {
-	{'a', "acl", true, "specify a ACL name"},
+static struct sd_option nvme_options[] = {
+	{'A', "acl", true, "specify a ACL name"},
 	{'f', "force", false, "do operation forcibly"},
 	{ 0, NULL, false, NULL },
 };
@@ -62,6 +62,9 @@ static void print_psk_list(struct sd_inode *inode)
 	unsigned int num_entries, i;
 	struct nvme_psk_data *psk;
 
+	if (json_output)
+		out_obj = json_object_new_array();
+
 	num_entries = sizeof(inode->data_vdi_id) /
 		sizeof(struct nvme_psk_data);
 	psk = (struct nvme_psk_data *)inode->data_vdi_id;
@@ -69,10 +72,24 @@ static void print_psk_list(struct sd_inode *inode)
 		if (!strlen(psk->protocol))
 			break;
 
-		printf("%s %s %s %s\n",
-		       psk->protocol, inode->header.name,
-		       psk->subsysnqn, psk->digest);
+		if (json_output) {
+			struct json_object *psk_obj =
+				json_object_new_object();
+			JSON_ADD_STRING(psk_obj, "protocol", psk->protocol);
+			JSON_ADD_STRING(psk_obj, "hostnqn", inode->header.name);
+			JSON_ADD_STRING(psk_obj, "subsysnqn", psk->subsysnqn);
+			JSON_ADD_STRING(psk_obj, "digest", psk->digest);
+			json_object_array_add(out_obj, psk_obj);
+		} else
+			printf("%s %s %s %s\n",
+			       psk->protocol, inode->header.name,
+			       psk->subsysnqn, psk->digest);
 		psk++;
+	}
+	if (json_output) {
+		const char *o = json_object_to_json_string(out_obj);
+		printf("%s\n", o);
+		json_object_put(out_obj);
 	}
 }
 
@@ -83,7 +100,7 @@ static int nvme_import_psk(int argc, char **argv)
 	unsigned char *configured_key, *retained_key;
 	char *psk_identity;
 	char *psk_protocol, *psk_subsysnqn, *psk_digest;
-	uint32_t acl_vid, vid;
+	uint32_t acl_vid = LOCK_TYPE_ANY, vid;
 	struct sd_inode *inode = NULL;
 	int ret, i, num_entries;
 	unsigned char version, hmac;
@@ -101,11 +118,18 @@ static int nvme_import_psk(int argc, char **argv)
 		sd_err("ACL name not present");
 		return EXIT_USAGE;
 	}
-	ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open ACL %s: %s",
-		       nvme_cmd_data.aclname, sd_strerror(ret));
+	if (!strcmp(nvme_cmd_data.aclname, "shared")) {
+		sd_err("Invalid ACL name %s", nvme_cmd_data.aclname);
 		return EXIT_USAGE;
+	}
+
+	if (strcmp(nvme_cmd_data.aclname, "any")) {
+		ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to open ACL %s: %s",
+			       nvme_cmd_data.aclname, sd_strerror(ret));
+			return EXIT_USAGE;
+		}
 	}
 
 	ret = nvme_import_tls_key(keydata, &version, &hmac,
@@ -119,9 +143,24 @@ static int nvme_import_psk(int argc, char **argv)
 				  &psk_identity, &retained_key);
 
 	psk_protocol = strsep(&psk_identity, " ");
-	strsep(&psk_identity, " ");
+	if (!psk_protocol) {
+		sd_err("invalid PSK identity '%s'", psk_identity);
+		return EXIT_USAGE;
+	}
+	if (!strsep(&psk_identity, " ")) {
+		sd_err("invalid PSK identity '%s'", psk_identity);
+		return EXIT_USAGE;
+	}
 	psk_subsysnqn = strsep(&psk_identity, " ");
+	if (!psk_subsysnqn) {
+		sd_err("invalid PSK identity '%s'", psk_identity);
+		return EXIT_USAGE;
+	}
 	psk_digest = strsep(&psk_identity, " ");
+	if (!psk_digest) {
+		sd_err("invalid PSK identity '%s'", psk_identity);
+		return EXIT_USAGE;
+	}
 
 	ret = find_vdi_name(member, 0, "", acl_vid, &vid);
 	if (ret != SD_RES_SUCCESS) {
@@ -195,24 +234,29 @@ out:
 static int nvme_list_psk(int argc, char **argv)
 {
 	const char *member = argv[optind];
-	uint32_t acl_vid, vid;
+	uint32_t acl_vid = LOCK_TYPE_ANY, vid;
 	struct sd_inode *inode = NULL;
 	int ret;
 
-	if (!strlen(nvme_cmd_data.aclname)) {
-		sd_err("ACL name not present");
-		return EXIT_USAGE;
-	}
-	ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open ACL %s: %s",
-		       nvme_cmd_data.aclname, sd_strerror(ret));
-		return EXIT_USAGE;
+	if (strlen(nvme_cmd_data.aclname)) {
+		if (!strcmp(nvme_cmd_data.aclname, "shared")) {
+			sd_err("Invalid ACL name '%s'",
+			       nvme_cmd_data.aclname);
+			return EXIT_USAGE;
+		} else if (strcmp(nvme_cmd_data.aclname, "any")) {
+			ret = find_vdi_name(nvme_cmd_data.aclname,
+					    0, "", 0, &acl_vid);
+			if (ret != SD_RES_SUCCESS) {
+				sd_err("Failed to open ACL %s: %s",
+				       nvme_cmd_data.aclname, sd_strerror(ret));
+				return EXIT_USAGE;
+			}
+		}
 	}
 	ret = find_vdi_name(member, 0, "", acl_vid, &vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open member %s: %s",
-		       member, sd_strerror(ret));
+		sd_err("Failed to open member %s with acl %"PRIx32": %s",
+		       member, acl_vid, sd_strerror(ret));
 		return EXIT_USAGE;
 	}
 	inode = xmalloc(SD_INODE_SIZE);
@@ -239,12 +283,6 @@ static int psk_modify(int argc, char **argv)
 {
 	return do_generic_subcommand(psk_modify_cmd, argc, argv);
 }
-
-static struct sd_option dhchap_options[] = {
-	{'a', "acl", true, "specify a ACL name"},
-	{'f', "force", false, "do operation forcibly"},
-	{ 0, NULL, false, NULL },
-};
 
 static int nvme_import_dhchap(int argc, char **argv)
 {
@@ -427,19 +465,19 @@ static int dhchap_modify(int argc, char **argv)
 }
 
 static struct subcommand nvme_cmd[] = {
-	{"psk", "<psk data>", "fajphrvT", "modify a TLS PSK",
-	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
-	 psk_modify, psk_options},
-	{"dhchap", "<dhchap data>", "sfajphrvT", "modify a DH-HMAC-CHAP secret",
+	{"psk", "<hostnqn>", "fajphrvTA", "modify a TLS PSK",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
-	 dhchap_modify, dhchap_options},
+	 psk_modify, nvme_options},
+	{"dhchap", "<hostnqn>", "fajphrvTA", "modify a DH-HMAC-CHAP secret",
+	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
+	 dhchap_modify, nvme_options},
 	{NULL,},
 };
 
 static int nvme_parser(int ch, const char *opt)
 {
 	switch (ch) {
-	case 'a':
+	case 'A':
 		pstrcpy(nvme_cmd_data.aclname, SD_MAX_VDI_LEN, opt);
 		break;
 	case 'f':

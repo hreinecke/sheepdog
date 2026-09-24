@@ -175,6 +175,9 @@ static void init_commands(const struct command **commands)
 #ifdef HAVE_NFS
 		nfs_command,
 #endif
+#ifdef HAVE_NVMET
+		nvme_command,
+#endif
 		upgrade_command,
 		benchmark_command,
 		acl_command,

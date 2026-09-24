@@ -144,6 +144,10 @@ extern struct command trace_command;
 extern struct command nfs_command;
 #endif /* HAVE_NFS */
 
+#ifdef HAVE_NVMET
+extern struct command nvme_command;
+#endif /* HAVE_NVMET */
+
 int do_loglevel_set(const struct node_id *nid, const char *loglevel_str);
 int do_loglevel_get(const struct node_id *nid, int32_t *ret_loglevel);
 const char *loglevel_to_str(int loglevel);
