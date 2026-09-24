@@ -42,7 +42,7 @@ enum nvme_hmac_alg {
  * Return: If key generation was successful the function returns 0 or
  * a negative error code otherwise.
  */
-int nvme_gen_dhchap_key(char *hostnqn, enum nvme_hmac_alg hmac,
+int nvme_gen_dhchap_key(const char *hostnqn, enum nvme_hmac_alg hmac,
 		unsigned int key_len, unsigned char *secret,
 		unsigned char *key);
 
@@ -172,7 +172,7 @@ int nvme_insert_tls_key(const char *keyring, const char *key_type,
 			long *key);
 
 /**
- * nvme_generate_tls_key_identity() - Generate the TLS key identity
+ * nvme_derive_tls_key() - Derive NVMe TLS key
  * @hostnqn:	Host NVMe Qualified Name
  * @subsysnqn:	Subsystem NVMe Qualified Name
  * @version:	Key version to use
@@ -180,19 +180,19 @@ int nvme_insert_tls_key(const char *keyring, const char *key_type,
  * @configured_key:	Configured key data to derive the key from
  * @key_len:	Length of @configured_key
  * @identity:	TLS identity to return
+ * @retained_key: Retained key data to return
  *
- * Derives a 'retained' TLS key as specified in NVMe TCP and
- * generate the corresponding TLs identity.
+ * Derives a 'retained' TLS key as specified in NVMe TCP specification and
+ * generate the corresponding TLS identity.
  *
- * It is the responsibility of the caller to free the returned string.
+ * It is the responsibility of the caller to free the returned @identity
+ * and @retained_key data.
  *
  * Return: 0 on success, negative error code otherwise.
  */
-int nvme_generate_tls_key_identity(
-		const char *hostnqn, const char *subsysnqn,
-		int version, int hmac,
-		unsigned char *configured_key, int key_len,
-		char **identity);
+int nvme_derive_tls_key(const char *hostnqn, const char *subsysnqn,
+		int version, int hmac, unsigned char *configured_key,
+		int key_len, char **identity, unsigned char **retained_key);
 
 /**
  * nvme_revoke_tls_key() - Revoke TLS key from keyring

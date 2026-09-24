@@ -416,7 +416,7 @@ out_free_hkdf:
 	return ret < 0 ? ret : key_len;
 }
 
-int nvme_gen_dhchap_key(char *hostnqn, enum nvme_hmac_alg hmac,
+int nvme_gen_dhchap_key(const char *hostnqn, enum nvme_hmac_alg hmac,
 		unsigned int key_len, unsigned char *secret,
 		unsigned char *key)
 {
@@ -764,9 +764,10 @@ static ssize_t nvme_identity_len(int hmac, int version, const char *hostnqn,
 	return len;
 }
 
-int nvme_generate_tls_key_identity(const char *hostnqn,
-		const char *subsysnqn, int version, int hmac,
-		unsigned char *configured_key, int key_len, char **ident)
+int nvme_derive_tls_key(const char *hostnqn, const char *subsysnqn,
+			int version, int hmac,
+			unsigned char *configured_key, int key_len,
+			char **ident, unsigned char **p)
 {
 	unsigned char *psk = NULL;
 	char *identity = NULL;
@@ -798,10 +799,10 @@ int nvme_generate_tls_key_identity(const char *hostnqn,
 		return -ENOKEY;
 	}
 
-	free(psk);
 	*ident = identity;
 	identity = NULL;
-
+	*p = psk;
+	psk = NULL;
 	return 0;
 }
 

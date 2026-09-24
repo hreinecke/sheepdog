@@ -28,6 +28,10 @@ dog_SOURCES		= farm/object_tree.c farm/sha1_file.c farm/snap.c \
 			  dog.c common.c treeview.c vdi.c node.c cluster.c \
 			  upgrade.c benchmark.c acl.c
 
+if BUILD_NVMET
+dog_SOURCES		+= nvme.c
+endif
+
 if BUILD_TRACE
 dog_SOURCES		+= trace.c
 override CFLAGS         := $(subst -pg,,$(CFLAGS))
@@ -46,6 +50,17 @@ EXTRA_DIST		=
 
 if BUILD_EARTHQUAKE
 dog_LDADD		+= -leq_embed
+endif
+
+if BUILD_NVMET
+if BUILD_TLS
+if BUILD_GNUTLS
+dog_LDADD		+= -lgnutls
+else
+dog_LDADD		+= -lcrypto -lssl
+endif
+dog_LDADD		+= -lkeyutils
+endif
 endif
 
 install-exec-hook:
