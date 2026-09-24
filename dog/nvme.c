@@ -385,7 +385,7 @@ static int nvme_import_dhchap(int argc, char **argv)
 		return EXIT_SYSFAIL;
 	}
 	decoded_len -= 4;
-	if (decoded_len != expected_len) {
+	if (expected_len && decoded_len != expected_len) {
 		sd_err("Invalid key length %lu, should be %lu",
 		       decoded_len, expected_len);
 		return EXIT_SYSFAIL;
