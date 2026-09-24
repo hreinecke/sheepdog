@@ -27,14 +27,11 @@
 static struct json_object *out_obj;
 
 static struct sd_option acl_options[] = {
-	{'s', "snapshot", true, "specify a snapshot id or tag name"},
 	{'f', "force", false, "do operation forcibly"},
 	{ 0, NULL, false, NULL },
 };
 
 static struct acl_cmd_data {
-	int snapshot_id;
-	char snapshot_tag[SD_MAX_VDI_TAG_LEN];
 	bool force;
 } acl_cmd_data = { ~0, };
 
@@ -148,7 +145,7 @@ static int acl_create(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	struct acl_vdi_info info;
-	uint32_t acl_vid;
+	uint32_t acl_vid = 0;
 	int ret;
 	struct sd_req hdr;
 	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -180,7 +177,7 @@ static int acl_create(int argc, char **argv)
 	}
 
 	ret = acl_create_vdi(aclname, SD_VDI_FLAG_ACL, &acl_vid);
-	if (ret != SD_RES_SUCCESS) {
+	if (ret != SD_RES_SUCCESS || acl_vid == 0) {
 		sd_err("Failed to create ACL %s: %s",
 		       aclname, sd_strerror(ret));
 		return EXIT_FAILURE;
@@ -477,7 +474,6 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 			struct get_acl_info vdi_info = { .obj = acl_vdi_obj };
 			struct sd_inode *vdi_inode;
 			uint32_t vdi_vid = i->data_vdi_id[j];
-			uint32_t vdi_snapid;
 
 			/* Print empty entries, too */
 			if (!vdi_vid) {
@@ -491,13 +487,10 @@ static void print_acl_list(uint32_t vid, const char *name, const char *tag,
 			if (dog_read_object(vid_to_vdi_oid(vdi_vid),
 					    vdi_inode, SD_INODE_HEADER_SIZE,
 					    0, true) == SD_RES_SUCCESS) {
-				vdi_snapid =
-					vdi_is_snapshot(&vdi_inode->header) ?
-					vdi_inode->header.snap_id : 0;
 				print_acl_list(vdi_vid,
 					       vdi_inode->header.name,
 					       vdi_inode->header.tag,
-					       vdi_snapid, 0, vdi_inode,
+					       0, 0, vdi_inode,
 					       &vdi_info);
 			} else
 				sd_err("Failed to read inode of VDI %"PRIx32,
@@ -797,7 +790,7 @@ static int acl_add_member(int argc, char **argv)
 {
 	const char *aclname = argv[optind++];
 	char *member = NULL;
-	uint32_t acl_vid, vid;
+	uint32_t acl_vid;
 	struct sd_inode *inode = NULL;
 	int ret, i, free_idx = -1, num_entries;
 
@@ -833,12 +826,6 @@ static int acl_add_member(int argc, char **argv)
 	if (free_idx < 0) {
 		sd_err("ACL %" PRIx32 " member list full, cannot add",
 		       acl_vid);
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	ret = acl_create_vdi(member, SD_VDI_FLAG_MEMBER, &vid);
-	if (ret != SD_RES_SUCCESS) {
 		ret = EXIT_FAILURE;
 		goto out;
 	}
@@ -1032,13 +1019,6 @@ static int acl_remove_member(int argc, char **argv)
 		goto out;
 	}
 
-	ret = acl_delete_vdi(member);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to delete ACL member '%s': %s",
-		       member, sd_strerror(ret));
-		ret = EXIT_FAILURE;
-		goto out;
-	}
 	if (verbose)
 		print_acl_member_list(inode, acl_vid);
 out:
@@ -1059,133 +1039,32 @@ static int acl_remove(int argc, char **argv)
 	return do_generic_subcommand(acl_remove_cmd, argc, argv);
 }
 
-static int acl_import_psk(int argc, char **argv)
-{
-	const char *aclname = argv[optind++];
-	char *member = NULL;
-	uint32_t acl_vid, vid;
-	struct sd_inode *inode = NULL;
-	int ret, i, free_idx = -1, num_entries;
-
-	if (!argv[optind]) {
-		sd_err("Please specify the VDI to add");
-		return EXIT_USAGE;
-	}
-	member = argv[optind];
-	if (!strlen(member) || strlen(member) > SD_MAX_VDI_LEN) {
-		sd_err("Invalid ACL member name '%s'", member);
-		return EXIT_USAGE;
-	}
-
-	inode = xmalloc(SD_INODE_HEADER_SIZE);
-	ret = read_acl_inode(aclname, &acl_vid, inode, SD_INODE_HEADER_SIZE);
-	if (ret != SD_RES_SUCCESS) {
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	num_entries = sizeof(inode->header.metadata) / SD_MAX_VDI_LEN;
-	for (i = 0; i < num_entries; i++) {
-		char *item = (char *)&inode->header.metadata[i * SD_MAX_VDI_LEN];
-		if (free_idx < 0 && !strlen(item))
-			free_idx = i * SD_MAX_VDI_LEN;
-		if (!strcmp(item, member)) {
-			sd_err("ACL %" PRIx32 " already contains member %s",
-			       acl_vid, member);
-			ret = EXIT_FAILURE;
-			goto out;
-		}
-	}
-	if (free_idx < 0) {
-		sd_err("ACL %" PRIx32 " member list full, cannot add",
-		       acl_vid);
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	ret = acl_create_vdi(member, SD_VDI_FLAG_MEMBER, &vid);
-	if (ret != SD_RES_SUCCESS) {
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	memcpy(&inode->header.metadata[free_idx], member, strlen(member));
-
-	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
-			       &inode->header.metadata[free_idx],
-			       (unsigned int)SD_MAX_VDI_LEN,
-			       offsetof(struct sd_inode_header,
-					metadata[free_idx]),
-			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
-			       SD_MAX_COPIES, 0, false);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode %"PRIx64": %s",
-		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
-		acl_delete_vdi(member);
-		ret = EXIT_FAILURE;
-		goto out;
-	}
-
-	if (verbose)
-		print_acl_member_list(inode, acl_vid);
-out:
-	free(inode);
-	return ret;
-}
-
-static struct subcommand acl_import_cmd[] = {
-	{"psk", NULL, NULL, "import a TLS PSK", NULL,
-	 CMD_NEED_ARG, acl_import_psk},
-	{NULL},
-};
-
-static int acl_import(int argc, char **argv)
-{
-	return do_generic_subcommand(acl_import_cmd, argc, argv);
-}
-
 static struct subcommand acl_cmd[] = {
 	{"create", "<aclname>", "fajphrvT", "create an acl",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_create, acl_options},
-	{"delete", "<aclname>", "sfajphrvT", "delete an acl",
+	{"delete", "<aclname>", "fajphrvT", "delete an acl",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 acl_delete, acl_options},
-	{"register", "<aclname>", "sfajphrvT", "register an ACL owner",
+	{"register", "<aclname>", "fajphrvT", "register an ACL owner",
 	 NULL, CMD_NEED_ARG, acl_register, acl_options},
-	{"unregister", "<aclname>", "sfajphrvT", "unregister an ACL owner",
+	{"unregister", "<aclname>", "fajphrvT", "unregister an ACL owner",
 	 NULL, CMD_NEED_ARG, acl_unregister, acl_options},
 	{"owner", "<aclname>", "ajprhvT", "list ACL owners",
 	 NULL, CMD_NEED_ARG, acl_detail, acl_options},
 	{"list", "[aclname]", "ajprhvT", "list images",
 	 NULL, 0, acl_list, acl_options},
-	{"add", "<aclname> <vdiname>", "ajprvhT", "add an entry to ACL",
+	{"add", "<aclname> <vdiname>", "fajprvhT", "add an entry to ACL",
 	 acl_add_cmd, CMD_NEED_ARG, acl_add, acl_options},
 	{"remove", "<aclname> <vdiname>", "fajprvhT",
 	 "remove an entry from ACL", acl_remove_cmd, CMD_NEED_ARG,
 	 acl_remove, acl_options},
-	{"import", "<member>", "ajprhvT", "import data into an ACL",
-	 acl_import_cmd, CMD_NEED_ARG, acl_import, acl_options},
 	{NULL,},
 };
 
 static int acl_parser(int ch, const char *opt)
 {
-	char *p;
-
 	switch (ch) {
-	case 's':
-		acl_cmd_data.snapshot_id = strtol(opt, &p, 10);
-		if (opt == p || *p != '\0') {
-			acl_cmd_data.snapshot_id = 0;
-			pstrcpy(acl_cmd_data.snapshot_tag,
-				sizeof(acl_cmd_data.snapshot_tag), opt);
-		} else if (acl_cmd_data.snapshot_id == 0) {
-			fprintf(stderr,
-				"The snapshot id must be larger than zero\n");
-			exit(EXIT_FAILURE);
-		}
-		break;
 	case 'f':
 		acl_cmd_data.force = true;
 		break;
