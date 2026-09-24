@@ -57,7 +57,40 @@ static struct nvme_cmd_data {
 	bool force;
 } nvme_cmd_data = { 0 };
 
-static void print_psk_list(struct sd_inode *inode)
+static int nvme_create_host(const char *hostnqn, uint32_t *vid)
+{
+	char buf[SD_MAX_VDI_LEN];
+	int ret;
+	struct sd_req hdr;
+	struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
+
+	memset(buf, 0, sizeof(buf));
+	pstrcpy(buf, SD_MAX_VDI_LEN, hostnqn);
+
+	sd_init_req(&hdr, SD_OP_NEW_VDI);
+	hdr.flags = SD_FLAG_CMD_WRITE;
+	hdr.data_length = SD_MAX_VDI_LEN;
+	hdr.vdi.vdi_size = SD_INODE_SIZE;
+	hdr.vdi.vdi_flags = SD_VDI_FLAG_MEMBER;
+
+	ret = dog_exec_req(&sd_nid, &hdr, buf);
+	if (ret < 0) {
+		sd_err("Failed to create host %s: error %d",
+		       hostnqn, ret);
+		return SD_RES_EIO;
+	}
+	if (rsp->result != SD_RES_SUCCESS) {
+		sd_err("Failed to create host %s: %s",
+		       hostnqn, sd_strerror(rsp->result));
+		ret = rsp->result;;
+	} else
+		*vid = rsp->vdi.vdi_id;
+
+	return ret;
+}
+
+static void print_psk_list(struct sd_inode *inode,
+			   const char *protocol, const char *aclname)
 {
 	unsigned int num_entries, i;
 	struct nvme_psk_data *psk;
@@ -71,6 +104,11 @@ static void print_psk_list(struct sd_inode *inode)
 	for (i = 0; i < num_entries; i++) {
 		if (!strlen(psk->protocol))
 			break;
+
+		if (strncmp(psk->protocol, protocol, strlen(protocol)))
+			continue;
+		if (aclname && strlen(aclname) && strcmp(aclname, psk->subsysnqn))
+			continue;
 
 		if (json_output) {
 			struct json_object *psk_obj =
@@ -95,7 +133,7 @@ static void print_psk_list(struct sd_inode *inode)
 
 static int nvme_import_psk(int argc, char **argv)
 {
-	const char *member = argv[optind++];
+	const char *hostnqn = argv[optind++];
 	const char *keydata = NULL;
 	unsigned char *configured_key, *retained_key;
 	char *psk_identity;
@@ -138,7 +176,7 @@ static int nvme_import_psk(int argc, char **argv)
 		sd_err("Failed to import TLS key: %m");
 		return EXIT_USAGE;
 	}
-	ret = nvme_derive_tls_key(member, nvme_cmd_data.aclname,
+	ret = nvme_derive_tls_key(hostnqn, nvme_cmd_data.aclname,
 				  1, hmac, configured_key, key_len,
 				  &psk_identity, &retained_key);
 
@@ -162,11 +200,14 @@ static int nvme_import_psk(int argc, char **argv)
 		return EXIT_USAGE;
 	}
 
-	ret = find_vdi_name(member, 0, "", acl_vid, &vid);
+	ret = find_vdi_name(hostnqn, 0, "", 0, &vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open member %s: %s",
-		       member, sd_strerror(ret));
-		return EXIT_USAGE;
+		ret = nvme_create_host(hostnqn, &vid);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to create host %s: %s",
+			       hostnqn, sd_strerror(ret));
+			return EXIT_USAGE;
+		}
 	}
 	inode = xmalloc(SD_INODE_SIZE);
 	ret = dog_read_object(vid_to_vdi_oid(vid), inode,
@@ -189,7 +230,7 @@ static int nvme_import_psk(int argc, char **argv)
 		if (strcmp(psk->subsysnqn, psk_subsysnqn))
 			continue;
 		if (!strcmp(psk->digest, psk_digest)) {
-			sd_err("Member %"PRIx32" duplicate PSK for '%s'",
+			sd_err("Host %"PRIx32" duplicate PSK for '%s'",
 			       vid, psk_subsysnqn);
 			ret = EXIT_FAILURE;
 			break;
@@ -199,7 +240,7 @@ static int nvme_import_psk(int argc, char **argv)
 			sizeof(uint32_t);
 	}
 	if (!free_psk) {
-		sd_err("Member %" PRIx32 " psk list full, cannot add",
+		sd_err("Host %" PRIx32 " psk list full, cannot add",
 		       vid);
 		ret = EXIT_FAILURE;
 		goto out;
@@ -212,20 +253,20 @@ static int nvme_import_psk(int argc, char **argv)
 	free_psk->hash_len = key_len;
 	free_psk->digest_len = strlen(psk_digest);
 
-	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
 			       free_psk, sizeof(*free_psk),
-			       psk_index,
+			       data_vid_offset(psk_index),
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
 			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode %"PRIx64": %s",
-		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		sd_err("failed to update host inode %"PRIx64": %s",
+		       vid_to_vdi_oid(vid), sd_strerror(ret));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	if (verbose)
-		print_psk_list(inode);
+		print_psk_list(inode, "NVMe", NULL);
 out:
 	free(inode);
 	return ret;
@@ -233,30 +274,30 @@ out:
 
 static int nvme_list_psk(int argc, char **argv)
 {
-	const char *member = argv[optind];
+	const char *hostnqn = argv[optind];
 	uint32_t acl_vid = LOCK_TYPE_ANY, vid;
 	struct sd_inode *inode = NULL;
 	int ret;
 
 	if (strlen(nvme_cmd_data.aclname)) {
-		if (!strcmp(nvme_cmd_data.aclname, "shared")) {
+		if (!strcmp(nvme_cmd_data.aclname, "shared") ||
+		    !strcmp(nvme_cmd_data.aclname, "any")) {
 			sd_err("Invalid ACL name '%s'",
 			       nvme_cmd_data.aclname);
 			return EXIT_USAGE;
-		} else if (strcmp(nvme_cmd_data.aclname, "any")) {
-			ret = find_vdi_name(nvme_cmd_data.aclname,
-					    0, "", 0, &acl_vid);
-			if (ret != SD_RES_SUCCESS) {
-				sd_err("Failed to open ACL %s: %s",
-				       nvme_cmd_data.aclname, sd_strerror(ret));
-				return EXIT_USAGE;
-			}
+		}
+		ret = find_vdi_name(nvme_cmd_data.aclname,
+				    0, "", 0, &acl_vid);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to find ACL %s: %s",
+			       nvme_cmd_data.aclname, sd_strerror(ret));
+			return EXIT_USAGE;
 		}
 	}
-	ret = find_vdi_name(member, 0, "", acl_vid, &vid);
+	ret = find_vdi_name(hostnqn, 0, "", 0, &vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open member %s with acl %"PRIx32": %s",
-		       member, acl_vid, sd_strerror(ret));
+		sd_err("Failed to open hostnqn %s with acl %"PRIx32": %s",
+		       hostnqn, acl_vid, sd_strerror(ret));
 		return EXIT_USAGE;
 	}
 	inode = xmalloc(SD_INODE_SIZE);
@@ -265,7 +306,7 @@ static int nvme_list_psk(int argc, char **argv)
 	if (ret != SD_RES_SUCCESS)
 		ret = EXIT_FAILURE;
 	else
-		print_psk_list(inode);
+		print_psk_list(inode, "NVMe", nvme_cmd_data.aclname);
 
 	free(inode);
 	return ret;
@@ -286,7 +327,7 @@ static int psk_modify(int argc, char **argv)
 
 static int nvme_import_dhchap(int argc, char **argv)
 {
-	const char *member = argv[optind++];
+	const char *hostnqn = argv[optind++];
 	const char *keydata = NULL;
 	char psk_digest[9];
 	unsigned char decoded_key[128];
@@ -367,7 +408,7 @@ static int nvme_import_dhchap(int argc, char **argv)
 		return EXIT_SYSFAIL;
 	}
 	sprintf(psk_digest, "%08x", crc);
-	ret = nvme_gen_dhchap_key(member, hmac, decoded_len,
+	ret = nvme_gen_dhchap_key(hostnqn, hmac, decoded_len,
 				  decoded_key, transformed_key);
 	if (ret < 0) {
 		sd_err("Failed to transform DH-HMAC-CHAP key, error %d", -ret);
@@ -380,16 +421,19 @@ static int nvme_import_dhchap(int argc, char **argv)
 	}
 	ret = find_vdi_name(nvme_cmd_data.aclname, 0, "", 0, &acl_vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open ACL %s: %s",
+		sd_err("Failed to find ACL %s: %s",
 		       nvme_cmd_data.aclname, sd_strerror(ret));
 		return EXIT_USAGE;
 	}
 
-	ret = find_vdi_name(member, 0, "", acl_vid, &vid);
+	ret = find_vdi_name(hostnqn, 0, "", 0, &vid);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("Failed to open member %s: %s",
-		       member, sd_strerror(ret));
-		return EXIT_USAGE;
+		ret = nvme_create_host(hostnqn, &vid);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to create host %s: %s",
+			       hostnqn, sd_strerror(ret));
+			return EXIT_USAGE;
+		}
 	}
 	inode = xmalloc(SD_INODE_SIZE);
 	ret = dog_read_object(vid_to_vdi_oid(vid), inode,
@@ -412,7 +456,7 @@ static int nvme_import_dhchap(int argc, char **argv)
 		if (strcmp(psk->subsysnqn, nvme_cmd_data.aclname))
 			continue;
 		if (!strcmp(psk->digest, psk_digest)) {
-			sd_err("Member %"PRIx32" duplicate PSK for '%s'",
+			sd_err("Host %"PRIx32" duplicate PSK for '%s'",
 			       vid, nvme_cmd_data.aclname);
 			ret = EXIT_FAILURE;
 			break;
@@ -422,7 +466,7 @@ static int nvme_import_dhchap(int argc, char **argv)
 			sizeof(uint32_t);
 	}
 	if (!free_psk) {
-		sd_err("Member %" PRIx32 " psk list full, cannot add",
+		sd_err("Host %" PRIx32 " psk list full, cannot add",
 		       vid);
 		ret = EXIT_FAILURE;
 		goto out;
@@ -434,21 +478,61 @@ static int nvme_import_dhchap(int argc, char **argv)
 	free_psk->key_len = decoded_len;
 	free_psk->digest_len = strlen(psk_digest);
 
-	ret = dog_write_object(vid_to_vdi_oid(acl_vid), 0,
+	ret = dog_write_object(vid_to_vdi_oid(vid), 0,
 			       free_psk, sizeof(*free_psk),
-			       psk_index,
+			       data_vid_offset(psk_index),
 			       SD_FLAG_CMD_DIRECT | SD_FLAG_CMD_TGT,
 			       SD_MAX_COPIES, 0, false);
 	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to update ACL inode %"PRIx64": %s",
-		       vid_to_vdi_oid(acl_vid), sd_strerror(ret));
+		sd_err("failed to update host inode %"PRIx64": %s",
+		       vid_to_vdi_oid(vid), sd_strerror(ret));
 		ret = EXIT_FAILURE;
 		goto out;
 	}
 
 	if (verbose)
-		print_psk_list(inode);
+		print_psk_list(inode, "DHHC", NULL);
 out:
+	free(inode);
+	return ret;
+}
+
+static int nvme_list_dhchap(int argc, char **argv)
+{
+	const char *hostnqn = argv[optind];
+	uint32_t acl_vid = LOCK_TYPE_ANY, vid;
+	struct sd_inode *inode = NULL;
+	int ret;
+
+	if (strlen(nvme_cmd_data.aclname)) {
+		if (!strcmp(nvme_cmd_data.aclname, "shared") ||
+		    !strcmp(nvme_cmd_data.aclname, "any")) {
+			sd_err("Invalid ACL name '%s'",
+			       nvme_cmd_data.aclname);
+			return EXIT_USAGE;
+		}
+		ret = find_vdi_name(nvme_cmd_data.aclname,
+				    0, "", 0, &acl_vid);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("Failed to find ACL %s: %s",
+			       nvme_cmd_data.aclname, sd_strerror(ret));
+			return EXIT_USAGE;
+		}
+	}
+	ret = find_vdi_name(hostnqn, 0, "", 0, &vid);
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("Failed to open hostnqn %s with acl %"PRIx32": %s",
+		       hostnqn, acl_vid, sd_strerror(ret));
+		return EXIT_USAGE;
+	}
+	inode = xmalloc(SD_INODE_SIZE);
+	ret = dog_read_object(vid_to_vdi_oid(vid), inode,
+			      SD_INODE_SIZE, 0, true);
+	if (ret != SD_RES_SUCCESS)
+		ret = EXIT_FAILURE;
+	else
+		print_psk_list(inode, "DHHC", nvme_cmd_data.aclname);
+
 	free(inode);
 	return ret;
 }
@@ -456,6 +540,8 @@ out:
 static struct subcommand dhchap_modify_cmd[] = {
 	{ "import", NULL, NULL, "import a DH-HMAC-CHAP PSK", NULL,
 	  CMD_NEED_ARG, nvme_import_dhchap},
+	{ "list", NULL, NULL, "list DH-HMAC-CHAP PSKs", NULL,
+	  CMD_NEED_ARG, nvme_list_dhchap},
 	{NULL},
 };
 

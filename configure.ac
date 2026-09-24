@@ -516,7 +516,8 @@ if test "x${enable_nvmet}" = xyes; then
 	fi
 	AM_CONDITIONAL(BUILD_TLS, test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes)
 fi
-AM_CONDITIONAL(BUILD_CRYPTO, test "x$enable_nvmet" = xyes -a "x$enable_openssl" = xyes)
+AM_CONDITIONAL(BUILD_CRYPTO, test "x$enable_nvmet" = xyes -a \
+	\( "x$enable_openssl" = xyes -o "x$enable_gnutls" = xyes \))
 
 if test "x${enable_diskvnodes}" = xyes; then
 	AC_DEFINE_UNQUOTED(HAVE_DISKVNODES, 1, [have diskvnodes])
