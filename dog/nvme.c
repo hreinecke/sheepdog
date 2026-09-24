@@ -469,7 +469,7 @@ static int nvme_import_dhchap(int argc, char **argv)
 	strncpy(free_psk->protocol, keydata, 9);
 	strcpy(free_psk->subsysnqn, nvme_cmd_data.aclname);
 	strcpy(free_psk->digest, psk_digest);
-	memcpy(free_psk->key, decoded_key, decoded_len);
+	memcpy(free_psk->key, transformed_key, decoded_len);
 	free_psk->key_len = decoded_len;
 	free_psk->digest_len = strlen(psk_digest);
 
