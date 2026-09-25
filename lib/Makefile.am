@@ -39,7 +39,12 @@ libsd_a_SOURCES		= event.c logger.c net.c util.c rbtree.c strbuf.c \
 			  sd_inode.c common.c json.c base64.c
 
 if BUILD_CRYPTO
-libsd_a_SOURCES		+= crypto.c crc32.c
+if BUILD_GNUTLS
+libsd_a_SOURCES		+= crypto-gnutls.c
+else
+libsd_a_SOURCES		+= crypto-openssl.c
+endif
+libsd_a_SOURCES		+= crc32.c
 endif
 
 if !X86_64

@@ -78,7 +78,7 @@ static uint8_t nvme_auth_dhgroup_id(const char *dhgroup_name)
  * Byte length of the DH modulus (and thus of the public value g^x mod p)
  * for a given NVMe DH group, i.e. NVME_AUTH_DHGROUP_2048 -> 2048 bits.
  */
-size_t nvme_dhchap_dh_len(uint8_t dhgroup_id)
+static size_t nvme_dhchap_dh_len(uint8_t dhgroup_id)
 {
 	static const uint16_t dhgroup_bits[] = {
 		[NVME_AUTH_DHGROUP_NULL]	= 0,
@@ -210,7 +210,7 @@ static size_t auth_hmac_hash_len(uint8_t hmac_id)
 	return hash_map[hmac_id].len;
 }
 
-static int auth_host_hash(struct eq_qe *qe, uint8_t *response,
+static int auth_host_hash(struct ep_qe *qe, uint8_t *response,
 			  unsigned int shash_len)
 {
 	struct nvme_auth_hmac_ctx hmac;
@@ -220,17 +220,12 @@ static int auth_host_hash(struct eq_qe *qe, uint8_t *response,
 	u8 buf[4];
 	int ret;
 
-	transformed_key = nvme_auth_transform_key(ctrl->host_key,
-						  ctrl->hostnqn);
-	if (IS_ERR(transformed_key))
-		return PTR_ERR(transformed_key);
-
 	ret = nvme_auth_hmac_init(&hmac, ctrl->shash_id, transformed_key->key,
 				  transformed_key->len);
 	if (ret)
 		goto out_free_response;
 
-	if (shash_len != nvme_auth_hmac_hash_len(ctrl->shash_id)) {
+	if (shash_len != nvme_dhchap_hash_len(ctrl->shash_id)) {
 		pr_err("%s: hash len mismatch (len %u digest %zu)\n", __func__,
 		       shash_len, nvme_auth_hmac_hash_len(ctrl->shash_id));
 		ret = -EINVAL;
@@ -238,7 +233,7 @@ static int auth_host_hash(struct eq_qe *qe, uint8_t *response,
 	}
 
 	if (ctrl->dh_gid != NVME_AUTH_DHGROUP_NULL) {
-		challenge = kmalloc(shash_len, GFP_KERNEL);
+		challenge = xmalloc(shash_len);
 		if (!challenge) {
 			ret = -ENOMEM;
 			goto out_free_response;
