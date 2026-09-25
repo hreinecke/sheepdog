@@ -416,6 +416,33 @@ out_free_hkdf:
 	return ret < 0 ? ret : key_len;
 }
 
+int nvme_dhchap_hash_len(enum nvme_hmac_alg hmac)
+{
+	int len;
+#ifdef HAVE_GNUTLS
+	gnutls_mac_algorithm_t mac;
+
+	switch (hmac) {
+	case NVME_HMAC_ALG_NONE:
+		return 0;
+	case NVME_HMAC_ALG_SHA2_256:
+		mac = GNUTLS_MAC_SHA256;
+		break;
+	case NVME_HMAC_ALG_SHA2_384:
+		mac = GNUTLS_MAC_SHA384;
+		break;
+	case NVME_HMAC_ALG_SHA2_512:
+		mac = GNUTLS_MAC_SHA512;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	len = gnutls_hmac_get_len(mac);
+#endif
+	return len;
+}
+
 int nvme_gen_dhchap_key(const char *hostnqn, enum nvme_hmac_alg hmac,
 		unsigned int key_len, unsigned char *secret,
 		unsigned char *key)

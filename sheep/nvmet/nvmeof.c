@@ -320,10 +320,13 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 			    NVME_CTRL_ATTR_TBKAS);
 	id.ioccsz = NVME_NVM_IOSQES;
 	id.iorcsz = NVME_NVM_IOCQES;
-	if (ep->ctrl->subsys->type == NVME_NQN_NVM)
+	if (ep->ctrl->subsys->type == NVME_NQN_NVM) {
 		id.oaes = htole32(NVME_AEN_CFG_NS_ATTR |
 				  NVME_AEN_CFG_ANA_CHANGE);
-	else
+		/* Announce write cache settings */
+		if (ep->ctrl->subsys->wce)
+			id.vwc = NVME_CTRL_VWC_PRESENT;
+	} else
 		id.oaes = htole32(NVME_AEN_CFG_DISC_CHANGE);
 	id.oncs = htole16(NVME_CTRL_ONCS_DSM);
 	id.acl = 3;
@@ -592,11 +595,8 @@ static int handle_identify_cs_indep_ns(struct nofuse_queue *ep,
 		return NVME_SC_INVALID_NS | NVME_SC_DNR;
 
 	memset(&id, 0, sizeof(id));
-	/* Announce write cache settings */
-	if (!ep->ctrl->subsys->wce)
-		id.nsfeat = (1 << 5);
 	if (ep->ctrl->subsys->recycle_vid)
-		id.nsfeat |= (1 << 3);
+		id.nsfeat |= NVME_NS_FEAT_UIDREUSE;
 	/* It is a shared namespace */
 	id.nmic = (1 << 0);
 	id.anagrpid = ns->ana_grpid;
@@ -1069,6 +1069,14 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 		case nvme_fabrics_type_connect:
 			ret = handle_connect(ep, qe, cmd);
 			break;
+#ifdef HAVE_CRYPTO
+		case nvme_fabrics_type_auth_send:
+			ret = handle_auth_send(ep, qe, cmd);
+			break;
+		case nvme_fabrics_auth_receive:
+			ret = handle_auth_receive(ep, qe, cmd);
+			break;
+#endif
 		default:
 			ctrl_err(ep, "unknown fctype %d", cmd->fabrics.fctype);
 			ret = NVME_SC_INVALID_OPCODE;

@@ -29,23 +29,6 @@
 
 static struct json_object *out_obj;
 
-enum nvme_psk_flags {
-	NVME_PSK_FLAG_EXPIRED,
-	NVME_PSK_FLAG_REVOKED,
-};
-
-struct nvme_psk_data {
-	char protocol[16];
-	char subsysnqn[256];
-	char digest[64];
-	char key[64];
-	uint8_t digest_len;
-	uint8_t key_len;
-	uint8_t hash_len;
-	uint8_t flags;
-	uint64_t ctime;
-};
-
 static struct sd_option nvme_options[] = {
 	{'A', "acl", true, "specify a ACL name"},
 	{'f', "force", false, "do operation forcibly"},

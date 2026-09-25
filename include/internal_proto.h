@@ -460,4 +460,23 @@ struct vdi_lock_state {
 	uint32_t state;
 };
 
+#ifdef HAVE_NVMET
+enum nvme_psk_flags {
+	NVME_PSK_FLAG_EXPIRED,
+	NVME_PSK_FLAG_REVOKED,
+};
+
+struct nvme_psk_data {
+	char protocol[16];
+	char subsysnqn[256];
+	char digest[64];
+	char key[64];
+	uint8_t digest_len;
+	uint8_t key_len;
+	uint8_t hash_len;
+	uint8_t flags;
+	uint64_t ctime;
+};
+#endif
+
 #endif /* __INTERNAL_PROTO_H__ */

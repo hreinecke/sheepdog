@@ -209,6 +209,24 @@ struct nofuse_ctrl {
 	char hostnqn[MAX_NQN_SIZE + 1];
 	struct sd_inode *host_inode;
 	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
+	const char *dhchap_key;
+	const char *host_key;
+	const char *ctrl_key;
+	unsigned int dhchap_step;
+	unsigned int dhchap_status;
+	unsigned char *dhchap_c1;
+	unsigned char *dhchap_c2;
+	unsigned char *dhchap_skey;
+	unsigned int dhchap_skey_len;
+#ifdef HAVE_GNUTLS
+	gnutls_privkey_t dh_privkey;
+#endif
+	uint32_t dhchap_s1;
+	uint32_t dhchap_s2;
+	uint16_t dhchap_tid;
+	uint8_t dh_gid;
+	uint8_t shash_id;
+	uint8_t sc_c;
 	int cntlid;
 	int kato;
 	int kato_countdown;
@@ -219,6 +237,7 @@ struct nofuse_ctrl {
 	uint32_t aen_pending;
 	uint64_t csts;
 	uint64_t cc;
+	bool authenticated;
 };
 
 struct nofuse_tls_psk {
@@ -286,8 +305,14 @@ static inline uint32_t aen_pending(struct nofuse_ctrl *ctrl)
 
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level);
 
+int handle_auth_send(struct nofuse_queue *ep, struct ep_qe *qe,
+		     struct nvme_command *cmd);
+int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
+			struct nvme_command *cmd);
+int handle_auth_send_data(struct nofuse_queue *ep, struct ep_qe *qe);
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
+int handle_fabrics(struct nofuse_queue *ep, struct ep_qe *qe);
 int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);
@@ -332,6 +357,9 @@ int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
 
 bool nofuse_node_in_recovery(void);
 unsigned int nofuse_genctr(void);
+
+const char *lookup_dhchap_psk(struct sd_inode *inode, const char *subsysnqn,
+			      size_t *key_len);
 
 int nofuse_init(const char *traddr, int trsvcid);
 void nofuse_exit(void);

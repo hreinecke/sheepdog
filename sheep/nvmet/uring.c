@@ -463,6 +463,9 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 			case nvme_cmd_dsm:
 				ret = uring_submit_dsm(ep, qe);
 				break;
+			case nvme_fabrics_command:
+				ret = handle_fabrics(ep, qe);
+				break;
 			default:
 				ret = NVME_SC_INVALID_OPCODE;
 				break;

@@ -31,6 +31,8 @@ enum nvme_hmac_alg {
 	NVME_HMAC_ALG_SHA2_512	= 3,
 };
 
+int nvme_dhchap_hash_len(enum nvme_hmac_alg hmac);
+
 /**
  * nvme_gen_dhchap_key() - DH-HMAC-CHAP key generation
  * @hostnqn:	Host NVMe Qualified Name

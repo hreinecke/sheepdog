@@ -484,6 +484,34 @@ int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
 	return ret;
 }
 
+const char *lookup_dhchap_psk(struct sd_inode *inode, const char *subsysnqn,
+			      size_t *key_len)
+{
+	unsigned int num_entries, i;
+	struct nvme_psk_data *psk;
+	const char *protocol = "DHHC";
+	char *key = NULL;
+
+	num_entries = sizeof(inode->data_vdi_id) /
+		sizeof(struct nvme_psk_data);
+	psk = (struct nvme_psk_data *)inode->data_vdi_id;
+	for (i = 0; i < num_entries; i++, psk++) {
+		if (!strlen(psk->protocol))
+			break;
+		if ((psk->flags & NVME_PSK_FLAG_EXPIRED) ||
+		    (psk->flags & NVME_PSK_FLAG_REVOKED))
+			continue;
+		if (strncmp(psk->protocol, protocol, strlen(protocol)))
+			continue;
+		if (strlen(subsysnqn) && strcmp(subsysnqn, psk->subsysnqn))
+			continue;
+		key = psk->key;
+		*key_len = psk->key_len;
+		break;
+	}
+	return key;
+}
+
 static void update_vdi_lock_state(struct nofuse_namespace *ns,
 				  uint32_t vid, uint32_t acl_id)
 {
