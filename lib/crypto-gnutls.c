@@ -352,24 +352,25 @@ int nvme_gen_dhchap_key(const char *hostnqn, enum nvme_hmac_alg hmac,
 static int auth_host_hash(struct nofuse_ctrl *ctrl, uint8_t *response,
 			  unsigned int shash_len)
 {
-	struct nvme_auth_hmac_ctx hmac;
+	gnutls_mac_algorithm_t hmac;
+	gnutls_hmac_hd_t hmac_ctx;
 	u8 *challenge = ctrl->dhchap_c1;
 	struct nvme_dhchap_key *transformed_key;
 	u8 buf[4];
 	int ret;
+	size_t hmac_len;
 
-	if (gnutls_hmac_init
-	ret = nvme_auth_hmac_init(&hmac, ctrl->shash_id, transformed_key->key,
-				  transformed_key->len);
-	if (ret)
-		goto out_free_response;
-
-	if (shash_len != nvme_dhchap_hash_len(ctrl->shash_id)) {
-		pr_err("%s: hash len mismatch (len %u digest %zu)\n", __func__,
-		       shash_len, nvme_auth_hmac_hash_len(ctrl->shash_id));
+	hmac = select_hmac(ctrl->shash_id, &hmac_len);
+	if (hmac_len != shash_len) {
+		sd_warn("hash len mismatch (len %u digest %zu)",
+			shash_len, hmac_len);
 		ret = -EINVAL;
 		goto out_free_response;
 	}
+
+	if (gnutls_hmac_init(&hmac_ctx, mac, respone, shash_len) < 0)
+		return -ENOKEY;
+	
 
 	if (ctrl->dh_gid != NVME_AUTH_DHGROUP_NULL) {
 		challenge = xmalloc(shash_len);
@@ -378,41 +379,42 @@ static int auth_host_hash(struct nofuse_ctrl *ctrl, uint8_t *response,
 			goto out_free_response;
 		}
 		ret = nvme_auth_augmented_challenge(ctrl->shash_id,
-						    req->sq->dhchap_skey,
-						    req->sq->dhchap_skey_len,
-						    req->sq->dhchap_c1,
+						    ctrl->dhchap_skey,
+						    ctrl->dhchap_skey_len,
+						    ctrl->dhchap_c1,
 						    challenge, shash_len);
 		if (ret)
 			goto out_free_challenge;
 	}
-	pr_debug("ctrl %d qid %d host response seq %u transaction %d\n",
-		 ctrl->cntlid, req->sq->qid, req->sq->dhchap_s1,
-		 req->sq->dhchap_tid);
+	sd_debug("ctrl %d qid %d host response seq %u transaction %d\n",
+		 ctrl->cntlid, ctrl->qid, ctrl->dhchap_s1,
+		 ctrl->dhchap_tid);
 
-	nvme_auth_hmac_update(&hmac, challenge, shash_len);
-
+	ret = -ENOKEY
+	if (gnutls_hmac(hmac_ctx, challenge, shash_len) < 0)
+		goto out_deinit;
 	put_unaligned_le32(req->sq->dhchap_s1, buf);
-	nvme_auth_hmac_update(&hmac, buf, 4);
-
+	if (gnutls_hmac(hmac_ctx, buf, 4) < 0)
+		goto out_deinit;
 	put_unaligned_le16(req->sq->dhchap_tid, buf);
-	nvme_auth_hmac_update(&hmac, buf, 2);
+	if (gnutls_hmac(hmac_ctx, buf, 2) < 0)
+		goto out_deinit;
 
 	*buf = req->sq->sc_c;
-	nvme_auth_hmac_update(&hmac, buf, 1);
-	nvme_auth_hmac_update(&hmac, "HostHost", 8);
+	if (gnutls_hmac(hmac_ctx, buf, 1) < 0 ||
+	    gnutls_hmac(hmac_ctx, "HostHost", 8) < 0 ||
+	    gnutls_hmac(hmac_ctx, ctrl->hostnqn, strlen(ctrl->hostnqn)) < 0)
+		goto out_deinit;
 	memset(buf, 0, 4);
-	nvme_auth_hmac_update(&hmac, ctrl->hostnqn, strlen(ctrl->hostnqn));
-	nvme_auth_hmac_update(&hmac, buf, 1);
-	nvme_auth_hmac_update(&hmac, ctrl->subsys->subsysnqn,
-			      strlen(ctrl->subsys->subsysnqn));
-	nvme_auth_hmac_final(&hmac, response);
+	if (gnutls_hmac(hmac_ctx, buf, 1) < 0 ||
+	    gnutls_hmac(hmac_ctx, ctrl->subsys->subsysnqn,
+			strlen(ctrl->subsys->subsysnqn) < 0))
+		goto out_deinit;
 	ret = 0;
-out_free_challenge:
-	if (challenge != req->sq->dhchap_c1)
-		kfree(challenge);
-out_free_response:
-	memzero_explicit(&hmac, sizeof(hmac));
-	nvme_auth_free_key(transformed_key);
+out_deinit:
+	gnutls_hmac_deinit(hmac_ctx, response);
+	if (ret != 0)
+		memset(response, 0, shash_len);
 	return ret;
 }
 
