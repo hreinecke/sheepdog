@@ -26,6 +26,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn)
 {
 	struct nofuse_ctrl *ctrl = NULL;
+	struct sd_inode *host_inode = NULL;
 	struct nofuse_subsystem *subsys = NULL;
 	char nqn[MAX_NQN_SIZE + 1], value[16];
 	bool is_discovery = false;
@@ -76,12 +77,14 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		goto out_unlock;
 	}
 
-	if (!is_discovery &&
-	    check_allowed_hosts(hostnqn, nqn) <= 0) {
-		sd_err("rejecting host NQN '%s' for subsys '%s'",
-		       hostnqn, nqn);
-		ret = -EPERM;
-		goto out_unlock;
+	if (!is_discovery) {
+		ret = check_allowed_hosts(hostnqn, nqn, &host_inode);
+		if (ret != SD_RES_SUCCESS) {
+			sd_err("rejecting host NQN '%s' for subsys '%s': %s",
+			       hostnqn, nqn, sd_strerror(ret));
+			ret = -EPERM;
+			goto out_unlock;
+		}
 	}
 	sd_debug("Allocating new controller '%s' for '%s'",
 		hostnqn, nqn);
@@ -128,6 +131,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		goto out_unlock;
 	}
 	ctrl->subsys = subsys;
+	ctrl->host_inode = host_inode;
 	strcpy(ctrl->hostnqn, hostnqn);
 	ep->ctrl = ctrl;
 	ctrl->ep[0] = ep;

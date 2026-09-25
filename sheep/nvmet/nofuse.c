@@ -234,6 +234,31 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 	return ret;
 }
 
+int lookup_vdi_name(const char *vdiname, uint32_t acl, uint32_t *vid)
+{
+	int ret;
+	struct sd_req req;
+	struct sd_rsp *rsp = (struct sd_rsp *)&req;
+	char buf[SD_MAX_VDI_LEN];
+
+	memset(buf, 0, sizeof(buf));
+	pstrcpy(buf, SD_MAX_VDI_LEN, vdiname);
+
+	sd_init_req(&req, SD_OP_GET_VDI_INFO);
+	req.data_length = SD_MAX_VDI_LEN;
+	req.flags = SD_FLAG_CMD_WRITE;
+	req.vdi.acl = acl;
+
+	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
+	if (ret < 0)
+		return SD_RES_EIO;
+
+	if (rsp->result == SD_RES_SUCCESS)
+		*vid = rsp->vdi.vdi_id;
+
+	return rsp->result;
+}
+
 static int register_namespace(struct nofuse_subsystem *subsys, uint32_t nsid,
 			      struct sd_inode *inode)
 {
@@ -416,15 +441,16 @@ int identify_active_ns(struct nofuse_subsystem *subsys, uint32_t start_nsid,
 	return id_len;
 }
 
-bool check_allowed_hosts(const char *hostnqn, const char *subsysnqn)
+int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
+			 struct sd_inode **host_inode)
 {
 	struct nofuse_subsystem *subsys =
 		lookup_subsystem_by_nqn(subsysnqn);
 	bool allowed = false;
-	int i, num_allowed_hosts = 0;
+	int i, num_allowed_hosts = 0, ret;
 
 	if (!subsys)
-		return false;
+		return SD_RES_INVALID_PARMS;
 	sd_mutex_lock(&subsys->inode_lock);
 	for (i = 0; i < sizeof(subsys->inode->metadata); i += SD_MAX_VDI_LEN) {
 		char *host = (char *)&subsys->inode->metadata[i];
@@ -435,9 +461,27 @@ bool check_allowed_hosts(const char *hostnqn, const char *subsysnqn)
 		num_allowed_hosts++;
 	}
 	sd_mutex_unlock(&subsys->inode_lock);
+	if (allowed) {
+		uint32_t vid;
+
+		ret = lookup_vdi_name(hostnqn, 0, &vid);
+		if (ret == SD_RES_SUCCESS) {
+			struct sd_inode *inode = xmalloc(sizeof(*inode));
+
+			ret = sd_read_object(vid_to_vdi_oid(vid), (char *)inode,
+					     sizeof(*inode), 0);
+			if (ret != SD_RES_SUCCESS) {
+				sd_warn("failed to read host inode %"PRIx32
+					": %s", vid, sd_strerror(ret));
+				free(inode);
+			} else if (host_inode)
+				*host_inode = inode;
+		}
+	} else
+		ret = SD_RES_NO_VDI;
 	if (!num_allowed_hosts)
-		allowed = true;
-	return allowed;
+		ret = SD_RES_SUCCESS;
+	return ret;
 }
 
 static void update_vdi_lock_state(struct nofuse_namespace *ns,

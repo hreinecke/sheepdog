@@ -207,6 +207,7 @@ struct nofuse_ctrl {
 	pthread_mutex_t ctrl_mutex;
 	struct nofuse_subsystem *subsys;
 	char hostnqn[MAX_NQN_SIZE + 1];
+	struct sd_inode *host_inode;
 	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
 	int cntlid;
 	int kato;
@@ -313,6 +314,7 @@ int del_ana_group(int portid, int ana_grpid);
 
 struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 					  uint32_t nsid);
+int lookup_vdi_name(const char *vdiname, uint32_t acl, uint32_t *vid);
 int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 		    uint8_t *log, int log_len);
 int identify_active_ns(struct nofuse_subsystem *subsys, uint32_t nsid,
@@ -325,7 +327,8 @@ int disable_namespace(const char *subsysnqn, uint32_t nsid);
 struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id);
 struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn);
 
-bool check_allowed_hosts(const char *hostnqn, const char *subsysnqn);
+int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
+			struct sd_inode **host_inode);
 
 bool nofuse_node_in_recovery(void);
 unsigned int nofuse_genctr(void);
