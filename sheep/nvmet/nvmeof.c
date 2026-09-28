@@ -278,11 +278,16 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	ret = connect_queue(ep, cntlid, connect->hostnqn, connect->subsysnqn);
 	if (!ret) {
+		uint32_t res = ep->ctrl->cntlid;
+
 		ctrl_info(ep, "connected");
 		if (qid == 0) {
 			ep->ctrl->kato = kato / ep->kato_interval;
+			if (ep->ctrl->host_key ||
+			    ep->ctrl->ctrl_key)
+				res |= NVME_CONNECT_AUTHREQ_ATR;
 		}
-		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
+		qe->resp.result.u32 = htole32(res);
 	} else {
 		if (ret == -ENOENT) {
 			ctrl_err(ep, "bad controller id %x for queue %d",
