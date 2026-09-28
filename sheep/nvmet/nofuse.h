@@ -181,10 +181,6 @@ struct nofuse_queue {
 	SSL_CTX *ctx;
 	SSL *ssl;
 #endif
-	uint8_t *host_key;
-	size_t host_key_len;
-	uint8_t *ctrl_key;
-	size_t ctrl_key_len;
 	struct nofuse_queue_auth auth;
 };
 
@@ -235,9 +231,10 @@ struct nofuse_ctrl {
 	char hostnqn[MAX_NQN_SIZE + 1];
 	struct sd_inode *host_inode;
 	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
-	const char *dhchap_key;
-	const char *host_key;
-	const char *ctrl_key;
+	const uint8_t *host_key;
+	size_t host_key_len;
+	const uint8_t *ctrl_key;
+	size_t ctrl_key_len;
 	int cntlid;
 	int kato;
 	int kato_countdown;
@@ -252,6 +249,7 @@ struct nofuse_ctrl {
 };
 
 struct nofuse_tls_psk {
+	char hostnqn[MAX_NQN_SIZE];
 	char subsysnqn[MAX_NQN_SIZE];
 	uint8_t version[8];
 	uint8_t hash[64];
@@ -377,8 +375,10 @@ int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
 bool nofuse_node_in_recovery(void);
 unsigned int nofuse_genctr(void);
 
-const char *lookup_dhchap_psk(struct sd_inode *inode, const char *subsysnqn,
-			      size_t *key_len);
+const uint8_t *lookup_dhchap_psk(struct sd_inode *inode,
+				 const char *hostnqn,
+				 const char *subsysnqn,
+				 size_t *key_len);
 
 int nofuse_init(const char *traddr, int trsvcid);
 void nofuse_exit(void);

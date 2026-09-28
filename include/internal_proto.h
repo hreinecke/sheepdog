@@ -468,6 +468,7 @@ enum nvme_psk_flags {
 
 struct nvme_psk_data {
 	char protocol[16];
+	char hostnqn[256];
 	char subsysnqn[256];
 	char digest[64];
 	char key[64];

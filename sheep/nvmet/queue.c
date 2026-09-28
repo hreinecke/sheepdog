@@ -131,8 +131,15 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		goto out_unlock;
 	}
 	ctrl->subsys = subsys;
-	ctrl->host_inode = host_inode;
 	strcpy(ctrl->hostnqn, hostnqn);
+	ctrl->host_inode = host_inode;
+	if (ctrl->host_inode) {
+		ctrl->host_key = lookup_dhchap_psk(ctrl->host_inode, hostnqn,
+						   nqn, &ctrl->host_key_len);
+		ctrl->ctrl_key = lookup_dhchap_psk(ctrl->host_inode, nqn,
+						   hostnqn, 
+						   &ctrl->ctrl_key_len);
+	}
 	ep->ctrl = ctrl;
 	ctrl->ep[0] = ep;
 	ctrl->num_queues = 1;

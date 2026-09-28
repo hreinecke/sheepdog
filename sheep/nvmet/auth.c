@@ -741,7 +741,7 @@ static int auth_success1(struct ep_qe *qe, void *d, int al)
 	data->t_id = htole16(qe->ep->auth.dhchap_tid);
 	data->hl = hash_len;
 	if (qe->ep->auth.dhchap_c2) {
-		if (!qe->ep->ctrl_key) {
+		if (!qe->ep->ctrl->ctrl_key) {
 			ctrl_err(qe->ep, "no ctrl key");
 			return NVME_AUTH_DHCHAP_FAILURE_FAILED;
 		}

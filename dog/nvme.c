@@ -32,12 +32,14 @@ static struct json_object *out_obj;
 static struct sd_option nvme_options[] = {
 	{'A', "acl", true, "specify a ACL name"},
 	{'f', "force", false, "do operation forcibly"},
+	{'c', "ctrl_key", false, "use controller key"},
 	{ 0, NULL, false, NULL },
 };
 
 static struct nvme_cmd_data {
 	char aclname[SD_MAX_VDI_TAG_LEN];
 	bool force;
+	bool ctrl_key;
 } nvme_cmd_data = { 0 };
 
 static int nvme_create_host(const char *hostnqn, uint32_t *vid)
@@ -97,7 +99,7 @@ static void print_psk_list(struct sd_inode *inode,
 			struct json_object *psk_obj =
 				json_object_new_object();
 			JSON_ADD_STRING(psk_obj, "protocol", psk->protocol);
-			JSON_ADD_STRING(psk_obj, "hostnqn", inode->header.name);
+			JSON_ADD_STRING(psk_obj, "hostnqn", psk->hostnqn);
 			JSON_ADD_STRING(psk_obj, "subsysnqn", psk->subsysnqn);
 			JSON_ADD_STRING(psk_obj, "digest", psk->digest);
 			json_object_array_add(out_obj, psk_obj);
@@ -304,6 +306,7 @@ static int psk_modify(int argc, char **argv)
 static int nvme_import_dhchap(int argc, char **argv)
 {
 	const char *hostnqn = argv[optind++];
+	const char *subsysnqn;
 	const char *keydata = NULL;
 	char psk_digest[9];
 	unsigned char decoded_key[128];
@@ -424,6 +427,11 @@ static int nvme_import_dhchap(int argc, char **argv)
 		goto out;
 	}
 
+	if (nvme_cmd_data.ctrl_key) {
+		subsysnqn = hostnqn;
+		hostnqn = nvme_cmd_data.aclname;
+	} else
+		subsysnqn = nvme_cmd_data.aclname;
 	num_entries = sizeof(inode->data_vdi_id) /
 		sizeof(struct nvme_psk_data);
 	psk = (struct nvme_psk_data *)inode->data_vdi_id;
@@ -433,7 +441,8 @@ static int nvme_import_dhchap(int argc, char **argv)
 			break;
 		}
 		if (!strncmp(psk->protocol, keydata, 9) &&
-		    !strcmp(psk->subsysnqn, nvme_cmd_data.aclname) &&
+		    !strcmp(psk->hostnqn, hostnqn) &&
+		    !strcmp(psk->subsysnqn, subsysnqn) &&
 		    !strcmp(psk->digest, psk_digest)) {
 			sd_err("Host %"PRIx32" duplicate PSK for '%s'",
 			       vid, nvme_cmd_data.aclname);
@@ -450,7 +459,8 @@ static int nvme_import_dhchap(int argc, char **argv)
 	}
 	memset(free_psk, 0, sizeof(*free_psk));
 	strncpy(free_psk->protocol, keydata, 9);
-	strcpy(free_psk->subsysnqn, nvme_cmd_data.aclname);
+	strcpy(free_psk->hostnqn, hostnqn);
+	strcpy(free_psk->subsysnqn, subsysnqn);
 	strcpy(free_psk->digest, psk_digest);
 	memcpy(free_psk->key, transformed_key, decoded_len);
 	free_psk->key_len = decoded_len;
@@ -532,7 +542,7 @@ static struct subcommand nvme_cmd[] = {
 	{"psk", "<hostnqn>", "fajphrvTA", "modify a TLS PSK",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 psk_modify, nvme_options},
-	{"dhchap", "<hostnqn>", "fajphrvTA", "modify a DH-HMAC-CHAP secret",
+	{"dhchap", "<hostnqn>", "cfajphrvTA", "modify a DH-HMAC-CHAP secret",
 	 NULL, CMD_NEED_ROOT|CMD_NEED_ARG,
 	 dhchap_modify, nvme_options},
 	{NULL,},

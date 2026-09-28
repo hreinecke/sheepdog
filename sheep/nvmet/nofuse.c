@@ -484,13 +484,15 @@ int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
 	return ret;
 }
 
-const char *lookup_dhchap_psk(struct sd_inode *inode, const char *subsysnqn,
-			      size_t *key_len)
+const uint8_t *lookup_dhchap_psk(struct sd_inode *inode,
+				 const char *hostnqn,
+				 const char *subsysnqn,
+				 size_t *key_len)
 {
 	unsigned int num_entries, i;
 	struct nvme_psk_data *psk;
 	const char *protocol = "DHHC";
-	char *key = NULL;
+	uint8_t *key = NULL;
 
 	num_entries = sizeof(inode->data_vdi_id) /
 		sizeof(struct nvme_psk_data);
@@ -502,6 +504,8 @@ const char *lookup_dhchap_psk(struct sd_inode *inode, const char *subsysnqn,
 		    (psk->flags & NVME_PSK_FLAG_REVOKED))
 			continue;
 		if (strncmp(psk->protocol, protocol, strlen(protocol)))
+			continue;
+		if (strlen(hostnqn) && strcmp(hostnqn, psk->hostnqn))
 			continue;
 		if (strlen(subsysnqn) && strcmp(subsysnqn, psk->subsysnqn))
 			continue;

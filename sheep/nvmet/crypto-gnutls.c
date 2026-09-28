@@ -186,8 +186,8 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 		return -EINVAL;
 	}
 
-	transformed_key = auth_transform_key(hmac, ep->host_key,
-					     ep->host_key_len,
+	transformed_key = auth_transform_key(hmac, ep->ctrl->host_key,
+					     ep->ctrl->host_key_len,
 					     ep->ctrl->hostnqn);
 	if (!transformed_key)
 		return -ENOMEM;
@@ -268,8 +268,8 @@ int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
 		return -EINVAL;
 	}
 
-	transformed_key = auth_transform_key(hmac, ep->host_key,
-					     ep->host_key_len,
+	transformed_key = auth_transform_key(hmac, ep->ctrl->ctrl_key,
+					     ep->ctrl->ctrl_key_len,
 					     ep->ctrl->hostnqn);
 	if (!transformed_key)
 		return -ENOMEM;
