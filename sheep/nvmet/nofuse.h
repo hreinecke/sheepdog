@@ -107,12 +107,32 @@ struct ep_qe {
 	struct list_node io_node;
 	int ccid;
 	int opcode;
+	int fctype;
 	bool busy;
 	bool aen;
 	bool fua;
 };
 
 enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
+
+struct nofuse_queue_auth {
+	unsigned int dhchap_step;
+	unsigned int dhchap_status;
+	unsigned char *dhchap_c1;
+	unsigned char *dhchap_c2;
+	unsigned char *dhchap_skey;
+	unsigned int dhchap_skey_len;
+#ifdef HAVE_GNUTLS
+	gnutls_privkey_t dh_privkey;
+	gnutls_pubkey_t dh_pubkey;
+#endif
+	uint32_t dhchap_s1;
+	uint32_t dhchap_s2;
+	uint16_t dhchap_tid;
+	uint8_t dh_gid;
+	uint8_t shash_id;
+	uint8_t sc_c;
+};
 
 struct nofuse_queue {
 	struct list_node node;
@@ -153,6 +173,7 @@ struct nofuse_queue {
 	 * session, corrupting it.
 	 */
 	bool tls_started;
+	bool authenticated;
 #ifdef HAVE_GNUTLS
 	gnutls_session_t session;
 	gnutls_psk_server_credentials_t psk_cred;
@@ -160,6 +181,11 @@ struct nofuse_queue {
 	SSL_CTX *ctx;
 	SSL *ssl;
 #endif
+	uint8_t *host_key;
+	size_t host_key_len;
+	uint8_t *ctrl_key;
+	size_t ctrl_key_len;
+	struct nofuse_queue_auth auth;
 };
 
 struct nofuse_subsystem {
@@ -212,21 +238,6 @@ struct nofuse_ctrl {
 	const char *dhchap_key;
 	const char *host_key;
 	const char *ctrl_key;
-	unsigned int dhchap_step;
-	unsigned int dhchap_status;
-	unsigned char *dhchap_c1;
-	unsigned char *dhchap_c2;
-	unsigned char *dhchap_skey;
-	unsigned int dhchap_skey_len;
-#ifdef HAVE_GNUTLS
-	gnutls_privkey_t dh_privkey;
-#endif
-	uint32_t dhchap_s1;
-	uint32_t dhchap_s2;
-	uint16_t dhchap_tid;
-	uint8_t dh_gid;
-	uint8_t shash_id;
-	uint8_t sc_c;
 	int cntlid;
 	int kato;
 	int kato_countdown;
@@ -305,6 +316,14 @@ static inline uint32_t aen_pending(struct nofuse_ctrl *ctrl)
 
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level);
 
+void get_random_bytes(uint8_t *bytes, uint32_t len);
+int setup_dhgroup(struct nofuse_queue *ep);
+bool auth_hmac_supported(int hmac);
+int auth_dhgroup_bits(int dh_gid);
+int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
+		   unsigned int shash_len);
+int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
+		   unsigned int shash_len);
 int handle_auth_send(struct nofuse_queue *ep, struct ep_qe *qe,
 		     struct nvme_command *cmd);
 int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,

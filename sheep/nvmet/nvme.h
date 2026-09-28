@@ -1706,7 +1706,7 @@ struct nvme_command {
 		struct nvmf_property_get_command prop_get;
 		struct nvmf_auth_common_command auth_common;
 		struct nvmf_auth_send_command auth_send;
-		struct nvmf_auth_receive_command auth_recv;
+		struct nvmf_auth_receive_command auth_receive;
 		struct nvme_dbbuf dbbuf;
 		struct nvme_directive_cmd directive;
 	};

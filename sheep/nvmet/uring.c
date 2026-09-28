@@ -464,7 +464,10 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 				ret = uring_submit_dsm(ep, qe);
 				break;
 			case nvme_fabrics_command:
-				ret = handle_fabrics(ep, qe);
+				if (qe->fctype == nvme_fabrics_type_auth_send)
+					ret = handle_auth_send_data(ep, qe);
+				else
+					ret = NVME_SC_INVALID_OPCODE;
 				break;
 			default:
 				ret = NVME_SC_INVALID_OPCODE;

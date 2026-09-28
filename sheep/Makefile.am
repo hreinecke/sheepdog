@@ -45,9 +45,9 @@ sheep_SOURCES		+= nvmet/auth.c
 endif
 if BUILD_TLS
 if BUILD_GNUTLS
-sheep_SOURCES		+= nvmet/gnutls.c
+sheep_SOURCES		+= nvmet/gnutls.c nvmet/crypto-gnutls.c
 else
-sheep_SOURCES		+= nvmet/tls.c
+sheep_SOURCES		+= nvmet/tls.c nvmet/crypto-openssl.c
 endif
 endif
 endif
