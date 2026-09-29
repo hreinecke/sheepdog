@@ -87,6 +87,8 @@ static void print_psk_list(struct sd_inode *inode,
 		sizeof(struct nvme_psk_data);
 	psk = (struct nvme_psk_data *)inode->data_vdi_id;
 	for (i = 0; i < num_entries; i++, psk++) {
+		char encoded_key[128];
+
 		if (!strlen(psk->protocol))
 			break;
 
@@ -95,24 +97,45 @@ static void print_psk_list(struct sd_inode *inode,
 		if (aclname && strlen(aclname) && strcmp(aclname, psk->subsysnqn))
 			continue;
 
+		if (!strcmp(protocol, "DHHC")) {
+			unsigned long digest;
+			uint8_t decoded_key[128];
+			char *eptr = NULL;
+			size_t encoded_len;
+
+			digest = strtoul(psk->digest, &eptr, 16);
+			memcpy(decoded_key, psk->key, psk->key_len);
+			memcpy(decoded_key + psk->key_len, &digest, 4);
+			encoded_len = base64_encode(decoded_key,
+						    psk->key_len + 4,
+						    encoded_key);
+			encoded_key[encoded_len] = '\0';
+		} else
+			memcpy(encoded_key, psk->key, psk->key_len);
+
 		if (json_output) {
 			struct json_object *psk_obj =
 				json_object_new_object();
-			char *encoded_key = xzalloc(psk->key_len * 2);
 
 			JSON_ADD_STRING(psk_obj, "protocol", psk->protocol);
 			JSON_ADD_STRING(psk_obj, "hostnqn", psk->hostnqn);
 			JSON_ADD_STRING(psk_obj, "subsysnqn", psk->subsysnqn);
-			JSON_ADD_STRING(psk_obj, "digest", psk->digest);
-			base64_encode(psk->key, psk->key_len,
-				      encoded_key);
+			if (strcmp(protocol, "DHHC")) {
+				JSON_ADD_STRING(psk_obj, "digest", psk->digest);
+				base64_encode(psk->key, psk->key_len,
+					      encoded_key);
+			}
 			JSON_ADD_STRING(psk_obj, "key", encoded_key);
-			free(encoded_key);
+			JSON_ADD_INT(psk_obj, "key_len", psk->key_len);
 			json_object_array_add(out_obj, psk_obj);
-		} else
-			printf("%s %s %s %s\n",
-			       psk->protocol, inode->header.name,
-			       psk->subsysnqn, psk->digest);
+		} else {
+			if (!strcmp(protocol, "DHHC"))
+				printf("%s:%s:\n", psk->protocol, encoded_key);
+			else
+				printf("%s %s %s %s\n",
+				       psk->protocol, inode->header.name,
+				       psk->subsysnqn, psk->digest);
+		}
 	}
 	if (json_output) {
 		const char *o = json_object_to_json_string(out_obj);
