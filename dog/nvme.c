@@ -493,18 +493,18 @@ static int nvme_list_dhchap(int argc, char **argv)
 	int ret;
 
 	if (strlen(nvme_cmd_data.aclname)) {
-		if (!strcmp(nvme_cmd_data.aclname, "shared") ||
-		    !strcmp(nvme_cmd_data.aclname, "any")) {
+		if (!strcmp(nvme_cmd_data.aclname, "shared")) {
 			sd_err("Invalid ACL name '%s'",
 			       nvme_cmd_data.aclname);
 			return EXIT_USAGE;
-		}
-		ret = find_vdi_name(nvme_cmd_data.aclname,
-				    0, "", 0, &acl_vid);
-		if (ret != SD_RES_SUCCESS) {
-			sd_err("Failed to find ACL %s: %s",
-			       nvme_cmd_data.aclname, sd_strerror(ret));
-			return EXIT_USAGE;
+		} else if (strcmp(nvme_cmd_data.aclname, "any")) {
+			ret = find_vdi_name(nvme_cmd_data.aclname,
+					    0, "", 0, &acl_vid);
+			if (ret != SD_RES_SUCCESS) {
+				sd_err("Failed to find ACL %s: %s",
+				       nvme_cmd_data.aclname, sd_strerror(ret));
+				return EXIT_USAGE;
+			}
 		}
 	}
 	ret = find_vdi_name(hostnqn, 0, "", 0, &vid);
