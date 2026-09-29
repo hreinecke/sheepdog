@@ -505,6 +505,7 @@ if test "x${enable_nvmet}" = xyes; then
 		AC_CHECK_HEADERS([gnutls/gnutls.h],,
 		AC_MSG_ERROR(gnutls.h header missing))
 		AC_DEFINE_UNQUOTED(HAVE_GNUTLS, 1, [enable gnutls])
+		AC_DEFINE_UNQUOTED(HAVE_CRYPTO, 1, [enable gnutls crypto])
 		PACKAGE_FEATURES="$PACKAGE_FEATURES gnutls"
 	fi
 	if test "x${enable_openssl}" = xyes; then

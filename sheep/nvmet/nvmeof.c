@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
+#include "config.h"
 #include "sheep.h"
 #include "nofuse.h"
 #include "ops.h"
@@ -1078,7 +1079,7 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 		case nvme_fabrics_type_auth_send:
 			ret = handle_auth_send(ep, qe, cmd);
 			break;
-		case nvme_fabrics_auth_receive:
+		case nvme_fabrics_type_auth_receive:
 			ret = handle_auth_receive(ep, qe, cmd);
 			break;
 #endif
