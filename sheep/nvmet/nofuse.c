@@ -465,7 +465,10 @@ int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
 		uint32_t vid;
 
 		ret = lookup_vdi_name(hostnqn, 0, &vid);
-		if (ret == SD_RES_SUCCESS) {
+		if (ret == SD_RES_NO_VDI) {
+			/* no inode if authentication is not configured */
+			ret = SD_RES_SUCCESS;
+		} else if (ret == SD_RES_SUCCESS) {
 			struct sd_inode *inode = xmalloc(sizeof(*inode));
 
 			ret = sd_read_object(vid_to_vdi_oid(vid), (char *)inode,
