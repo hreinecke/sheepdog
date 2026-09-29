@@ -139,15 +139,16 @@ int auth_dhgroup_bits(int dh_gid)
 	return bits;
 }
 
-int setup_dhgroup(struct nofuse_queue *ep)
+int setup_dhgroup(struct nofuse_queue *ep, uint8_t dh_gid)
 {
 	struct nofuse_queue_auth *auth = &ep->auth;
 	int bits, ret;
 
-	bits = auth_dhgroup_bits(auth->dh_gid);
+	bits = auth_dhgroup_bits(dh_gid);
 	if (!bits)
 		return 0;
 
+	auth->dh_gid = dh_gid;
 	ctrl_info(ep, "setup DH group %d", auth->dh_gid);
 	gnutls_privkey_init(&auth->dh_privkey);
 	ret = gnutls_privkey_generate2(auth->dh_privkey, GNUTLS_PK_DH, bits,
@@ -161,8 +162,11 @@ int setup_dhgroup(struct nofuse_queue *ep)
 	gnutls_pubkey_init(&auth->dh_pubkey);
 	ret = gnutls_pubkey_import_privkey(auth->dh_pubkey, auth->dh_privkey,
 					   GNUTLS_KEY_KEY_AGREEMENT, 0);
-	if (ret)
+	if (ret != GNUTLS_E_SUCCESS) {
 		ctrl_info(ep, "failed to generate public key, err %d", ret);
+		auth->dh_gid = 0;
+		ret = -1;
+	}
 
 	return ret;
 }

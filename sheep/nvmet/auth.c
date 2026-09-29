@@ -148,12 +148,6 @@ static uint8_t setup_auth(struct nofuse_queue *ep, struct ep_qe *qe, bool reset)
 		return NVME_AUTH_DHCHAP_FAILURE_FAILED;
 	}
 
-	ret = setup_dhgroup(ep);
-	if (ret < 0) {
-		ctrl_info(ep, "Failed to setup DH group");
-		ret = NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
-	}
-
 	return ret;
 }
 
@@ -421,7 +415,11 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 		ctrl_info(ep, "no usable DH group found");
 		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
 	}
-	auth->dh_gid = dhgid;
+
+	if (setup_dhgroup(ep, dhgid) < 0) {
+		ctrl_info(ep, "Failed to setup DH group");
+		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
+	}
 	ctrl_info(ep, "selected DH group %s (%d)\n",
 		  auth_dhgroup_name(auth->dh_gid), auth->dh_gid);
 	return 0;
@@ -581,7 +579,7 @@ int handle_auth_send_data(struct nofuse_queue *ep, struct ep_qe *qe)
 	unsigned int dhchap_status;
 	int ret = 0;
 
-	ctrl_info(ep, "type %d id %d step %x\n",
+	ctrl_info(ep, "type %d id %d step %x",
 		  data->auth_type, data->auth_id,
 		  auth->dhchap_step);
 	if (data->auth_type != NVME_AUTH_COMMON_MESSAGES &&
@@ -618,12 +616,12 @@ int handle_auth_send_data(struct nofuse_queue *ep, struct ep_qe *qe)
 		goto done;
 	}
 	if (data->auth_id != auth->dhchap_step) {
-		ctrl_info(ep, "step mismatch (%d != %d)\n",
+		ctrl_info(ep, "step mismatch (%d != %d)",
 			  data->auth_id, auth->dhchap_step);
 		goto done_failure1;
 	}
 	if (le16toh(data->t_id) != auth->dhchap_tid) {
-		ctrl_info(ep, "invalid transaction %d (expected %d)\n",
+		ctrl_info(ep, "invalid transaction %d (expected %d)",
 			  le16toh(data->t_id), auth->dhchap_tid);
 		auth->dhchap_step =
 			NVME_AUTH_DHCHAP_MESSAGE_FAILURE1;

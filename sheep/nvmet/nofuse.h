@@ -315,7 +315,7 @@ static inline uint32_t aen_pending(struct nofuse_ctrl *ctrl)
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level);
 
 void get_random_bytes(uint8_t *bytes, uint32_t len);
-int setup_dhgroup(struct nofuse_queue *ep);
+int setup_dhgroup(struct nofuse_queue *ep, uint8_t dh_gid);
 bool auth_hmac_supported(int hmac);
 int auth_dhgroup_bits(int dh_gid);
 int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
