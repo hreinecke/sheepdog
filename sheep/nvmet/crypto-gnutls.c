@@ -112,7 +112,7 @@ out_free:
 	return transformed_key;
 }
 
-int auth_dhgroup_bits(int dh_gid)
+unsigned int auth_dhgroup_bits(int dh_gid)
 {
 	int bits;
 

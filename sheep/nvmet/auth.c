@@ -364,12 +364,13 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 	struct nofuse_queue_auth *auth = &qe->ep->auth;
 	struct nvmf_auth_dhchap_negotiate_data *data = d;
 	int i, hmac_id = -1, dhgid = -1;
+	bool null_dhgid = false;
 
 	if (tl < sizeof(*data) +
 	    sizeof(struct nvmf_auth_dhchap_protocol_descriptor))
 		return NVME_AUTH_DHCHAP_FAILURE_INCORRECT_PAYLOAD;
 
-	ctrl_info(ep, "data sc_d %d napd %d authid %d halen %d dhlen %d\n",
+	ctrl_info(ep, "data sc_d %d napd %d authid %d halen %d dhlen %d",
 		   data->sc_c, data->napd,
 		   data->auth_protocol[0].dhchap.authid,
 		   data->auth_protocol[0].dhchap.halen,
@@ -404,14 +405,20 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 	
 	for (i = 0; i < data->auth_protocol[0].dhchap.dhlen; i++) {
 		int tmp_dhgid = data->auth_protocol[0].dhchap.idlist[i + 30];
-		int bits = auth_dhgroup_bits(tmp_dhgid);
+		unsigned int bits = auth_dhgroup_bits(tmp_dhgid);
 
-		if (bits > 0) {
+		if (tmp_dhgid == NVME_AUTH_DHGROUP_NULL)
+			null_dhgid = true;
+		else if (bits) {
 			dhgid = tmp_dhgid;
 			break;
 		}
 	}
 	if (dhgid < 0) {
+		if (null_dhgid) {
+			auth->dh_gid = NVME_AUTH_DHGROUP_NULL;
+			return 0;
+		}
 		ctrl_info(ep, "no usable DH group found");
 		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
 	}
@@ -420,7 +427,7 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 		ctrl_info(ep, "Failed to setup DH group");
 		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
 	}
-	ctrl_info(ep, "selected DH group %s (%d)\n",
+	ctrl_info(ep, "selected DH group %s (%d)",
 		  auth_dhgroup_name(auth->dh_gid), auth->dh_gid);
 	return 0;
 }
@@ -441,7 +448,7 @@ static uint8_t nvme_auth_reply(struct ep_qe *qe, void *d, uint32_t tl)
 	if (sizeof(*data) + 2 * (size_t)data->hl + dhvlen > tl)
 		return NVME_AUTH_DHCHAP_FAILURE_INCORRECT_PAYLOAD;
 
-	ctrl_info(qe->ep, "data hl %d cvalid %d dhvlen %u\n",
+	ctrl_info(qe->ep, "data hl %d cvalid %d dhvlen %u",
 		  data->hl, data->cvalid, dhvlen);
 
 	if (dhvlen) {
@@ -672,13 +679,13 @@ done:
 		  auth->dhchap_status, auth->dhchap_step);
 	if (auth->dhchap_step != NVME_AUTH_DHCHAP_MESSAGE_SUCCESS2 &&
 	    auth->dhchap_step != NVME_AUTH_DHCHAP_MESSAGE_FAILURE2) {
-		ret = -ETIME;
+		ret = NVME_SC_SUCCESS;
 		goto complete;
 	}
 	/* Final states, clear up variables */
 	reset_auth(auth);
 	if (auth->dhchap_step == NVME_AUTH_DHCHAP_MESSAGE_FAILURE2)
-		ret = -ENODATA;
+		ret = NVME_SC_SUCCESS;
 
 complete:
 	return ret;
