@@ -98,10 +98,16 @@ static void print_psk_list(struct sd_inode *inode,
 		if (json_output) {
 			struct json_object *psk_obj =
 				json_object_new_object();
+			char *encoded_key = xzalloc(psk->key_len * 2);
+
 			JSON_ADD_STRING(psk_obj, "protocol", psk->protocol);
 			JSON_ADD_STRING(psk_obj, "hostnqn", psk->hostnqn);
 			JSON_ADD_STRING(psk_obj, "subsysnqn", psk->subsysnqn);
 			JSON_ADD_STRING(psk_obj, "digest", psk->digest);
+			base64_encode(psk->key, psk->key_len,
+				      encoded_key);
+			JSON_ADD_STRING(psk_obj, "key", encoded_key);
+			free(encoded_key);
 			json_object_array_add(out_obj, psk_obj);
 		} else
 			printf("%s %s %s %s\n",
@@ -310,7 +316,6 @@ static int nvme_import_dhchap(int argc, char **argv)
 	const char *keydata = NULL;
 	char psk_digest[9];
 	unsigned char decoded_key[128];
-	unsigned char transformed_key[128];
 	uint32_t crc = crc32(0L, NULL, 0);
 	uint32_t key_crc;
 	uint32_t acl_vid, vid;
@@ -386,13 +391,6 @@ static int nvme_import_dhchap(int argc, char **argv)
 		return EXIT_SYSFAIL;
 	}
 	sprintf(psk_digest, "%08x", crc);
-	ret = nvme_gen_dhchap_key(hostnqn, hmac, decoded_len,
-				  decoded_key, transformed_key);
-	if (ret < 0) {
-		sd_err("Failed to transform DH-HMAC-CHAP key, error %d", -ret);
-		return EXIT_SYSFAIL;
-	}
-
 	if (!strlen(nvme_cmd_data.aclname)) {
 		sd_err("ACL name not present");
 		return EXIT_USAGE;
@@ -462,7 +460,7 @@ static int nvme_import_dhchap(int argc, char **argv)
 	strcpy(free_psk->hostnqn, hostnqn);
 	strcpy(free_psk->subsysnqn, subsysnqn);
 	strcpy(free_psk->digest, psk_digest);
-	memcpy(free_psk->key, transformed_key, decoded_len);
+	memcpy(free_psk->key, decoded_key, decoded_len);
 	free_psk->key_len = decoded_len;
 	free_psk->digest_len = strlen(psk_digest);
 

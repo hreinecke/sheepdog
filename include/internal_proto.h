@@ -471,7 +471,7 @@ struct nvme_psk_data {
 	char hostnqn[256];
 	char subsysnqn[256];
 	char digest[64];
-	char key[64];
+	uint8_t key[64];
 	uint8_t digest_len;
 	uint8_t key_len;
 	uint8_t hash_len;

@@ -69,7 +69,7 @@ bool auth_hmac_supported(int hmac)
 }
 
 static uint8_t *auth_transform_key(gnutls_mac_algorithm_t hmac,
-				   uint8_t *key, size_t key_len,
+				   const uint8_t *key, size_t key_len,
 				   const char *nqn)
 {
 	gnutls_hmac_hd_t hmac_ctx;
