@@ -130,6 +130,7 @@ struct nofuse_queue_auth {
 	uint32_t dhchap_s2;
 	uint16_t dhchap_tid;
 	uint8_t dh_gid;
+	size_t dh_gid_size;
 	uint8_t shash_id;
 	uint8_t sc_c;
 };

@@ -46,26 +46,6 @@ static const char *auth_dhgroup_name(uint8_t dhgroup_id)
 	return dhgroup_map[dhgroup_id].name;
 }
 
-/*
- * Byte length of the DH modulus (and thus of the public value g^x mod p)
- * for a given NVMe DH group, i.e. NVME_AUTH_DHGROUP_2048 -> 2048 bits.
- */
-static size_t nvme_dhchap_dh_len(uint8_t dhgroup_id)
-{
-	static const uint16_t dhgroup_bits[] = {
-		[NVME_AUTH_DHGROUP_NULL]	= 0,
-		[NVME_AUTH_DHGROUP_2048]	= 2048,
-		[NVME_AUTH_DHGROUP_3072]	= 3072,
-		[NVME_AUTH_DHGROUP_4096]	= 4096,
-		[NVME_AUTH_DHGROUP_6144]	= 6144,
-		[NVME_AUTH_DHGROUP_8192]	= 8192,
-	};
-
-	if (dhgroup_id >= ARRAY_SIZE(dhgroup_bits))
-		return 0;
-	return dhgroup_bits[dhgroup_id] / 8;
-}
-
 static uint8_t setup_auth(struct nofuse_queue *ep, struct ep_qe *qe, bool reset)
 {
 	int ret = 0;
@@ -165,6 +145,7 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (dhgid < 0) {
 		if (null_dhgid) {
 			auth->dh_gid = NVME_AUTH_DHGROUP_NULL;
+			auth->dh_gid_size = 0;
 			return 0;
 		}
 		ctrl_info(ep, "no usable DH group found");
@@ -444,8 +425,8 @@ static int auth_challenge(struct nofuse_queue *ep, struct ep_qe *qe)
 	struct nofuse_queue_auth *auth = &ep->auth;
 	struct nvmf_auth_dhchap_challenge_data *data = qe->data;
 	size_t hash_len = nvme_dhchap_hash_len(auth->shash_id);
-	size_t dh_keysize = nvme_dhchap_dh_len(auth->dh_gid);
 	int data_size = sizeof(*data) + hash_len;
+	uint16_t dh_keysize = auth->dh_gid_size;
 
 	if (dh_keysize)
 		data_size += dh_keysize;
@@ -485,7 +466,7 @@ static int auth_challenge(struct nofuse_queue *ep, struct ep_qe *qe)
 	}
 	ctrl_info(ep, "seq %d transaction %d hl %d dhvlen %zu\n",
 		  auth->dhchap_s1, auth->dhchap_tid,
-		  data->hl, dh_keysize);
+		  data->hl, auth->dh_gid_size);
 	return 0;
 }
 

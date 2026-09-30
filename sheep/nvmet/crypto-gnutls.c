@@ -66,6 +66,24 @@ static gnutls_mac_algorithm_t select_hmac(int hmac, size_t hash_len,
 	return mac;
 }
 
+static int auth_hmac_digest_id(uint8_t hmac_id, gnutls_digest_algorithm_t *dig)
+{
+	switch (hmac_id) {
+	case NVME_AUTH_HASH_SHA256:
+		*dig = GNUTLS_DIG_SHA256;
+		break;
+	case NVME_AUTH_HASH_SHA384:
+		*dig = GNUTLS_DIG_SHA384;
+		break;
+	case NVME_AUTH_HASH_SHA512:
+		*dig = GNUTLS_DIG_SHA512;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
 bool auth_hmac_supported(int hmac)
 {
 	gnutls_mac_algorithm_t mac;
@@ -117,8 +135,27 @@ out_free:
 		free(transformed_key);
 		transformed_key = NULL;
 	}
-		
 	return transformed_key;
+}
+
+/*
+ * Byte length of the DH modulus (and thus of the public value g^x mod p)
+ * for a given NVMe DH group, i.e. NVME_AUTH_DHGROUP_2048 -> 2048 bits.
+ */
+static size_t auth_dhgroup_dh_len(uint8_t dhgroup_id)
+{
+	static const uint16_t dhgroup_bits[] = {
+		[NVME_AUTH_DHGROUP_NULL]	= 0,
+		[NVME_AUTH_DHGROUP_2048]	= 2048,
+		[NVME_AUTH_DHGROUP_3072]	= 3072,
+		[NVME_AUTH_DHGROUP_4096]	= 4096,
+		[NVME_AUTH_DHGROUP_6144]	= 6144,
+		[NVME_AUTH_DHGROUP_8192]	= 8192,
+	};
+
+	if (dhgroup_id >= ARRAY_SIZE(dhgroup_bits))
+		return 0;
+	return dhgroup_bits[dhgroup_id] / 8;
 }
 
 /*
@@ -181,7 +218,7 @@ int setup_dhgroup(struct nofuse_queue *ep, uint8_t dh_gid)
 		return -1;
 	}
 	auth->dh_gid = dh_gid;
-
+	auth->dh_gid_size = auth_dhgroup_dh_len(dh_gid);
 	return ret;
 }
 
@@ -209,9 +246,18 @@ int auth_gen_session_key(struct nofuse_queue_auth *auth,
 {
 	gnutls_dh_params_t dh_params;
 	gnutls_datum_t peer_pubkey, secret = { NULL, 0 };
+	gnutls_digest_algorithm_t dig;
+	uint8_t *dh_secret;
 	int ret;
 
 	if (!auth->dh_privkey.size)
+		return -EINVAL;
+
+	ret = auth_hmac_digest_id(auth->shash_id, &dig);
+	if (ret < 0)
+		return ret;
+
+	if (sess_key_len != (size_t)gnutls_hash_get_len(dig))
 		return -EINVAL;
 
 	ret = auth_dhgroup_params(auth->dh_gid, &dh_params);
@@ -226,11 +272,34 @@ int auth_gen_session_key(struct nofuse_queue_auth *auth,
 		return -ENOKEY;
 	}
 
-	if (peer_pubkey.size != sess_key_len)
-		return -EINVAL;
-	memcpy(sess_key, peer_pubkey.data, peer_pubkey.size);
+	/*
+	 * gnutls strips leading zero bytes from the raw DH secret (same
+	 * convention as TLS) and may prepend a single sign byte when the
+	 * most significant bit of the value is set; re-pad to the modulus
+	 * size before hashing, as the peer's implementation will have
+	 * done the same.
+	 */
+	if (secret.size > auth->dh_gid_size) {
+		if (secret.size != auth->dh_gid_size + 1 ||
+		    secret.data[0] != 0) {
+			gnutls_free(secret.data);
+			return -EINVAL;
+		}
+		memmove(secret.data, secret.data + 1, auth->dh_gid_size);
+		secret.size = auth->dh_gid_size;
+	}
+	dh_secret = xzalloc(auth->dh_gid_size);
+	if (!dh_secret) {
+		gnutls_free(secret.data);
+		return -ENOMEM;
+	}
+	memcpy(dh_secret + (auth->dh_gid_size - secret.size), secret.data,
+	       secret.size);
+	gnutls_free(secret.data);
+	ret = gnutls_hash_fast(dig, dh_secret, auth->dh_gid_size, sess_key);
+	free(dh_secret);
 
-	return 0;
+	return ret < 0 ? -EIO : 0;
 }
 
 /**
@@ -259,9 +328,24 @@ int auth_ctrl_exponential(struct nofuse_queue_auth *auth,
 				      &auth->dh_pubkey);
 	if (ret != GNUTLS_E_SUCCESS)
 		return -ENOKEY;
-	if (dh_keysize != auth->dh_pubkey.size)
-		return -ENODATA;
-	memcpy(cval, auth->dh_pubkey.data, dh_keysize);
+	/*
+	 * gnutls strips leading zero bytes from the raw DH secret (same
+	 * convention as TLS) and may prepend a single sign byte when the
+	 * most significant bit of the value is set; re-pad to the modulus
+	 * size before hashing, as the peer's implementation will have
+	 * done the same.
+	 */
+	if (auth->dh_pubkey.size > dh_keysize) {
+		if (auth->dh_pubkey.size != dh_keysize + 1 ||
+		    auth->dh_pubkey.data[0] != 0) {
+			sd_err("public key size mismatch (should be %ld, is %d)",
+			       dh_keysize, auth->dh_pubkey.size);
+			return -ENODATA;
+		}
+		memcpy(cval, auth->dh_pubkey.data + 1,
+		       dh_keysize);
+	} else
+		memcpy(cval, auth->dh_pubkey.data, dh_keysize);
 	return 0;
 }
 
