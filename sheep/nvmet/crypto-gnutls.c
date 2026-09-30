@@ -404,8 +404,10 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 			ret = -ENOKEY;
 		}
 		gnutls_hmac_deinit(hmac_ctx, challenge);
-		if (ret)
+		if (ret < 0) {
+			ret = -ENOKEY;
 			goto out_free_challenge;
+		}
 	} else
 		challenge = auth->dhchap_c1;
 
@@ -413,8 +415,10 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 		  auth->dhchap_s1, auth->dhchap_tid);
 
 	if (gnutls_hmac_init(&hmac_ctx, hmac, ep->ctrl->host_key,
-			     ep->ctrl->host_key_len) < 0)
-		return -ENOKEY;
+			     ep->ctrl->host_key_len) < 0) {
+		ret = -ENOKEY;
+		goto out_free_challenge;
+	}
 	
 	ret = -ENOKEY;
 	if (gnutls_hmac(hmac_ctx, challenge, shash_len) < 0)
