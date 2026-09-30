@@ -371,23 +371,36 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 	transformed_key = auth_transform_key(hmac, ep->ctrl->host_key,
 					     ep->ctrl->host_key_len,
 					     ep->ctrl->hostnqn);
-	if (!transformed_key)
+	if (!transformed_key) {
+		ctrl_err(ep, "transform key failed");
 		return -ENOMEM;
+	}
 
 	if (auth->dh_gid != NVME_AUTH_DHGROUP_NULL) {
+		if (!auth->dhchap_skey_len ||
+		    !auth->dhchap_skey) {
+			ctrl_err(ep, "session key is not set");
+			ret = -ENOKEY;
+			goto out_free_key;
+		}
 		challenge = xmalloc(shash_len);
 		if (!challenge) {
 			ret = -ENOMEM;
 			goto out_free_key;
 		}
 
-		if (gnutls_hmac_init(&hmac_ctx, hmac, auth->dhchap_skey,
-				     auth->dhchap_skey_len) < 0) {
+		ret = gnutls_hmac_init(&hmac_ctx, hmac, auth->dhchap_skey,
+				       auth->dhchap_skey_len);
+		if (ret < 0) {
+			ctrl_err(ep, "hmac init failed: %d", ret);
 			ret = -ENOMEM;
 			goto out_free_challenge;
 		}
-		if (gnutls_hmac(hmac_ctx, auth->dhchap_c1, shash_len) < 0)
+		ret = gnutls_hmac(hmac_ctx, auth->dhchap_c1, shash_len);
+		if (ret < 0) {
+			ctrl_err(ep, "hmac failed: %d", ret);
 			ret = -ENOKEY;
+		}
 		gnutls_hmac_deinit(hmac_ctx, challenge);
 		if (ret)
 			goto out_free_challenge;
