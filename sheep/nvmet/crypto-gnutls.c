@@ -358,6 +358,8 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 	uint8_t *challenge = auth->dhchap_c1;
 	uint8_t *transformed_key;
 	uint8_t buf[4];
+	uint32_t s1;
+	uint16_t tid;
 	size_t hmac_len;
 	int ret;
 
@@ -410,15 +412,18 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 	ctrl_info(ep, "host response seq %u transaction %d",
 		  auth->dhchap_s1, auth->dhchap_tid);
 
-	if (gnutls_hmac_init(&hmac_ctx, hmac, response, shash_len) < 0)
+	if (gnutls_hmac_init(&hmac_ctx, hmac, ep->ctrl->host_key,
+			     ep->ctrl->host_key_len) < 0)
 		return -ENOKEY;
 	
 	ret = -ENOKEY;
 	if (gnutls_hmac(hmac_ctx, challenge, shash_len) < 0)
 		goto out_deinit;
-	if (gnutls_hmac(hmac_ctx, &auth->dhchap_s1, 4) < 0)
+	s1 = htole32(auth->dhchap_s1);
+	if (gnutls_hmac(hmac_ctx, &s1, 4) < 0)
 		goto out_deinit;
-	if (gnutls_hmac(hmac_ctx, &auth->dhchap_tid, 2) < 0)
+	tid = htole16(auth->dhchap_tid);
+	if (gnutls_hmac(hmac_ctx, &tid, 2) < 0)
 		goto out_deinit;
 
 	if (gnutls_hmac(hmac_ctx, &auth->sc_c, 1) < 0 ||
@@ -490,7 +495,8 @@ int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
 	ctrl_info(ep, "ctrl response seq %u transaction %d\n",
 		  auth->dhchap_s2, auth->dhchap_tid);
 
-	if (gnutls_hmac_init(&hmac_ctx, hmac, response, shash_len) < 0)
+	if (gnutls_hmac_init(&hmac_ctx, hmac, ep->ctrl->ctrl_key,
+			     ep->ctrl->ctrl_key_len) < 0)
 		return -ENOKEY;
 	
 	ret = -ENOKEY;

@@ -976,7 +976,7 @@ static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 	ctrl_info(ep, "send aen level %u type %u", level, type);
 
 	result = level | type << 8 | log_page << 16;
-	qe->resp.command_id = htole16(qe->ccid);
+	qe->resp.command_id = qe->ccid;
 	qe->resp.result.u32 = htole32(result);
 	qe->resp.status = 0;
 

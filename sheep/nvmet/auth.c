@@ -26,7 +26,7 @@
 #include <gnutls/crypto.h>
 #endif
 
-uint32_t auth_seqnum;
+uint32_t auth_seqnum = 1;
 
 static const struct auth_hmac_map {
 	char name[16];
