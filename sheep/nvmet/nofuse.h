@@ -123,8 +123,8 @@ struct nofuse_queue_auth {
 	unsigned char *dhchap_skey;
 	unsigned int dhchap_skey_len;
 #ifdef HAVE_GNUTLS
-	gnutls_privkey_t dh_privkey;
-	gnutls_pubkey_t dh_pubkey;
+	gnutls_datum_t dh_privkey;
+	gnutls_datum_t dh_pubkey;
 #endif
 	uint32_t dhchap_s1;
 	uint32_t dhchap_s2;
@@ -315,6 +315,11 @@ static inline uint32_t aen_pending(struct nofuse_ctrl *ctrl)
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level);
 
 void get_random_bytes(uint8_t *bytes, uint32_t len);
+int auth_gen_session_key(struct nofuse_queue_auth *auth,
+			 const uint8_t *public_key, size_t public_key_len,
+			 uint8_t *sess_key, size_t sess_key_len);
+int auth_ctrl_exponential(struct nofuse_queue_auth *auth,
+			  uint8_t *cval, size_t dh_keysize);
 int setup_dhgroup(struct nofuse_queue *ep, uint8_t dh_gid);
 bool auth_hmac_supported(int hmac);
 unsigned int auth_dhgroup_bits(int dh_gid);
@@ -329,7 +334,6 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 int handle_auth_send_data(struct nofuse_queue *ep, struct ep_qe *qe);
 int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
-int handle_fabrics(struct nofuse_queue *ep, struct ep_qe *qe);
 int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);

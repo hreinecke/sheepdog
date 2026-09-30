@@ -24,6 +24,15 @@
 #include <gnutls/x509.h>
 #include <gnutls/crypto.h>
 
+int _gnutls_dh_generate_key(gnutls_dh_params_t dh_params,
+                            gnutls_datum_t *priv_key, gnutls_datum_t *pub_key);
+
+int _gnutls_dh_compute_key(gnutls_dh_params_t dh_params,
+                           const gnutls_datum_t *priv_key,
+                           const gnutls_datum_t *pub_key,
+                           const gnutls_datum_t *peer_key, gnutls_datum_t *Z);
+
+
 void get_random_bytes(uint8_t *bytes, uint32_t len)
 {
 	int ret = gnutls_rnd(GNUTLS_RND_NONCE, bytes, len);
@@ -55,6 +64,24 @@ static gnutls_mac_algorithm_t select_hmac(int hmac, size_t hash_len,
 	if (mac != GNUTLS_MAC_UNKNOWN)
 		*hmac_len = gnutls_hmac_get_len(mac);
 	return mac;
+}
+
+static int auth_hmac_digest_id(uint8_t hmac_id, gnutls_digest_algorithm_t *dig)
+{
+	switch (hmac_id) {
+	case NVME_AUTH_HASH_SHA256:
+		*dig = GNUTLS_DIG_SHA256;
+		break;
+	case NVME_AUTH_HASH_SHA384:
+		*dig = GNUTLS_DIG_SHA384;
+		break;
+	case NVME_AUTH_HASH_SHA512:
+		*dig = GNUTLS_DIG_SHA512;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
 }
 
 bool auth_hmac_supported(int hmac)
@@ -112,63 +139,152 @@ out_free:
 	return transformed_key;
 }
 
-unsigned int auth_dhgroup_bits(int dh_gid)
+/*
+ * auth_dhgroup_params() - Build gnutls DH parameters for an NVMe DH group
+ *
+ * NVMe DH groups are the RFC 7919 FFDHE groups; gnutls exports the
+ * well-known (prime, generator) pairs for these groups directly, so no
+ * parameter negotiation or generation is required.
+ */
+static int auth_dhgroup_params(uint8_t dhgroup_id, gnutls_dh_params_t *dh_params)
 {
-	int bits;
+	static const struct {
+		const gnutls_datum_t *prime;
+		const gnutls_datum_t *generator;
+	} ffdhe[] = {
+		[NVME_AUTH_DHGROUP_2048] = {
+			&gnutls_ffdhe_2048_group_prime,
+			&gnutls_ffdhe_2048_group_generator },
+		[NVME_AUTH_DHGROUP_3072] = {
+			&gnutls_ffdhe_3072_group_prime,
+			&gnutls_ffdhe_3072_group_generator },
+		[NVME_AUTH_DHGROUP_4096] = {
+			&gnutls_ffdhe_4096_group_prime,
+			&gnutls_ffdhe_4096_group_generator },
+		[NVME_AUTH_DHGROUP_6144] = {
+			&gnutls_ffdhe_6144_group_prime,
+			&gnutls_ffdhe_6144_group_generator },
+		[NVME_AUTH_DHGROUP_8192] = {
+			&gnutls_ffdhe_8192_group_prime,
+			&gnutls_ffdhe_8192_group_generator },
+	};
+	int ret;
 
-	switch (dh_gid) {
-	case NVME_AUTH_DHGROUP_2048:
-		bits = GNUTLS_CURVE_TO_BITS(GNUTLS_GROUP_FFDHE2048);
-		break;
-	case NVME_AUTH_DHGROUP_3072:
-		bits = GNUTLS_CURVE_TO_BITS(GNUTLS_GROUP_FFDHE3072);
-		break;
-	case NVME_AUTH_DHGROUP_4096:
-		bits = GNUTLS_CURVE_TO_BITS(GNUTLS_GROUP_FFDHE4096);
-		break;
-	case NVME_AUTH_DHGROUP_6144:
-		bits = GNUTLS_CURVE_TO_BITS(GNUTLS_GROUP_FFDHE6144);
-		break;
-	case NVME_AUTH_DHGROUP_8192:
-		bits = GNUTLS_CURVE_TO_BITS(GNUTLS_GROUP_FFDHE8192);
-		break;
-	default:
-		bits = 0;
-		break;
+	if (dhgroup_id >= ARRAY_SIZE(ffdhe) || !ffdhe[dhgroup_id].prime)
+		return -EINVAL;
+
+	ret = gnutls_dh_params_init(dh_params);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = gnutls_dh_params_import_raw(*dh_params, ffdhe[dhgroup_id].prime,
+					  ffdhe[dhgroup_id].generator);
+	if (ret < 0) {
+		gnutls_dh_params_deinit(*dh_params);
+		return -EINVAL;
 	}
-	return bits;
+	return 0;
 }
 
 int setup_dhgroup(struct nofuse_queue *ep, uint8_t dh_gid)
 {
 	struct nofuse_queue_auth *auth = &ep->auth;
-	int bits, ret;
+	gnutls_dh_params_t dh_params;
+	int ret;
 
-	bits = auth_dhgroup_bits(dh_gid);
-	if (!bits)
-		return 0;
-
-	auth->dh_gid = dh_gid;
-	ctrl_info(ep, "setup DH group %d", auth->dh_gid);
-	gnutls_privkey_init(&auth->dh_privkey);
-	ret = gnutls_privkey_generate2(auth->dh_privkey, GNUTLS_PK_DH, bits,
-				       0, NULL, 0);
-	
-	if (ret != GNUTLS_E_SUCCESS) {
-		ctrl_info(ep, "failed to generate private key, err %d", ret);
-		auth->dh_gid = 0;
+	ctrl_info(ep, "setup DH group %d", dh_gid);
+	ret = auth_dhgroup_params(dh_gid, &dh_params);
+	if (ret != 0) {
+		ctrl_info(ep, "failed to setup dh_param");
 		return -1;
 	}
-	gnutls_pubkey_init(&auth->dh_pubkey);
-	ret = gnutls_pubkey_import_privkey(auth->dh_pubkey, auth->dh_privkey,
-					   GNUTLS_KEY_KEY_AGREEMENT, 0);
-	if (ret != GNUTLS_E_SUCCESS) {
-		ctrl_info(ep, "failed to generate public key, err %d", ret);
-		auth->dh_gid = 0;
-		ret = -1;
-	}
+	auth->dh_gid = dh_gid;
 
 	return ret;
+}
+
+/**
+ * nvme_auth_gen_session_key() - Generate an ephemeral session key
+ * @ctrl: Controller holding the local DH private key generated for
+ *	  this negotiation (see auth_ctrl_exponential())
+ * @public_key: Peer's DH public value, zero-padded to the group size
+ * @public_key_len: Length of @public_key
+ * @sess_key: Output buffer for the session key
+ * @sess_key_len: Size of @sess_key buffer
+ *
+ * NVMe base specification 8.3.4.5.9: The session key Ks shall be computed
+ * from the ephemeral DH key (i.e., g^xy mod p) ... by applying the hash
+ * function H() selected by the HashID parameter ... (i.e., Ks = H(g^xy mod
+ * p)).
+ *
+ * Consumes and releases @auth->dh_privkey.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int auth_gen_session_key(struct nofuse_queue_auth *auth,
+		const uint8_t *public_key, size_t public_key_len,
+		uint8_t *sess_key, size_t sess_key_len)
+{
+	gnutls_dh_params_t dh_params;
+	gnutls_datum_t peer_pubkey, secret = { NULL, 0 };
+	gnutls_digest_algorithm_t dig;
+	int ret;
+
+	if (!auth->dh_privkey.size)
+		return -EINVAL;
+
+	ret = auth_hmac_digest_id(auth->shash_id, &dig);
+	if (ret < 0)
+		return ret;
+
+	if (sess_key_len != (size_t)gnutls_hash_get_len(dig))
+		return -EINVAL;
+
+	ret = auth_dhgroup_params(auth->dh_gid, &dh_params);
+	if (ret < 0)
+		return ret;
+
+	ret = _gnutls_dh_compute_key(dh_params, &auth->dh_privkey,
+				     &auth->dh_pubkey, &peer_pubkey, &secret);
+	if (ret < 0) {
+		return -ENOKEY;
+	}
+
+	if (peer_pubkey.size != sess_key_len)
+		return -EINVAL;
+	memcpy(sess_key, peer_pubkey.data, peer_pubkey.size);
+
+	return 0;
+}
+
+/**
+ * auth_ctrl_exponential() - Generate the ctrl's ephemeral DH keypair
+ * @qe: Queue entry of the Challenge command being built
+ * @cval: Output buffer for the DH public value, at least @dh_keysize bytes
+ * @dh_keysize: Size of @cval, i.e. nvme_dhchap_dh_len(ctrl->dh_gid)
+ *
+ * Generates a fresh DH keypair for the negotiated group and stores the
+ * private key in ctrl->dh_privkey until the host's Reply message arrives
+ * and nvme_auth_gen_session_key() can compute the shared secret.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int auth_ctrl_exponential(struct nofuse_queue_auth *auth,
+			  uint8_t *cval, size_t dh_keysize)
+{
+	gnutls_dh_params_t dh_params;
+	int ret;
+
+	ret = auth_dhgroup_params(auth->dh_gid, &dh_params);
+	if (ret < 0)
+		return ret;
+
+	ret = _gnutls_dh_generate_key(dh_params, &auth->dh_privkey,
+				      &auth->dh_pubkey);
+	if (ret != GNUTLS_E_SUCCESS)
+		return -ENOKEY;
+
+	return 0;
 }
 
 int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
