@@ -225,8 +225,8 @@ retry:
 	memcpy(&qe->pdu, pdu,
 	       sizeof(union nvme_tcp_pdu));
 	memset(&qe->resp, 0, sizeof(qe->resp));
-	qe->resp.command_id = 0xffff;
-	tcp_info(ep, "acquire tag %#x", qe->tag);
+	qe->resp.command_id = ccid;
+	tcp_info(ep, "acquire tag %#x ccid %#x", qe->tag, qe->ccid);
 	return qe;
 }
 
@@ -728,7 +728,7 @@ static int tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
 
-	tcp_info(ep, "rsp tag %#x status %04x",
+	tcp_info(ep, "rsp ccid %#x status %04x",
 		  comp->command_id, comp->status);
 
 	pdu->hdr.type = nvme_tcp_rsp;

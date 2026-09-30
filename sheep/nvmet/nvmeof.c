@@ -1081,6 +1081,8 @@ int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
 			break;
 		case nvme_fabrics_type_auth_receive:
 			ret = handle_auth_receive(ep, qe, cmd);
+			if (ret == NVME_SC_SUCCESS)
+				return 0;
 			break;
 #endif
 		default:
