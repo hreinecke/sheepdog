@@ -439,23 +439,22 @@ complete:
 	return ret;
 }
 
-static int auth_challenge(struct nofuse_queue *ep, struct ep_qe *qe,
-			  void *d, int al)
+static int auth_challenge(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	struct nofuse_queue_auth *auth = &ep->auth;
-	struct nvmf_auth_dhchap_challenge_data *data = d;
-	int ret = 0;
+	struct nvmf_auth_dhchap_challenge_data *data = qe->data;
 	size_t hash_len = nvme_dhchap_hash_len(auth->shash_id);
 	size_t dh_keysize = nvme_dhchap_dh_len(auth->dh_gid);
 	int data_size = sizeof(*data) + hash_len;
 
 	if (dh_keysize)
 		data_size += dh_keysize;
-	if (al < data_size) {
-		ctrl_info(ep, "buffer too small (al %d need %d)",
-			 al, data_size);
-		return -EINVAL;
+	if (qe->data_len < data_size) {
+		ctrl_info(ep, "buffer too small (al %"PRIu64" need %d)",
+			  qe->data_len, data_size);
+		return NVME_AUTH_DHCHAP_FAILURE_FAILED;
 	}
+	qe->data_remaining = data_size;
 	memset(data, 0, data_size);
 	auth->dhchap_s1 = uatomic_add_return(&auth_seqnum, 1);
 	data->auth_type = NVME_AUTH_DHCHAP_MESSAGES;
@@ -466,19 +465,28 @@ static int auth_challenge(struct nofuse_queue *ep, struct ep_qe *qe,
 	data->seqnum = htole32(auth->dhchap_s1);
 	auth->dhchap_c1 = xmalloc(data->hl);
 	if (!auth->dhchap_c1)
-		return -ENOMEM;
+		return NVME_AUTH_DHCHAP_FAILURE_FAILED;
 	get_random_bytes(auth->dhchap_c1, data->hl);
 	memcpy(data->cval, auth->dhchap_c1, data->hl);
 	if (auth->dh_gid) {
+		int ret;
+
 		data->dhgid = auth->dh_gid;
 		data->dhvlen = htole16(dh_keysize);
 		ret = auth_ctrl_exponential(auth, data->cval + data->hl,
 					    dh_keysize);
+		if (ret < 0) {
+			ctrl_err(ep, "seq %d transaction %d "
+				 "ctrl exponential failed with %d",
+				 auth->dhchap_s1, auth->dhchap_tid, ret);
+			return NVME_AUTH_DHCHAP_FAILURE_HASH_UNUSABLE;
+		}
+
 	}
 	ctrl_info(ep, "seq %d transaction %d hl %d dhvlen %zu\n",
 		  auth->dhchap_s1, auth->dhchap_tid,
 		  data->hl, dh_keysize);
-	return ret;
+	return 0;
 }
 
 static int auth_success1(struct ep_qe *qe, void *d, int al)
@@ -553,7 +561,7 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	struct nofuse_queue_auth *auth = &ep->auth;
 	uint32_t al;
-	uint16_t status = 0;
+	uint16_t status, ret = NVME_SC_SUCCESS;
 
 	if (cmd->auth_receive.secp != NVME_AUTH_DHCHAP_PROTOCOL_IDENTIFIER)
 		return NVME_SC_INVALID_FIELD | NVME_SC_DNR;
@@ -571,17 +579,17 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->opcode = nvme_fabrics_command;
 	qe->fctype = nvme_fabrics_type_auth_receive;
-	qe->iovec.iov_base = qe->data;
-	qe->iovec.iov_len = qe->data_len;
-	qe->data_remaining = qe->data_len;
 
 	ctrl_info(qe->ep, "step %x", auth->dhchap_step);
 	switch (auth->dhchap_step) {
 	case NVME_AUTH_DHCHAP_MESSAGE_CHALLENGE:
-		if (auth_challenge(qe->ep, qe, qe->data, al) < 0) {
-			ctrl_err(qe->ep, "challenge error (%d)\n",
-				 status);
-			status = NVME_SC_INTERNAL;
+		status = auth_challenge(qe->ep, qe);
+		if (status) {
+			auth->dhchap_status = status;
+			ep->authenticated = false;
+			auth_failure1(qe, qe->data, al);
+			ctrl_err(qe->ep, "challenge status (%x)",
+				auth->dhchap_status);
 			break;
 		}
 		auth->dhchap_step = NVME_AUTH_DHCHAP_MESSAGE_REPLY;
@@ -609,12 +617,11 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 		auth->dhchap_step = NVME_AUTH_DHCHAP_MESSAGE_FAILURE1;
 		auth->dhchap_status = NVME_AUTH_DHCHAP_FAILURE_FAILED;
 		auth_failure1(qe, qe->data, al);
-		status = 0;
 		break;
 	}
 
-	if (auth->dhchap_step == NVME_AUTH_DHCHAP_MESSAGE_FAILURE1)
-		status = -ENODATA;
-
-	return status;
+	ret = ep->ops->rma_write(ep, qe, qe->data_len);
+	if (ret)
+		ctrl_err(ep, "rma_write failed with %d", ret);
+	return ret;
 }

@@ -66,24 +66,6 @@ static gnutls_mac_algorithm_t select_hmac(int hmac, size_t hash_len,
 	return mac;
 }
 
-static int auth_hmac_digest_id(uint8_t hmac_id, gnutls_digest_algorithm_t *dig)
-{
-	switch (hmac_id) {
-	case NVME_AUTH_HASH_SHA256:
-		*dig = GNUTLS_DIG_SHA256;
-		break;
-	case NVME_AUTH_HASH_SHA384:
-		*dig = GNUTLS_DIG_SHA384;
-		break;
-	case NVME_AUTH_HASH_SHA512:
-		*dig = GNUTLS_DIG_SHA512;
-		break;
-	default:
-		return -EINVAL;
-	}
-	return 0;
-}
-
 bool auth_hmac_supported(int hmac)
 {
 	gnutls_mac_algorithm_t mac;
@@ -227,23 +209,17 @@ int auth_gen_session_key(struct nofuse_queue_auth *auth,
 {
 	gnutls_dh_params_t dh_params;
 	gnutls_datum_t peer_pubkey, secret = { NULL, 0 };
-	gnutls_digest_algorithm_t dig;
 	int ret;
 
 	if (!auth->dh_privkey.size)
 		return -EINVAL;
 
-	ret = auth_hmac_digest_id(auth->shash_id, &dig);
-	if (ret < 0)
-		return ret;
-
-	if (sess_key_len != (size_t)gnutls_hash_get_len(dig))
-		return -EINVAL;
-
 	ret = auth_dhgroup_params(auth->dh_gid, &dh_params);
 	if (ret < 0)
-		return ret;
+		return -EPROTO;
 
+	peer_pubkey.data = (uint8_t *)public_key;
+	peer_pubkey.size = public_key_len;
 	ret = _gnutls_dh_compute_key(dh_params, &auth->dh_privkey,
 				     &auth->dh_pubkey, &peer_pubkey, &secret);
 	if (ret < 0) {
@@ -283,7 +259,9 @@ int auth_ctrl_exponential(struct nofuse_queue_auth *auth,
 				      &auth->dh_pubkey);
 	if (ret != GNUTLS_E_SUCCESS)
 		return -ENOKEY;
-
+	if (dh_keysize != auth->dh_pubkey.size)
+		return -ENODATA;
+	memcpy(cval, auth->dh_pubkey.data, dh_keysize);
 	return 0;
 }
 
