@@ -313,7 +313,7 @@ int handle_auth_send_data(struct nofuse_queue *ep, struct ep_qe *qe)
 	struct nofuse_queue_auth *auth = &ep->auth;
 	struct nvmf_auth_dhchap_success2_data *data = qe->data;
 	unsigned int dhchap_status;
-	int ret = 0;
+	int ret = NVME_SC_SUCCESS;
 
 	ctrl_info(ep, "type %d id %d step %x",
 		  data->auth_type, data->auth_id,
