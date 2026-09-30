@@ -234,6 +234,7 @@ struct nofuse_ctrl {
 	struct nofuse_queue *ep[NVMF_NUM_QUEUES + 1];
 	const uint8_t *host_key;
 	size_t host_key_len;
+	uint8_t host_key_hash;
 	const uint8_t *ctrl_key;
 	size_t ctrl_key_len;
 	int cntlid;
@@ -383,6 +384,7 @@ unsigned int nofuse_genctr(void);
 const uint8_t *lookup_dhchap_psk(struct sd_inode *inode,
 				 const char *hostnqn,
 				 const char *subsysnqn,
+				 uint8_t *shash_id,
 				 size_t *key_len);
 
 int nofuse_init(const char *traddr, int trsvcid);

@@ -28,6 +28,22 @@
 
 uint32_t auth_seqnum;
 
+static const struct auth_hmac_map {
+	char name[16];
+} hmac_map[] = {
+	[NVME_AUTH_HASH_UNDEF] = { .name = "undef" },
+	[NVME_AUTH_HASH_SHA256] = { .name = "sha256" },
+	[NVME_AUTH_HASH_SHA384] = { .name = "sha385" },
+	[NVME_AUTH_HASH_SHA512] = { .name = "sha512" },
+};
+
+static const char *auth_hmac_name(uint8_t shash_id)
+{
+	if (shash_id >= ARRAY_SIZE(hmac_map))
+		return NULL;
+	return hmac_map[shash_id].name;
+}
+
 static const struct auth_dhgroup_map {
 	char name[16];
 } dhgroup_map[] = {
@@ -120,8 +136,9 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	for (i = 0; i < data->auth_protocol[0].dhchap.halen; i++) {
 		uint8_t tmp_hmac_id = data->auth_protocol[0].dhchap.idlist[i];
+		size_t hmac_len = nvme_dhchap_hash_len(tmp_hmac_id);
 
-		if (auth_hmac_supported(tmp_hmac_id)) {
+		if (hmac_len == ep->ctrl->host_key_len) {
 			hmac_id = tmp_hmac_id;
 			break;
 		}
@@ -131,28 +148,27 @@ static uint8_t auth_negotiate(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_AUTH_DHCHAP_FAILURE_HASH_UNUSABLE;
 	}
 	auth->shash_id = hmac_id;
-	
+	ctrl_info(ep, "Selected HMAC %s (%u)",
+		  auth_hmac_name(auth->shash_id), auth->shash_id);
 	for (i = 0; i < data->auth_protocol[0].dhchap.dhlen; i++) {
 		int tmp_dhgid = data->auth_protocol[0].dhchap.idlist[i + 30];
 
 		if (tmp_dhgid == NVME_AUTH_DHGROUP_NULL)
 			null_dhgid = true;
-		else if (auth_dhgroup_name(tmp_dhgid)) {
+		else if (auth_dhgroup_name(tmp_dhgid) &&
+			 ep->ctrl->host_key_hash != 0) {
 			dhgid = tmp_dhgid;
 			break;
 		}
 	}
 	if (dhgid < 0) {
-		if (null_dhgid) {
-			auth->dh_gid = NVME_AUTH_DHGROUP_NULL;
-			auth->dh_gid_size = 0;
-			return 0;
+		if (!null_dhgid) {
+			ctrl_info(ep, "no usable DH group found");
+			return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
 		}
-		ctrl_info(ep, "no usable DH group found");
-		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
-	}
-
-	if (setup_dhgroup(ep, dhgid) < 0) {
+		auth->dh_gid = NVME_AUTH_DHGROUP_NULL;
+		auth->dh_gid_size = 0;
+	} else if (setup_dhgroup(ep, dhgid) < 0) {
 		ctrl_info(ep, "Failed to setup DH group");
 		return NVME_AUTH_DHCHAP_FAILURE_DHGROUP_UNUSABLE;
 	}

@@ -134,10 +134,14 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 	strcpy(ctrl->hostnqn, hostnqn);
 	ctrl->host_inode = host_inode;
 	if (ctrl->host_inode) {
+		uint8_t shash_id;
 		ctrl->host_key = lookup_dhchap_psk(ctrl->host_inode, hostnqn,
-						   nqn, &ctrl->host_key_len);
+						   nqn, &shash_id,
+						   &ctrl->host_key_len);
+		if (ctrl->host_key)
+			ctrl->host_key_hash = shash_id;
 		ctrl->ctrl_key = lookup_dhchap_psk(ctrl->host_inode, nqn,
-						   hostnqn, 
+						   hostnqn, &shash_id,
 						   &ctrl->ctrl_key_len);
 	}
 	ep->ctrl = ctrl;

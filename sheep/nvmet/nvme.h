@@ -1537,6 +1537,7 @@ enum {
 
 /* Defined hash functions for DH-HMAC-CHAP authentication */
 enum {
+	NVME_AUTH_HASH_UNDEF	= 0x00,
 	NVME_AUTH_HASH_SHA256	= 0x01,
 	NVME_AUTH_HASH_SHA384	= 0x02,
 	NVME_AUTH_HASH_SHA512	= 0x03,
