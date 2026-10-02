@@ -237,6 +237,7 @@ struct nofuse_ctrl {
 	uint8_t host_key_hash;
 	const uint8_t *ctrl_key;
 	size_t ctrl_key_len;
+	uint8_t ctrl_key_hash;
 	int cntlid;
 	int kato;
 	int kato_countdown;

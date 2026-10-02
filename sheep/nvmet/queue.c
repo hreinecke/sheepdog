@@ -143,6 +143,8 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		ctrl->ctrl_key = lookup_dhchap_psk(ctrl->host_inode, nqn,
 						   hostnqn, &shash_id,
 						   &ctrl->ctrl_key_len);
+		if (ctrl->ctrl_key)
+			ctrl->ctrl_key_hash = shash_id;
 	}
 	ep->ctrl = ctrl;
 	ctrl->ep[0] = ep;

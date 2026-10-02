@@ -95,26 +95,38 @@ bool auth_hmac_supported(int hmac)
 	return (hmac_len > 0);
 }
 
-static uint8_t *auth_transform_key(gnutls_mac_algorithm_t hmac,
+/*
+ * NVMe Base Spec 2.2 section 8.3.4.4: DH-HMAC-CHAP key transformation.
+ * Only applies when the configured key itself carries a hash id (i.e. was
+ * generated with a HMAC, not a raw "none" secret); the transform always
+ * uses that key's own hash, not the hash negotiated for this transaction,
+ * and the resulting key is as long as that hash's digest.
+ */
+static uint8_t *auth_transform_key(uint8_t key_hash,
 				   const uint8_t *key, size_t key_len,
-				   const char *nqn)
+				   const char *nqn, size_t *out_len)
 {
+	gnutls_mac_algorithm_t hmac;
 	gnutls_hmac_hd_t hmac_ctx;
 	uint8_t *transformed_key;
+	size_t key_hash_len, transformed_len;
 	int ret;
 
 	if (!key)
 		return NULL;
 
+	hmac = select_hmac(key_hash, 0, &key_hash_len);
 	if (hmac == GNUTLS_MAC_UNKNOWN) {
 		transformed_key = xmalloc(key_len);
 		if (!transformed_key)
 			return NULL;
 		memcpy(transformed_key, key, key_len);
+		*out_len = key_len;
 		return transformed_key;
 	}
 
-	transformed_key = xmalloc(key_len);
+	transformed_len = gnutls_hmac_get_len(hmac);
+	transformed_key = xmalloc(transformed_len);
 	if (!transformed_key)
 		return NULL;
 
@@ -122,7 +134,7 @@ static uint8_t *auth_transform_key(gnutls_mac_algorithm_t hmac,
 		ret = -ENOMEM;
 		goto out_free;
 	}
-	
+
 	if (gnutls_hmac(hmac_ctx, nqn, strlen(nqn)) < 0 ||
 	    gnutls_hmac(hmac_ctx, "NVMe-over-Fabrics", 17) < 0)
 		ret = -ENOKEY;
@@ -131,10 +143,11 @@ static uint8_t *auth_transform_key(gnutls_mac_algorithm_t hmac,
 	gnutls_hmac_deinit(hmac_ctx, transformed_key);
 out_free:
 	if (ret < 0) {
-		memset(transformed_key, 0, key_len);
+		memset(transformed_key, 0, transformed_len);
 		free(transformed_key);
 		transformed_key = NULL;
-	}
+	} else
+		*out_len = transformed_len;
 	return transformed_key;
 }
 
@@ -356,7 +369,8 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 	gnutls_mac_algorithm_t hmac = GNUTLS_MAC_UNKNOWN;;
 	gnutls_hmac_hd_t hmac_ctx;
 	uint8_t *challenge = auth->dhchap_c1;
-	uint8_t *transformed_key;
+	uint8_t *transformed_key = NULL;
+	size_t transformed_key_len;
 	uint8_t buf[4];
 	uint32_t s1;
 	uint16_t tid;
@@ -370,9 +384,11 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 		return -EINVAL;
 	}
 
-	transformed_key = auth_transform_key(hmac, ep->ctrl->host_key,
+	transformed_key = auth_transform_key(ep->ctrl->host_key_hash,
+					     ep->ctrl->host_key,
 					     ep->ctrl->host_key_len,
-					     ep->ctrl->hostnqn);
+					     ep->ctrl->hostnqn,
+					     &transformed_key_len);
 	if (!transformed_key) {
 		ctrl_err(ep, "transform key failed");
 		return -ENOMEM;
@@ -414,8 +430,8 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 	ctrl_info(ep, "host response seq %u transaction %d",
 		  auth->dhchap_s1, auth->dhchap_tid);
 
-	if (gnutls_hmac_init(&hmac_ctx, hmac, ep->ctrl->host_key,
-			     ep->ctrl->host_key_len) < 0) {
+	if (gnutls_hmac_init(&hmac_ctx, hmac, transformed_key,
+			     transformed_key_len) < 0) {
 		ret = -ENOKEY;
 		goto out_free_challenge;
 	}
@@ -438,7 +454,7 @@ int auth_host_hash(struct nofuse_queue *ep, uint8_t *response,
 	memset(buf, 0, 4);
 	if (gnutls_hmac(hmac_ctx, buf, 1) < 0 ||
 	    gnutls_hmac(hmac_ctx, ep->ctrl->subsys->nqn,
-			strlen(ep->ctrl->subsys->nqn) < 0))
+			strlen(ep->ctrl->subsys->nqn)) < 0)
 		goto out_deinit;
 	ret = 0;
 out_deinit:
@@ -460,7 +476,8 @@ int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
 	gnutls_mac_algorithm_t hmac = GNUTLS_MAC_UNKNOWN;;
 	gnutls_hmac_hd_t hmac_ctx;
 	uint8_t *challenge = auth->dhchap_c2;
-	uint8_t *transformed_key;
+	uint8_t *transformed_key = NULL;
+	size_t transformed_key_len;
 	uint8_t buf[4];
 	size_t hmac_len;
 	int ret;
@@ -472,9 +489,11 @@ int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
 		return -EINVAL;
 	}
 
-	transformed_key = auth_transform_key(hmac, ep->ctrl->ctrl_key,
+	transformed_key = auth_transform_key(ep->ctrl->ctrl_key_hash,
+					     ep->ctrl->ctrl_key,
 					     ep->ctrl->ctrl_key_len,
-					     ep->ctrl->hostnqn);
+					     ep->ctrl->subsys->nqn,
+					     &transformed_key_len);
 	if (!transformed_key)
 		return -ENOMEM;
 
@@ -499,9 +518,11 @@ int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
 	ctrl_info(ep, "ctrl response seq %u transaction %d\n",
 		  auth->dhchap_s2, auth->dhchap_tid);
 
-	if (gnutls_hmac_init(&hmac_ctx, hmac, ep->ctrl->ctrl_key,
-			     ep->ctrl->ctrl_key_len) < 0)
-		return -ENOKEY;
+	if (gnutls_hmac_init(&hmac_ctx, hmac, transformed_key,
+			     transformed_key_len) < 0) {
+		ret = -ENOKEY;
+		goto out_free_challenge;
+	}
 	
 	ret = -ENOKEY;
 	if (gnutls_hmac(hmac_ctx, challenge, shash_len) < 0)
@@ -519,7 +540,7 @@ int auth_ctrl_hash(struct nofuse_queue *ep, uint8_t *response,
 	memset(buf, 0, 4);
 	if (gnutls_hmac(hmac_ctx, buf, 1) < 0 ||
 	    gnutls_hmac(hmac_ctx, ep->ctrl->hostnqn,
-			strlen(ep->ctrl->hostnqn) < 0))
+			strlen(ep->ctrl->hostnqn)) < 0)
 		goto out_deinit;
 	ret = 0;
 out_deinit:
@@ -527,7 +548,7 @@ out_deinit:
 	if (ret != 0)
 		memset(response, 0, shash_len);
 out_free_challenge:
-	if (challenge != auth->dhchap_c1)
+	if (challenge != auth->dhchap_c2)
 		free(challenge);
 out_free_key:
 	free(transformed_key);
