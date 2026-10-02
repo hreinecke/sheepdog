@@ -665,7 +665,7 @@ static int tcp_send_r2t(struct nofuse_queue *ep, uint16_t tag)
 	struct nvme_tcp_r2t_pdu *pdu = &ep->send_pdu->r2t;
 	struct ep_qe *qe;
 
-	qe = ep->ops->get_tag(ep, tag);
+	qe = tcp_get_tag(ep, tag);
 	if (!qe) {
 		tcp_err(ep, "invalid ttag %#x", tag);
 		return -EINVAL;
@@ -734,7 +734,7 @@ static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_
 	return -EPROTO;
 }
 
-static int tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
+static int _tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 {
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
@@ -757,6 +757,15 @@ static int tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 	return len;
 }
 
+static int tcp_send_rsp(struct nofuse_queue *ep, struct ep_qe *qe)
+{
+	int ret;
+
+	ret = _tcp_send_rsp(ep, &qe->resp);
+	tcp_release_tag(ep, qe);
+	return ret;
+}
+
 static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 {
 	uint16_t ttag = le16toh(pdu->data.ttag);
@@ -768,7 +777,7 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 
 	tcp_info(ep, "h2c data tag %#x pos %u len %u",
 		  ttag, data_offset, data_len);
-	qe = ep->ops->get_tag(ep, ttag);
+	qe = tcp_get_tag(ep, ttag);
 	if (!qe) {
 		tcp_err(ep, "h2c invalid ttag %#x", ttag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
@@ -830,8 +839,7 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	set_response(&qe->resp, qe->ccid, ret, true);
-	ret = tcp_send_rsp(ep, &qe->resp);
-	ep->ops->release_tag(ep, qe);
+	ret = tcp_send_rsp(ep, qe);
 	return ret;
 }
 
@@ -910,7 +918,7 @@ static int tcp_poll_msg(struct nofuse_queue *ep, struct nvme_command *cmd,
 	len = le32toh(cmd->common.dptr.sgl.length);
 	/* ccid is considered opaque; no endian conversion */
 	ccid = cmd->common.command_id;
-	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
+	qe = tcp_acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
 	if (!qe) {
 		struct nvme_completion resp = {
 			.status = NVME_SC_NS_NOT_READY,
@@ -919,7 +927,7 @@ static int tcp_poll_msg(struct nofuse_queue *ep, struct nvme_command *cmd,
 
 		ctrl_err(ep, "ccid %#x queue busy", ccid);
 		*_qe = NULL;
-		return ep->ops->send_rsp(ep, &resp);
+		return _tcp_send_rsp(ep, &resp);
 	}
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	*_qe = qe;
@@ -974,14 +982,14 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
 	while (qe->data_remaining) {
 		int ret = tcp_send_c2h_data(ep, qe);
 		if (ret < 0) {
-			ep->ops->release_tag(ep, qe);
+			tcp_release_tag(ep, qe);
 			return ret;
 		}
 		data_len = qe->data_remaining;
 		qe->iovec.iov_len = (ep->mdts && data_len > ep->mdts) ?
 			ep->mdts : data_len;
 	}
-	ep->ops->release_tag(ep, qe);
+	tcp_release_tag(ep, qe);
 	return 0;
 }
 
@@ -1026,8 +1034,7 @@ static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 	qe->resp.result.u32 = htole32(result);
 	qe->resp.status = 0;
 
-	ret = ep->ops->send_rsp(ep, &qe->resp);
-	ep->ops->release_tag(ep, qe);
+	ret = tcp_send_rsp(ep, qe);
 	return ret;
 }
 
@@ -1039,10 +1046,7 @@ static struct xp_ops tcp_ops = {
 	.wait_for_connection	= tcp_wait_for_connection,
 	.accept_connection	= tcp_accept_connection,
 	.destroy_connection	= tcp_destroy_connection,
-	.acquire_tag		= tcp_acquire_tag,
-	.get_tag		= tcp_get_tag,
 	.get_aen		= tcp_get_aen,
-	.release_tag		= tcp_release_tag,
 	.rma_read		= tcp_rma_read,
 	.rma_write		= tcp_send_data,
 	.prep_rma_read		= tcp_send_r2t,

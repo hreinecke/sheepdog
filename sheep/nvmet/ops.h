@@ -18,17 +18,12 @@ struct xp_ops {
 	int (*wait_for_connection)(struct nofuse_port *port, void **id);
 	int (*accept_connection)(struct nofuse_queue *ep);
 	void (*destroy_connection)(struct nofuse_port *port, void *id);
-	struct ep_qe *(*acquire_tag)(struct nofuse_queue *ep,
-				     union nvme_tcp_pdu *pdu,
-				     uint16_t ccid, off_t pos, size_t len);
-	struct ep_qe *(*get_tag)(struct nofuse_queue *ep, uint16_t tag);
 	struct ep_qe *(*get_aen)(struct nofuse_queue *ep);
-	void (*release_tag)(struct nofuse_queue *ep, struct ep_qe *qe);
 	int (*rma_read)(struct nofuse_queue *ep, void *data, size_t data_len);
 	int (*rma_write)(struct nofuse_queue *ep, struct ep_qe *qe,
 			 void *data, size_t data_len);
 	int (*prep_rma_read)(struct nofuse_queue *ep, uint16_t ttag);
-	int (*send_rsp)(struct nofuse_queue *ep, struct nvme_completion *comp);
+	int (*send_rsp)(struct nofuse_queue *ep, struct ep_qe *qe);
 	int (*read_msg)(struct nofuse_queue *ep);
 	int (*poll_msg)(struct nofuse_queue *ep, struct nvme_command *cmd,
 			struct ep_qe **qe);

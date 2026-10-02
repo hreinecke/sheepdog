@@ -24,12 +24,8 @@
 static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
 			 uint16_t status)
 {
-	int ret;
-
 	set_response(&qe->resp, qe->ccid, status, true);
-	ret = ep->ops->send_rsp(ep, &qe->resp);
-	ep->ops->release_tag(ep, qe);
-	return ret;
+	return ep->ops->send_rsp(ep, qe);
 }
 
 static int handle_property_set(struct nofuse_queue *ep, struct ep_qe *qe,
