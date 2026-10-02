@@ -155,7 +155,13 @@ int tls_global_init(void)
 
 	gnutls_global_set_log_function(tls_log);
 
-	gnutls_global_set_log_level(9);
+	/*
+	 * Levels above 3 are gnutls' own internal trace, logging
+	 * every gnutls_assert() call site (including entirely benign
+	 * control flow like the two-pass MPI buffer-size probe) -- not
+	 * useful for diagnosing sheep issues, just noise.
+	 */
+	gnutls_global_set_log_level(2);
 
 	serial = find_key_by_type_and_desc("keyring", ".nvme", 0);
 	if (serial < 0) {
