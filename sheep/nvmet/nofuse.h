@@ -146,6 +146,7 @@ struct nofuse_queue {
 	struct ep_qe *qes;
 	uint32_t qes_map[NVMF_SQ_DEPTH / 8];
 	unsigned int qes_map_index;
+	unsigned int qnum;
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
@@ -340,7 +341,7 @@ int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);
-struct nofuse_queue *create_queue(int conn, struct nofuse_port *port);
+struct nofuse_queue *create_queue(void *id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
 void *queue_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);

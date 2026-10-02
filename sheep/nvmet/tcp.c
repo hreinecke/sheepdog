@@ -89,11 +89,13 @@ struct io_ops *tcp_register_io_ops(void)
 	return &tcp_io_ops;
 }
 
-static int tcp_create_queue(struct nofuse_queue *ep, int conn)
+static int tcp_create_queue(struct nofuse_queue *ep, void *id, int depth)
 {
+	int *conn = (int *)id;
 	int flags, i;
 
-	ep->sockfd = conn;
+	ep->sockfd = *conn;
+	free(conn);
 
 	flags = fcntl(ep->sockfd, F_GETFL);
 	fcntl(ep->sockfd, F_SETFL, flags | O_NONBLOCK);
@@ -114,7 +116,7 @@ static int tcp_create_queue(struct nofuse_queue *ep, int conn)
 	}
 	memset(ep->recv_pdu, 0, sizeof(union nvme_tcp_pdu));
 
-	ep->qes = calloc(NVMF_SQ_DEPTH, sizeof(struct ep_qe));
+	ep->qes = calloc(depth, sizeof(struct ep_qe));
 	if (!ep->qes) {
 		free(ep->recv_pdu);
 		ep->recv_pdu = NULL;
@@ -122,7 +124,7 @@ static int tcp_create_queue(struct nofuse_queue *ep, int conn)
 		ep->send_pdu = NULL;
 		return -ENOMEM;
 	}
-	ep->qsize = ep->allocated_qsize = NVMF_SQ_DEPTH;
+	ep->qsize = ep->allocated_qsize = depth;
 	for (i = 0; i < ep->qsize; i++) {
 		ep->qes[i].tag = i;
 		ep->qes[i].ep = ep;
@@ -497,11 +499,12 @@ out_free:
 	return ret;
 }
 
-static int tcp_wait_for_connection(struct nofuse_port *port)
+static int tcp_wait_for_connection(struct nofuse_port *port, void **id)
 {
-	int sockfd;
+	int *sockfd, fd;
 	int ret = -ESHUTDOWN;
 
+	sockfd = xzalloc(sizeof(int));
 	while (port->listenfd > 0) {
 		fd_set rfd;
 		struct timeval tmo;
@@ -526,28 +529,37 @@ static int tcp_wait_for_connection(struct nofuse_port *port)
 	if (ret <= 0)
 		return ret ? ret : -ETIMEDOUT;
 
-	sockfd = accept(port->listenfd, (struct sockaddr *) NULL,
-			NULL);
-	if (sockfd < 0) {
+	fd = accept(port->listenfd, (struct sockaddr *) NULL,
+		    NULL);
+	if (fd < 0) {
 		if (errno != EAGAIN)
 			port_err(port, "accept error %d", errno);
 		ret = -EAGAIN;
-	} else
-		ret = sockfd;
-
+	} else {
+		*sockfd = fd;
+		*id = sockfd;
+	}
 	return ret;
 }
 
-static int tcp_rma_read(struct nofuse_queue *ep, void *buf, size_t _len)
+static void tcp_destroy_connection(struct nofuse_port *port, void *id)
+{
+	int *sockfd = id;
+
+	close(*sockfd);
+	free(sockfd);
+}
+
+static int tcp_rma_read(struct nofuse_queue *ep, void *data, size_t data_len)
 {
 	int len = 0;
 	off_t offset = 0;
 
-	while (offset < _len) {
+	while (offset < data_len) {
 		tcp_info(ep, "recv %lu data bytes",
-			_len - offset);
-		len = ep->io_ops->io_read(ep, (uint8_t *)buf + offset,
-					  _len - offset);
+			data_len - offset);
+		len = ep->io_ops->io_read(ep, (uint8_t *)data + offset,
+					  data_len - offset);
 
 		if (len < 0) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -561,8 +573,7 @@ static int tcp_rma_read(struct nofuse_queue *ep, void *buf, size_t _len)
 			return -errno;
 		}
 		if (len == 0) {
-			tcp_err(ep, "%s: disconnect during recv data",
-				__func__);
+			tcp_err(ep, "disconnect during recv data");
 			return -ENODATA;
 		}
 		offset += len;
@@ -915,13 +926,13 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 }
 
 static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
-			 size_t data_len)
+			 void *data, size_t data_len)
 {
 	tcp_info(ep, "write cid %x offset %"PRIu64" len %lu",
 		  qe->ccid, qe->data_pos, data_len);
 
 	qe->data_remaining = data_len;
-	qe->iovec.iov_base = qe->data;
+	qe->iovec.iov_base = data;
 	qe->iovec.iov_len = (ep->mdts && data_len > ep->mdts) ?
 		ep->mdts : data_len;
 	qe->iovec_offset = 0;
@@ -992,6 +1003,7 @@ static struct xp_ops tcp_ops = {
 	.destroy_listener	= tcp_destroy_listener,
 	.wait_for_connection	= tcp_wait_for_connection,
 	.accept_connection	= tcp_accept_connection,
+	.destroy_connection	= tcp_destroy_connection,
 	.acquire_tag		= tcp_acquire_tag,
 	.get_tag		= tcp_get_tag,
 	.get_aen		= tcp_get_aen,

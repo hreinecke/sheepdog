@@ -163,7 +163,7 @@ static void *run_port(void *arg)
 	struct nofuse_port *port = arg;
 	struct nofuse_queue *ep;
 	sigset_t set;
-	int conn;
+	void *id = NULL;
 	pthread_attr_t pthread_attr;
 	int ret;
 
@@ -182,24 +182,28 @@ static void *run_port(void *arg)
 	pthread_cleanup_push(pop_listener, port);
 
 	while (!stopped) {
-		conn = port->ops->wait_for_connection(port);
-
-		if (stopped)
+		ret = port->ops->wait_for_connection(port, &id);
+		if (stopped) {
+			if (!ret)
+				port->ops->destroy_connection(port, id);
 			break;
+		}
 
-		if (conn < 0) {
-			if (conn == -ESHUTDOWN)
+		if (ret < 0) {
+			if (ret == -ESHUTDOWN)
 				break;
-			if (conn != -EAGAIN)
+			if (ret != -EAGAIN)
 				port_err(port,
 					 "wait for connection failed, error %d",
-					 conn);
+					 ret);
 
 			continue;
 		}
-		ep = create_queue(conn, port);
-		if (!ep)
+		ep = create_queue(id, port);
+		if (!ep) {
+			port->ops->destroy_connection(port, id);
 			continue;
+		}
 
 		pthread_attr_init(&pthread_attr);
 		pthread_attr_setdetachstate(&pthread_attr,

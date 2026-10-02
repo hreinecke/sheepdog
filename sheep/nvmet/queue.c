@@ -19,6 +19,7 @@
 #include "configdb.h"
 
 LIST_HEAD(ctrl_linked_list);
+unsigned long num_queues;
 
 pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -197,7 +198,7 @@ static void wait_for_pending_io(struct nofuse_queue *ep)
 static void disconnect_queue(struct nofuse_queue *ep)
 {
 	struct nofuse_ctrl *ctrl = ep->ctrl;
-	int num_queues = 0;
+	int qnum = 0;
 
 	wait_for_pending_io(ep);
 
@@ -213,11 +214,11 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	if (ctrl->ep[ep->qid]) {
 		ctrl->ep[ep->qid] = NULL;
 		ctrl->num_queues--;
-		num_queues = ctrl->num_queues;
+		qnum = ctrl->num_queues;
 	}
 	pthread_mutex_unlock(&ctrl->ctrl_mutex);
 	pthread_mutex_lock(&ctrl_list_mutex);
-	if (!num_queues) {
+	if (!qnum) {
 		sd_debug("ctrl %u qid %d: deleting controller",
 			 ctrl->cntlid, ep->qid);
 		configdb_del_ctrl(ctrl->subsys->id, ctrl->cntlid);
@@ -227,14 +228,14 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	pthread_mutex_unlock(&ctrl_list_mutex);
 }
 
-static int start_queue(struct nofuse_queue *ep, int conn)
+static int start_queue(struct nofuse_queue *ep, void *id, int depth)
 {
 	int ret;
 
-	ret = ep->ops->create_queue(ep, conn);
+	ret = ep->ops->create_queue(ep, id, depth);
 	if (ret) {
 		sd_err("ep %d: Failed to create queue, error %d",
-			conn, ret);
+			ep->qnum, ret);
 		return ret;
 	}
 
@@ -244,7 +245,8 @@ retry:
 		if (ret == -EAGAIN)
 			goto retry;
 
-		sd_err("ep %d: accept() failed with error %d", conn, ret);
+		ep->ops->destroy_queue(ep);
+		sd_err("ep %d: accept() failed with error %d", ep->qnum, ret);
 		return ret;
 	}
 
@@ -571,19 +573,17 @@ out_disconnect:
 	return NULL;
 }
 
-struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
+struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 {
 	struct nofuse_queue *ep;
 	int ret;
 
 	ep = malloc(sizeof(struct nofuse_queue));
-	if (!ep) {
-		close(conn);
+	if (!ep)
 		return NULL;
-	}
 
 	memset(ep, 0, sizeof(struct nofuse_queue));
-
+	ep->qnum = uatomic_add_return(&num_queues, 1);
 	ep->ops = port->ops;
 	ep->port = port;
 	ep->kato_interval = KATO_INTERVAL;
@@ -596,17 +596,17 @@ struct nofuse_queue *create_queue(int conn, struct nofuse_port *port)
 	pthread_mutex_init(&ep->io_done_lock, NULL);
 	ep->io_evtfd = eventfd(0, EFD_NONBLOCK);
 	if (ep->io_evtfd < 0) {
-		sd_err("ep %d: failed to create io eventfd", conn);
+		sd_err("ep %d: failed to create io eventfd", ep->qnum);
 		goto out;
 	}
 
-	ret = start_queue(ep, conn);
+	ret = start_queue(ep, id, NVMF_SQ_DEPTH);
 	if (ret) {
-		sd_err("ep %d: failed to start queue", conn);
+		sd_err("ep %d: failed to start queue", ep->qnum);
 		goto out_close_evtfd;
 	}
 
-	sd_debug("ep %d queue started", conn);
+	sd_debug("ep %d queue started", ep->qnum);
 	pthread_mutex_lock(&port->ep_mutex);
 	list_add(&ep->node, &port->ep_list);
 	pthread_mutex_unlock(&port->ep_mutex);
@@ -616,7 +616,6 @@ out_close_evtfd:
 out:
 	pthread_mutex_destroy(&ep->io_done_lock);
 	free(ep);
-	close(conn);
 	return NULL;
 }
 

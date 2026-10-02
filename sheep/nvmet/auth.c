@@ -617,7 +617,7 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 		break;
 	}
 
-	ret = ep->ops->rma_write(ep, qe, qe->data_len);
+	ret = ep->ops->rma_write(ep, qe, qe->data, qe->data_len);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with %d", ret);
 	return ret;

@@ -236,7 +236,7 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
         if (qe->opcode == nvme_cmd_read) {
 		ctrl_info(ep, "tag %#x ccid %#x write %lu bytes payload",
 			  qe->tag, qe->ccid, qe->data_len);
-		return ep->ops->rma_write(ep, qe, qe->data_len);
+		return ep->ops->rma_write(ep, qe, qe->data, qe->data_len);
 	}
 out_rsp:
         memset(&qe->resp, 0, sizeof(qe->resp));

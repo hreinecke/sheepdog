@@ -476,26 +476,26 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 			if (ret == -EINPROGRESS)
 				return -EINPROGRESS;
 			qe->async_started = false;
-			if (ret == NVME_SC_SUCCESS && qe->opcode == nvme_cmd_read)
-				return ep->ops->rma_write(ep, qe, qe->data_len);
+			if (ret == NVME_SC_SUCCESS)
+				goto out_write;
+
 			status = ret;
 			goto out_rsp;
 		}
 		/* All of this command's sub-I/Os have completed. */
-		if (qe->async_result != SD_RES_SUCCESS)
+		if (qe->async_result != SD_RES_SUCCESS) {
 			status = NVME_SC_INTERNAL;
-		else if (qe->opcode == nvme_cmd_read)
-			return ep->ops->rma_write(ep, qe, qe->data_len);
-		goto out_rsp;
+			goto out_rsp;
+		}
 	}
-
+out_write:
 	if (res < 0) {
 		ctrl_err(ep, "tag %#x vdi %s failed, error %d", qe->tag,
 			 qe->opcode == nvme_cmd_write ? "write" : "read", res);
 		status = NVME_SC_INTERNAL;
 	} else if (qe->opcode == nvme_cmd_read) {
 		/* rma_write() sends the data and releases the tag itself. */
-		return ep->ops->rma_write(ep, qe, qe->data_len);
+		return ep->ops->rma_write(ep, qe, qe->data, qe->data_len);
 	}
 
 out_rsp:

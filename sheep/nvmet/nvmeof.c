@@ -677,7 +677,7 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 
 	qe->data_pos = 0;
-	ret = ep->ops->rma_write(ep, qe, id_len);
+	ret = ep->ops->rma_write(ep, qe, qe->data, id_len);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with %d", ret);
 	return ret;
@@ -898,7 +898,7 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			 __func__, cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
-	ret = ep->ops->rma_write(ep, qe, log_len);
+	ret = ep->ops->rma_write(ep, qe, qe->data, log_len);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with error %d", ret);
 
