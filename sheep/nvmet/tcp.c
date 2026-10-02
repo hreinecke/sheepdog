@@ -900,10 +900,38 @@ static int tcp_read_msg(struct nofuse_queue *ep)
 	return 0;
 }
 
+static int tcp_poll_msg(struct nofuse_queue *ep, struct nvme_command *cmd,
+			struct ep_qe **_qe)
+{
+	struct ep_qe *qe;
+	uint32_t len;
+	uint16_t ccid;
+
+	len = le32toh(cmd->common.dptr.sgl.length);
+	/* ccid is considered opaque; no endian conversion */
+	ccid = cmd->common.command_id;
+	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
+	if (!qe) {
+		struct nvme_completion resp = {
+			.status = NVME_SC_NS_NOT_READY,
+			.command_id = ccid,
+		};
+
+		ctrl_err(ep, "ccid %#x queue busy", ccid);
+		*_qe = NULL;
+		return ep->ops->send_rsp(ep, &resp);
+	}
+	memset(&qe->resp, 0, sizeof(qe->resp));
+	*_qe = qe;
+	return 0;
+}
+
 static int tcp_handle_msg(struct nofuse_queue *ep)
 {
 	union nvme_tcp_pdu *pdu = ep->recv_pdu;
 	struct nvme_tcp_hdr *hdr = &pdu->common;
+	struct ep_qe *qe;
+	int ret;
 
 	if (hdr->type == nvme_tcp_h2c_data)
 		return tcp_handle_h2c_data(ep, pdu);
@@ -922,7 +950,14 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 					 0, false, pdu, hdr->hlen);
 	}
 
-	return handle_request(ep, &pdu->cmd.cmd);
+	ret = tcp_poll_msg(ep, &pdu->cmd.cmd, &qe);
+	if (ret < 0) {
+		tcp_err(ep, "poll_for_msg error %d", ret);
+		return ret;
+	}
+	if (qe)
+		ret = handle_request(ep, qe);
+	return ret;
 }
 
 static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
@@ -1013,6 +1048,7 @@ static struct xp_ops tcp_ops = {
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
 	.read_msg		= tcp_read_msg,
+	.poll_msg		= tcp_poll_msg,
 	.handle_msg		= tcp_handle_msg,
 	.handle_aen		= tcp_handle_aen,
 };

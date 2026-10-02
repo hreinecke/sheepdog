@@ -1043,27 +1043,12 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 	return ret;
 }
 
-int handle_request(struct nofuse_queue *ep, struct nvme_command *cmd)
+int handle_request(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	struct ep_qe *qe;
-	uint32_t len;
-	uint16_t ccid;
+	union nvme_tcp_pdu *pdu = ep->recv_pdu;
+	struct nvme_command *cmd = &pdu->cmd.cmd;
 	int ret;
 
-	len = le32toh(cmd->common.dptr.sgl.length);
-	/* ccid is considered opaque; no endian conversion */
-	ccid = cmd->common.command_id;
-	qe = ep->ops->acquire_tag(ep, ep->recv_pdu, ccid, 0, len);
-	if (!qe) {
-		struct nvme_completion resp = {
-			.status = NVME_SC_NS_NOT_READY,
-			.command_id = ccid,
-		};
-
-		ctrl_err(ep, "ccid %#x queue busy", ccid);
-		return ep->ops->send_rsp(ep, &resp);
-	}
-	memset(&qe->resp, 0, sizeof(qe->resp));
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
