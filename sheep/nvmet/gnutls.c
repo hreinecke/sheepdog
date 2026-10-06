@@ -66,7 +66,10 @@ static int gnutls_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 
 static int gnutls_ep_wait(struct nofuse_queue *ep, short events)
 {
-	struct pollfd pfd = { .fd = ep->sockfd, .events = events };
+	struct pollfd pfd = {
+		.fd = ep->transport.tcp.sockfd,
+		.events = events,
+	};
 	int ret;
 
 	ret = gnutls_record_check_pending(ep->session);
@@ -188,7 +191,7 @@ int tls_handshake(struct nofuse_queue *ep)
 	gnutls_psk_set_server_credentials_function(ep->psk_cred,
 						   psk_server_cb);
 	gnutls_init(&ep->session, GNUTLS_SERVER);
-	gnutls_transport_set_int(ep->session, ep->sockfd);
+	gnutls_transport_set_int(ep->session, ep->transport.tcp.sockfd);
 
 	gnutls_credentials_set(ep->session, GNUTLS_CRD_PSK, ep->psk_cred);
 

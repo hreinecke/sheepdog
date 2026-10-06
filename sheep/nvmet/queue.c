@@ -266,7 +266,7 @@ static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 		return NULL;
 	}
 
-	io_uring_prep_poll_add(sqe, ep->sockfd, poll_flags);
+	io_uring_prep_poll_add(sqe, ep->transport.tcp.sockfd, poll_flags);
 	io_uring_sqe_set_data(sqe, ep);
 
 	ret = io_uring_submit(&ep->uring);
@@ -415,7 +415,7 @@ void *rdma_queue_thread(void *arg)
 		if (!ret) {
 			if (ep->ctrl)
 				kato_reset_counter(ep->ctrl);
-			ret = handle_request(ep, qe);
+			ret = handle_request(ep, qe, ep->transport.rdma.cmd);
 		}
 		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
 			if (!ep->ctrl) {
@@ -521,33 +521,7 @@ void *tcp_queue_thread(void *arg)
 				break;
 			}
 			pollin_sqe = NULL;
-			if (ep->recv_state == RECV_PDU) {
-				ret = ep->ops->read_msg(ep);
-				if (!ret && ep->ctrl)
-					kato_reset_counter(ep->ctrl);
-			}
-			if (!ret && ep->recv_state == HANDLE_PDU) {
-				/*
-				 * By the time handle_msg() runs, the PDU
-				 * (and, for h2c data, its RMA-read payload)
-				 * is already fully drained off the wire, so
-				 * the receive framing must advance regardless
-				 * of what handle_msg() returns. Its return
-				 * value keeps meaning "how did the command
-				 * turn out" for the kato/error handling below
-				 * -- e.g. uring_handle_qe() returns -EINPROGRESS
-				 * to mean "write submitted asynchronously",
-				 * which is a different sentinel than read_msg()'s
-				 * own -EAGAIN ("PDU incomplete, retry the read")
-				 * precisely so the two can't be conflated here.
-				 * Gating the reset on ret used to do exactly that,
-				 * leaving recv_state stuck at HANDLE_PDU and the
-				 * socket never read again.
-				 */
-				ret = ep->ops->handle_msg(ep);
-				ep->recv_pdu_len = 0;
-				ep->recv_state = RECV_PDU;
-			}
+			ret = ep->ops->handle_msg(ep);
 		} else if (cqe_data == &ep->io_evtfd) {
 			LIST_HEAD(done_list);
 			struct ep_qe *qe, *next;
@@ -636,7 +610,7 @@ struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
-	ep->recv_state = RECV_PDU;
+	ep->transport.tcp.recv_state = RECV_PDU;
 	ep->io_ops = tcp_register_io_ops();
 	INIT_LIST_NODE(&ep->node);
 	INIT_LIST_HEAD(&ep->io_done_list);

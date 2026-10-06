@@ -77,7 +77,7 @@ struct ep_qe {
 	int tag;
 	struct nofuse_queue *ep;
 	struct nofuse_namespace *ns;
-	union nvme_tcp_pdu pdu;
+	struct nvme_completion resp;
 	struct iovec iovec;
 	void *data;
 	uint64_t data_len;
@@ -150,19 +150,25 @@ struct nofuse_queue {
 	uint32_t qes_map[NVMF_SQ_DEPTH / 8];
 	unsigned int qes_map_index;
 	unsigned int qnum;
-	union nvme_tcp_pdu *recv_pdu;
-	int recv_pdu_len;
-	union nvme_tcp_pdu *send_pdu;
-	int sockfd;
-	struct nvme_command *cmd;
-	struct ibv_mr *cmd_mr;
-	struct ibv_pd *pd;
-	struct ibv_cq *rcq;
-	struct ibv_cq *scq;
-	struct ibv_comp_channel *comp;
-	struct rdma_event_channel *ec;
-	struct rdma_cm_id *id;
-	int recv_state;
+	union {
+		struct {
+			union nvme_tcp_pdu *recv_pdu;
+			int recv_pdu_len;
+			union nvme_tcp_pdu *send_pdu;
+			int sockfd;
+			int recv_state;
+		} tcp;
+		struct {
+			struct nvme_command *cmd;
+			struct ibv_mr *cmd_mr;
+			struct ibv_pd *pd;
+			struct ibv_cq *rcq;
+			struct ibv_cq *scq;
+			struct ibv_comp_channel *comp;
+			struct rdma_event_channel *ec;
+			struct rdma_cm_id *id;
+		} rdma;
+	} transport;
 	int allocated_qsize;
 	int qsize;
 	int state;
@@ -288,7 +294,7 @@ struct nofuse_tls_psk {
 			       (e)->qid, ##x);			\
 		} else {					\
 			sd_debug("ep %d: " f,			\
-			       (e)->sockfd, ##x);		\
+				 (e)->qnum, ##x);		\
 		}						\
 	}
 
@@ -300,7 +306,7 @@ struct nofuse_tls_psk {
 				(e)->qid, ##x);			\
 		} else {					\
 			sd_err("ep %d: " f,			\
-			       (e)->sockfd, ##x);		\
+			       (e)->qnum, ##x);			\
 		}						\
 	} while (0)
 

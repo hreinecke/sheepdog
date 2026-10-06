@@ -104,7 +104,7 @@ static void *alloc_buffer(struct nofuse_queue *ep, int size,
 	}
 	memset(buf, 0, size);
 
-	*mr = ibv_reg_mr(ep->pd, buf, size, flags);
+	*mr = ibv_reg_mr(ep->transport.rdma.pd, buf, size, flags);
 	if (!*mr)
 		goto err2;
 
@@ -152,7 +152,7 @@ static int rdma_create_queue_recv_pool(struct nofuse_queue *ep)
 		sge.addr = (uintptr_t) qe[i].data;
 		sge.lkey = qe[i].data_mr->lkey;
 
-		ret = ibv_post_recv(ep->id->qp, &wr, &bad_wr);
+		ret = ibv_post_recv(ep->transport.rdma.id->qp, &wr, &bad_wr);
 		if (ret)
 			goto err;
 	}
@@ -177,7 +177,7 @@ static int rdma_create_completion_queues(struct nofuse_queue *ep)
 	struct ibv_pd *pd;
 	struct ibv_cq *rcq;
 	struct ibv_cq *scq;
-	struct ibv_context *ctx = ep->id->verbs;
+	struct ibv_context *ctx = ep->transport.rdma.id->verbs;
 	struct ibv_comp_channel	*comp;
 	int flags;
 	int ret;
@@ -195,11 +195,11 @@ static int rdma_create_completion_queues(struct nofuse_queue *ep)
 	if (ret < 0)
 		goto err1;
 
-	rcq = ibv_create_cq(ctx, ep->qsize, NULL, ep->comp, 0);
+	rcq = ibv_create_cq(ctx, ep->qsize, NULL, ep->transport.rdma.comp, 0);
 	if (!rcq)
 		goto err2;
 
-	scq = ibv_create_cq(ctx, ep->qsize, NULL, ep->comp, 0);
+	scq = ibv_create_cq(ctx, ep->qsize, NULL, ep->transport.rdma.comp, 0);
 	if (!scq)
 		goto err3;
 
@@ -209,10 +209,10 @@ static int rdma_create_completion_queues(struct nofuse_queue *ep)
 	if (ibv_req_notify_cq(scq, 0))
 		goto err4;
 
-	ep->pd = pd;
-	ep->rcq = rcq;
-	ep->scq = scq;
-	ep->comp = comp;
+	ep->transport.rdma.pd = pd;
+	ep->transport.rdma.rcq = rcq;
+	ep->transport.rdma.scq = scq;
+	ep->transport.rdma.comp = comp;
 
 	return 0;
 err4:
@@ -229,21 +229,21 @@ err1:
 
 static void rdma_destroy_completion_queues(struct nofuse_queue *ep)
 {
-	if (ep->scq) {
-		ibv_destroy_cq(ep->scq);
-		ep->scq = NULL;
+	if (ep->transport.rdma.scq) {
+		ibv_destroy_cq(ep->transport.rdma.scq);
+		ep->transport.rdma.scq = NULL;
 	}
-	if (ep->rcq) {
-		ibv_destroy_cq(ep->rcq);
-		ep->rcq = NULL;
+	if (ep->transport.rdma.rcq) {
+		ibv_destroy_cq(ep->transport.rdma.rcq);
+		ep->transport.rdma.rcq = NULL;
 	}
-	if (ep->comp) {
-		ibv_destroy_comp_channel(ep->comp);
-		ep->comp = NULL;
+	if (ep->transport.rdma.comp) {
+		ibv_destroy_comp_channel(ep->transport.rdma.comp);
+		ep->transport.rdma.comp = NULL;
 	}
-	if (ep->pd) {
-		ibv_dealloc_pd(ep->pd);
-		ep->pd = NULL;
+	if (ep->transport.rdma.pd) {
+		ibv_dealloc_pd(ep->transport.rdma.pd);
+		ep->transport.rdma.pd = NULL;
 	}
 }
 
@@ -253,11 +253,11 @@ static int rdma_create_queue_pairs(struct nofuse_queue *ep)
 	struct ibv_device_attr dev_attr;
 	const int send_wr_factor = 3; /* MR, SEND, INV */
 
-	if (ibv_query_device(ep->id->pd->context, &dev_attr))
+	if (ibv_query_device(ep->transport.rdma.id->pd->context, &dev_attr))
 		return -errno;
 
-	qp_attr.send_cq = ep->scq;
-	qp_attr.recv_cq = ep->rcq;
+	qp_attr.send_cq = ep->transport.rdma.scq;
+	qp_attr.recv_cq = ep->transport.rdma.rcq;
 	qp_attr.qp_type = IBV_QPT_RC;
 
 	qp_attr.cap.max_recv_wr = ep->qsize + 1;
@@ -269,7 +269,8 @@ static int rdma_create_queue_pairs(struct nofuse_queue *ep)
 	else
 		qp_attr.cap.max_send_wr = dev_attr.max_qp_wr;
 
-	if (rdma_create_qp(ep->id, ep->pd, &qp_attr))
+	if (rdma_create_qp(ep->transport.rdma.id,
+			   ep->transport.rdma.pd, &qp_attr))
 		return -errno;
 
 	return 0;
@@ -277,9 +278,9 @@ static int rdma_create_queue_pairs(struct nofuse_queue *ep)
 
 static void rdma_destroy_queue_pairs(struct nofuse_queue *ep)
 {
-	if (ep->id && ep->id->qp) {
-		rdma_destroy_qp(ep->id);
-		ep->id = NULL;
+	if (ep->transport.rdma.id && ep->transport.rdma.id->qp) {
+		rdma_destroy_qp(ep->transport.rdma.id);
+		ep->transport.rdma.id = NULL;
 	}
 }
 
@@ -302,10 +303,10 @@ static void rdma_destroy_queue(struct nofuse_queue *ep)
 	}
 	rdma_destroy_queue_pairs(ep);
 	rdma_destroy_completion_queues(ep);
-	if (ep->cmd) {
-		ep->ops->dealloc_key(ep, ep->cmd_mr);
-		free(ep->cmd);
-		ep->cmd = NULL;
+	if (ep->transport.rdma.cmd) {
+		ep->ops->dealloc_key(ep, ep->transport.rdma.cmd_mr);
+		free(ep->transport.rdma.cmd);
+		ep->transport.rdma.cmd = NULL;
 	}
 }
 
@@ -314,13 +315,13 @@ static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 	int ret;
 	void *cmd, *mr;
 
-	ep->id = id;
+	ep->transport.rdma.id = id;
 	ep->qsize = depth;
 
 	if (posix_memalign(&cmd, PAGE_SIZE, PAGE_SIZE))
 		return -ENOMEM;
 	memset(cmd, 0, PAGE_SIZE);
-	ep->cmd = cmd;
+	ep->transport.rdma.cmd = cmd;
 
 	mr = ep->ops->alloc_key(ep, cmd, PAGE_SIZE);
 	if (!mr) {
@@ -328,7 +329,7 @@ static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 		goto out_free_cmd;
 	}
 
-	ep->cmd_mr = mr;
+	ep->transport.rdma.cmd_mr = mr;
 	ret = rdma_create_completion_queues(ep);
 	if (ret < 0)
 		goto out_dealloc;
@@ -460,35 +461,35 @@ static void rdma_destroy_listener(struct nofuse_port *port)
 	}
 }
 
-static int rdma_accept_connection(struct nofuse_queue *_ep)
+static int rdma_accept_connection(struct nofuse_queue *ep)
 {
-	struct nofuse_queue *ep = (struct nofuse_queue *) _ep;
 	struct rdma_conn_param  params = { NULL };
 	struct ibv_device_attr attr;
+	struct rdma_cm_id *id = ep->transport.rdma.id;
 	int ret;
 
-	ret = ibv_query_device(ep->id->verbs, &attr);
+	ret = ibv_query_device(id->verbs, &attr);
 	if (ret) {
 		rdma_err(ep, "ibv_query_device failed, error %d", ret);
 		return -ret;
 	}
 
-	params.initiator_depth = ep->id->event->param.conn.responder_resources;
-	params.responder_resources = ep->id->event->param.conn.initiator_depth;
+	params.initiator_depth = id->event->param.conn.responder_resources;
+	params.responder_resources = id->event->param.conn.initiator_depth;
 
 	if (!params.initiator_depth)
 		params.initiator_depth = ep->qsize;
 
 	rdma_info(ep, "initiator_depth %d responder_resources %d",
 		  params.initiator_depth, params.responder_resources);
-	rdma_ack_cm_event(ep->id->event);
-	ep->id->event = NULL;
+	rdma_ack_cm_event(ep->transport.rdma.id->event);
+	ep->transport.rdma.id->event = NULL;
 
 	params.flow_control	= 1;
 	params.retry_count	= 15;
 	params.rnr_retry_count	= 7;
 
-	return rdma_accept(ep->id, &params);
+	return rdma_accept(ep->transport.rdma.id, &params);
 }
 
 static int rdma_wait_for_event(struct rdma_event_channel *ec,
@@ -574,11 +575,11 @@ static int rdma_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	wr.wr.rdma.rkey = qe->data_key;
 	wr.send_flags = IBV_SEND_SIGNALED;
 
-	ret = ibv_post_send(ep->id->qp, &wr, &bad_wr);
+	ret = ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
 	if (ret)
 		return ret;
 
-	while (ibv_poll_cq(ep->scq, 1, &wc) == 0)
+	while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
 		if (stopped)
 			return -ESHUTDOWN;
 
@@ -614,11 +615,11 @@ static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	wr.wr.rdma.rkey = qe->data_key;
 	wr.send_flags = IBV_SEND_SIGNALED;
 
-	ret = ibv_post_send(ep->id->qp, &wr, &bad_wr);
+	ret = ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
 	if (ret)
 		return ret;
 
-	while (ibv_poll_cq(ep->scq, 1, &wc) == 0)
+	while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
 		if (stopped)
 			return -ESHUTDOWN;
 
@@ -648,7 +649,7 @@ static int rdma_repost_recv(struct nofuse_queue *ep, struct ep_qe *qe)
 
 	memset(qe->data, 0, PAGE_SIZE);
 
-	return ibv_post_recv(ep->id->qp, &wr, &bad_wr);
+	return ibv_post_recv(ep->transport.rdma.id->qp, &wr, &bad_wr);
 }
 
 static int rdma_post_msg(struct nofuse_queue *ep, void *msg, size_t len,
@@ -669,20 +670,23 @@ static int rdma_post_msg(struct nofuse_queue *ep, void *msg, size_t len,
 	sge.addr = (uintptr_t) msg;
 	sge.lkey = mr->lkey;
 
-	return ibv_post_send(ep->id->qp, &wr, &bad_wr);
+	return ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
 }
 
 static int rdma_send_msg(struct nofuse_queue *ep, struct ep_qe *qe,
-			 void *msg, size_t len, void *mr)
+			 struct nvme_completion *comp)
 {
+	struct nvme_completion *resp = (void *)ep->transport.rdma.cmd;
 	struct ibv_wc wc;
 	int ret;
 
-	ret = rdma_post_msg(ep, msg, len, mr);
+	memcpy(resp, comp, sizeof(*resp));
+	ret = rdma_post_msg(ep, resp, sizeof(*resp),
+			    ep->transport.rdma.cmd_mr);
 	if (ret)
 		return ret;
 
-	while (ibv_poll_cq(ep->scq, 1, &wc) == 0)
+	while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
 		if (stopped)
 			return -ESHUTDOWN;
 
@@ -704,7 +708,7 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 	struct ep_qe *_qe;
 	int ret;
 
-	ret = ibv_poll_cq(ep->rcq, 1, &wc);
+	ret = ibv_poll_cq(ep->transport.rdma.rcq, 1, &wc);
 	if (ret < 0)
 		return ret;
 	if (!ret)
@@ -737,7 +741,7 @@ static void *rdma_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)
 		return NULL;
 	}
 
-	mr = ibv_reg_mr(ep->pd, buf, len, flags);
+	mr = ibv_reg_mr(ep->transport.rdma.pd, buf, len, flags);
 	if (!mr) {
 		rdma_err(ep, "ibv_reg_mr failed, error %d", errno);
 		return NULL;
