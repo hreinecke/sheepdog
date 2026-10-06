@@ -33,6 +33,7 @@
 #include "nvme.h"
 #include "tcp.h"
 
+extern bool rdma_debug;
 extern bool tcp_debug;
 extern bool cmd_debug;
 extern bool port_debug;
@@ -78,12 +79,14 @@ struct ep_qe {
 	struct nofuse_namespace *ns;
 	union nvme_tcp_pdu pdu;
 	struct iovec iovec;
-	struct nvme_completion resp;
 	void *data;
 	uint64_t data_len;
 	uint64_t data_pos;
 	uint64_t data_remaining;
 	uint64_t iovec_offset;
+	uint64_t data_addr;
+	uint32_t data_key;
+	struct ibv_mr *data_mr;
 
 	/*
 	 * Backing store for the inode-index write in
@@ -150,13 +153,21 @@ struct nofuse_queue {
 	union nvme_tcp_pdu *recv_pdu;
 	int recv_pdu_len;
 	union nvme_tcp_pdu *send_pdu;
+	int sockfd;
+	struct nvme_command *cmd;
+	struct ibv_mr *cmd_mr;
+	struct ibv_pd *pd;
+	struct ibv_cq *rcq;
+	struct ibv_cq *scq;
+	struct ibv_comp_channel *comp;
+	struct rdma_event_channel *ec;
+	struct rdma_cm_id *id;
 	int recv_state;
 	int allocated_qsize;
 	int qsize;
 	int state;
 	int qid;
 	int kato_interval;
-	int sockfd;
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
@@ -223,6 +234,10 @@ struct nofuse_port {
 	struct list_head ep_list;
 	pthread_mutex_t ep_mutex;
 	union {
+		struct {
+			struct rdma_event_channel *ec;
+			struct rdma_cm_id *id;
+		} rdma;
 		struct {
 			int listenfd;
 			bool tls;
@@ -352,6 +367,7 @@ void destroy_queue(struct nofuse_queue *ep);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
 void *tcp_queue_thread(void *arg);
+void *rdma_queue_thread(void *arg);
 
 int default_subsys_type(const char *nqn);
 

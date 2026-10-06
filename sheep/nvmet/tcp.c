@@ -550,7 +550,8 @@ static void tcp_destroy_connection(struct nofuse_port *port, void *id)
 	free(sockfd);
 }
 
-static int tcp_rma_read(struct nofuse_queue *ep, void *data, size_t data_len)
+static int tcp_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
+			void *data, size_t data_len, void *mr)
 {
 	int len = 0;
 	off_t offset = 0;
@@ -734,8 +735,7 @@ static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_
 	return -EPROTO;
 }
 
-static int tcp_send_rsp(struct nofuse_queue *ep, struct ep_qe *qe,
-			struct nvme_completion *comp)
+static int _tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 {
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
@@ -793,7 +793,7 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 
-	ret = tcp_rma_read(ep, qe->iovec.iov_base, data_len);
+	ret = tcp_rma_read(ep, qe, qe->iovec.iov_base, data_len, NULL);
 	if (ret < 0) {
 		tcp_err(ep, "h2c data read failed, error %d", errno);
 		ret = NVME_SC_SGL_INVALID_DATA;
@@ -1024,12 +1024,23 @@ static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 	ctrl_info(ep, "send aen level %u type %u", level, type);
 
 	result = level | type << 8 | log_page << 16;
-	qe->resp.command_id = qe->ccid;
-	qe->resp.result.u32 = htole32(result);
-	qe->resp.status = 0;
+	resp->command_id = qe->ccid;
+	resp->result.u32 = htole32(result);
+	resp->status = NVME_SC_SUCCESS;
 
-	ret = tcp_send_rsp(ep, qe, &qe->resp);
+	ret = _tcp_send_rsp(ep, resp);
+	tcp_release_tag(ep, qe);
 	return ret;
+}
+
+static void *tcp_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)
+{
+	return &tcp_alloc_key;
+}
+
+static int tcp_dealloc_key(struct nofuse_queue *ep, void *mr)
+{
+	return 0;
 }
 
 static struct xp_ops tcp_ops = {
@@ -1049,6 +1060,8 @@ static struct xp_ops tcp_ops = {
 	.poll_msg		= tcp_poll_msg,
 	.handle_msg		= tcp_handle_msg,
 	.handle_aen		= tcp_handle_aen,
+	.alloc_key		= tcp_alloc_key,
+	.dealloc_key		= tcp_dealloc_key,
 };
 
 struct xp_ops *tcp_register_ops(void)

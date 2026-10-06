@@ -30,6 +30,7 @@
 unsigned long genctr;
 
 int stopped;
+bool rdma_debug = true;
 bool tcp_debug = true;
 bool cmd_debug = true;
 bool port_debug = true;

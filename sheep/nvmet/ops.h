@@ -19,20 +19,25 @@ struct xp_ops {
 	int (*accept_connection)(struct nofuse_queue *ep);
 	void (*destroy_connection)(struct nofuse_port *port, void *id);
 	struct ep_qe *(*get_aen)(struct nofuse_queue *ep);
-	int (*rma_read)(struct nofuse_queue *ep, void *data, size_t data_len);
+	int (*rma_read)(struct nofuse_queue *ep, struct ep_qe *qe,
+			void *data, size_t data_len, void *mr);
 	int (*rma_write)(struct nofuse_queue *ep, struct ep_qe *qe,
-			 void *data, size_t data_len);
+			 void *data, size_t data_len, void *mr);
 	int (*prep_rma_read)(struct nofuse_queue *ep, uint16_t ttag);
 	int (*send_rsp)(struct nofuse_queue *ep, struct ep_qe *qe,
-			struct nvme_completion *comp);
+			void *resp, size_t len, void *mr);
 	int (*read_msg)(struct nofuse_queue *ep);
 	int (*poll_msg)(struct nofuse_queue *ep, struct nvme_command *cmd,
 			struct ep_qe **qe);
 	int (*handle_msg)(struct nofuse_queue *ep);
 	int (*handle_aen)(struct nofuse_queue *ep, struct ep_qe *qe);
+	void *(*alloc_key)(struct nofuse_queue *ep, void *buf, size_t len);
+	int (*dealloc_key)(struct nofuse_queue *ep, void *mr);
+	int (*poll_for_msg)(struct nofuse_queue *ep, struct ep_qe **qe);
 };
 
 struct xp_ops *tcp_register_ops(void);
+struct xp_ops *rdma_register_ops(void);
 
 struct ns_ops {
 	int (*ns_read)(struct nofuse_queue *ep, struct ep_qe *qe);

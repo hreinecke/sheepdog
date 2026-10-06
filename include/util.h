@@ -52,6 +52,19 @@
 #define __cpu_to_le32(x) bswap_32(x)
 #endif
 
+static inline void put_unaligned_le24(uint32_t v, uint8_t *p)
+{
+	p[0] = v & 0xff;
+	p[1] = (v >> 8) & 0xff;
+	p[2] = (v >> 16) & 0xff;
+}
+static inline void put_unaligned_le32(uint32_t v, uint8_t *p)
+{
+	p[0] = v & 0xff;
+	p[1] = (v >> 8) & 0xff;
+	p[2] = (v >> 16) & 0xff;
+	p[3] = (v >> 24) & 0xff;
+}
 #define uninitialized_var(x) x = x
 
 #ifndef NO_SHEEPDOG_LOGGER

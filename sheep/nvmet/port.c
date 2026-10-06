@@ -142,7 +142,10 @@ static int start_listener(struct nofuse_port *port)
 	ret = configdb_get_port_attr(port->portid, "addr_trtype", transport);
 	if (ret < 0)
 		return ret;
-	if (!strcmp(transport, "tcp")) {
+	if (!strcmp(transport, "rdma")) {
+		port->ops = rdma_register_ops();
+		port->thread_func = rdma_queue_thread;
+	} else {
 		port->ops = tcp_register_ops();
 		port->thread_func = tcp_queue_thread;
 	}

@@ -234,12 +234,7 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 	ctrl_info(ep, "nvme_fabrics_connect qid %u sqsize %u kato %u",
 		  qid, sqsize, kato);
 
-	ret = ep->ops->rma_read(ep, connect, qe->data_len);
-	if (ret) {
-		ctrl_err(ep, "rma_read failed with error %d",
-			 errno);
-		return ret;
-	}
+	ret = ep->ops->rma_read(ep, qe, connect, qe->data_len, qe->data_mr);
 
 	cntlid = le16toh(connect->cntlid);
 
@@ -613,6 +608,7 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 	uint8_t csi = cmd->identify.csi;
 	uint32_t nsid = le32toh(cmd->identify.nsid);
 	uint16_t cid = cmd->identify.command_id;
+	void *mr;
 	int ret, id_len;
 
 	ctrl_info(ep, "cid %#x nvme_fabrics_identify cns %d len %"PRIu64,
@@ -664,8 +660,15 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (id_len < 0)
 		return NVME_SC_INVALID_NS;
 
+	mr = ep->ops->alloc_key(ep, qe->data, id_len);
+	if (!mr) {
+		ctrl_err(ep, "failed to register memory");
+		return NVME_SC_INTERNAL;
+	}
+		
 	qe->data_pos = 0;
-	ret = ep->ops->rma_write(ep, qe, qe->data, id_len);
+	ret = ep->ops->rma_write(ep, qe, qe->data, id_len, mr);
+	ep->ops->dealloc_key(ep, mr);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with %d", ret);
 	return ret;
@@ -825,6 +828,7 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 {
 	uint32_t *log_page;
 	int ret = 0, log_len;
+	void *mr;
 	uint64_t offset = le64toh(cmd->get_log_page.lpo);
 
 	ctrl_info(ep, "nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
@@ -886,7 +890,13 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			 __func__, cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
-	ret = ep->ops->rma_write(ep, qe, qe->data, log_len);
+	mr = ep->ops->alloc_key(ep, qe->data, log_len);
+	if (!mr) {
+		ctrl_err(ep, "failed to register memory");
+		return NVME_SC_INTERNAL;
+	}
+	ret = ep->ops->rma_write(ep, qe, qe->data, log_len, mr);
+	ep->ops->dealloc_key(ep, mr);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with error %d", ret);
 
@@ -954,7 +964,8 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		ctrl_info(ep, "nsid %u tag %#x ccid %#x inline write pos %"PRIu64" len %"PRIu64,
 			   nsid, qe->tag, qe->ccid,
 			   qe->data_pos, qe->data_len);
-		ret = ep->ops->rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
+		ret = ep->ops->rma_read(ep, qe, qe->iovec.iov_base,
+					qe->iovec.iov_len, qe->data_mr);
 		if (ret < 0) {
 			ctrl_err(ep, "tag %#x rma_read error %d",
 				 qe->tag, ret);
@@ -1007,8 +1018,8 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		ret = ep->ops->rma_read(ep, qe->iovec.iov_base,
-					qe->iovec.iov_len);
+		ret = ep->ops->rma_read(ep, qe, qe->iovec.iov_base,
+					qe->iovec.iov_len, qe->data_mr);
 		if (ret < 0) {
 			ctrl_err(ep, "dsm: tag %#x rma_read error %d",
 				 qe->tag, ret);

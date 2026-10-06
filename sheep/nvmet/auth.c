@@ -302,9 +302,16 @@ int handle_auth_send(struct nofuse_queue *ep, struct ep_qe *qe,
 	qe->data_remaining = qe->data_len;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
+		void *mr;
 		/* Inline data */
-		ret = ep->ops->rma_read(ep, qe->iovec.iov_base,
-					qe->iovec.iov_len);
+		mr = ep->ops->alloc_key(ep, qe->data, qe->data_len);
+		if (!mr) {
+			ctrl_err(ep, "failed to register memory");
+			return NVME_SC_INTERNAL;
+		}
+		ret = ep->ops->rma_read(ep, qe, qe->iovec.iov_base,
+					qe->iovec.iov_len, mr);
+		ep->ops->dealloc_key(ep, mr);
 		if (ret < 0) {
 			ctrl_err(ep, "auth_send: tag %#x rma_read error %d",
 				 qe->tag, ret);
@@ -557,6 +564,7 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_command *cmd)
 {
 	struct nofuse_queue_auth *auth = &ep->auth;
+	void *mr;
 	uint32_t al;
 	uint16_t status, ret = NVME_SC_SUCCESS;
 
@@ -617,7 +625,13 @@ int handle_auth_receive(struct nofuse_queue *ep, struct ep_qe *qe,
 		break;
 	}
 
-	ret = ep->ops->rma_write(ep, qe, qe->data, qe->data_len);
+	mr = ep->ops->alloc_key(ep, qe->data, qe->data_len);
+	if (!mr) {
+		ctrl_err(ep, "failed to register memory");
+		return NVME_SC_INTERNAL;
+	}
+	ret = ep->ops->rma_write(ep, qe, qe->data, qe->data_len, mr);
+	ep->ops->dealloc_key(ep, mr);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with %d", ret);
 	return ret;

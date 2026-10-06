@@ -400,6 +400,53 @@ static void pop_free(void *arg)
 	free(ep);
 }
 
+void *rdma_queue_thread(void *arg)
+{
+	struct nofuse_queue *ep = arg;
+
+	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+	while (ep->state == CONNECTED) {
+		struct ep_qe *qe;
+		int ret;
+
+		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+		ret = ep->ops->poll_for_msg(ep, &qe);
+		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+		if (!ret) {
+			if (ep->ctrl)
+				kato_reset_counter(ep->ctrl);
+			ret = handle_request(ep, qe);
+		}
+		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
+			if (!ep->ctrl) {
+				sd_err("qid %d no controller timeout",
+				       ep->qid);
+			} else {
+				if (ep->qid != 0) {
+					if (ep->ctrl->kato_countdown)
+						continue;
+				} else {
+					if (--ep->ctrl->kato_countdown > 0)
+						continue;
+					ctrl_err(ep, "kato timeout");
+				}
+			}
+		}
+		if (ret == -ENODATA) {
+			ctrl_info(ep, "connection closed");
+			break;
+		}
+		if (ret < 0) {
+			int retry = ep->ctrl ?
+				ep->ctrl->kato_countdown : RETRY_COUNT;
+			ctrl_err(ep, "error %d retry %d", ret, retry);
+			break;
+		}
+	}
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_exit(NULL);
+}
+
 void *tcp_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
