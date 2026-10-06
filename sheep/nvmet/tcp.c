@@ -734,7 +734,8 @@ static int tcp_send_c2h_term(struct nofuse_queue *ep, uint16_t fes, uint8_t pdu_
 	return -EPROTO;
 }
 
-static int _tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
+static int tcp_send_rsp(struct nofuse_queue *ep, struct ep_qe *qe,
+			struct nvme_completion *comp)
 {
 	struct nvme_tcp_rsp_pdu *pdu = &ep->send_pdu->rsp;
 	int len;
@@ -754,16 +755,9 @@ static int _tcp_send_rsp(struct nofuse_queue *ep, struct nvme_completion *comp)
 	len = tcp_write_full(ep, pdu, pdu->hdr.plen);
 	if (len < 0)
 		tcp_err(ep, "pdu write error %d", -len);
+	if (qe)
+		tcp_release_tag(ep, qe);
 	return len;
-}
-
-static int tcp_send_rsp(struct nofuse_queue *ep, struct ep_qe *qe)
-{
-	int ret;
-
-	ret = _tcp_send_rsp(ep, &qe->resp);
-	tcp_release_tag(ep, qe);
-	return ret;
 }
 
 static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
@@ -839,7 +833,7 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	set_response(&qe->resp, qe->ccid, ret, true);
-	ret = tcp_send_rsp(ep, qe);
+	ret = tcp_send_rsp(ep, qe, &qe->resp);
 	return ret;
 }
 
@@ -927,7 +921,7 @@ static int tcp_poll_msg(struct nofuse_queue *ep, struct nvme_command *cmd,
 
 		ctrl_err(ep, "ccid %#x queue busy", ccid);
 		*_qe = NULL;
-		return _tcp_send_rsp(ep, &resp);
+		return tcp_send_rsp(ep, NULL, &resp);
 	}
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	*_qe = qe;
@@ -964,7 +958,7 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 		return ret;
 	}
 	if (qe)
-		ret = handle_request(ep, qe);
+		ret = handle_request(ep, qe, &pdu->cmd.cmd);
 	return ret;
 }
 
@@ -1034,7 +1028,7 @@ static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 	qe->resp.result.u32 = htole32(result);
 	qe->resp.status = 0;
 
-	ret = tcp_send_rsp(ep, qe);
+	ret = tcp_send_rsp(ep, qe, &qe->resp);
 	return ret;
 }
 

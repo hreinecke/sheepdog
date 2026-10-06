@@ -17,16 +17,8 @@
 #include "nofuse.h"
 #include "ops.h"
 #include "nvme.h"
-#include "tcp.h"
 #include "configdb.h"
 #include "firmware.h"
-
-static int send_response(struct nofuse_queue *ep, struct ep_qe *qe,
-			 uint16_t status)
-{
-	set_response(&qe->resp, qe->ccid, status, true);
-	return ep->ops->send_rsp(ep, qe);
-}
 
 static int handle_property_set(struct nofuse_queue *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
@@ -1039,10 +1031,9 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 	return ret;
 }
 
-int handle_request(struct nofuse_queue *ep, struct ep_qe *qe)
+int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
+		   struct nvme_command *cmd)
 {
-	union nvme_tcp_pdu *pdu = ep->recv_pdu;
-	struct nvme_command *cmd = &pdu->cmd.cmd;
 	int ret;
 
 	if (cmd->common.opcode == nvme_fabrics_command) {
@@ -1125,8 +1116,8 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe)
 			ctrl_err(ep, "handle_request error %d", ret);
 		return ret;
 	}
-
-	return send_response(ep, qe, ret);
+	set_response(&qe->resp, qe->ccid, ret, true);
+	return ep->ops->send_rsp(ep, qe, &qe->resp);
 }
 
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res)

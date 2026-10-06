@@ -501,7 +501,7 @@ out_write:
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
 	set_response(&qe->resp, qe->ccid, status, true);
-	ret = ep->ops->send_rsp(ep, qe);
+	ret = ep->ops->send_rsp(ep, qe, &qe->resp);
 	return ret;
 }
 
