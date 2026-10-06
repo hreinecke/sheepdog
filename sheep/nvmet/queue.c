@@ -400,7 +400,7 @@ static void pop_free(void *arg)
 	free(ep);
 }
 
-void *queue_thread(void *arg)
+void *tcp_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;

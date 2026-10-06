@@ -932,8 +932,9 @@ int configdb_del_ctrl(uint32_t subsys_id, int cntlid)
 	return ret;
 }
 
-int configdb_add_port(unsigned int portid, const char *traddr,
-		      const char *adrfam, unsigned int trsvcid)
+int configdb_add_port(unsigned int portid, const char *transport,
+		      const char *traddr, const char *adrfam,
+		      unsigned int trsvcid)
 {
 	char *sql;
 	int ret;
@@ -945,9 +946,9 @@ int configdb_add_port(unsigned int portid, const char *traddr,
 
 	ret = asprintf(&sql,
 		       "INSERT OR IGNORE INTO ports "
-		       "(id, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
-		       " VALUES ('%d', '%s', '%s', '%u', CURRENT_TIMESTAMP);",
-		       portid, traddr, adrfam, trsvcid);
+		       "(id, addr_trtype, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
+		       " VALUES ('%d', '%s', '%s', '%s', '%u', CURRENT_TIMESTAMP);",
+		       portid, transport, traddr, adrfam, trsvcid);
 	if (ret < 0)
 		return ret;
 

@@ -18,8 +18,8 @@ LIST_HEAD(port_linked_list);
 
 static void *run_port(void *arg);
 
-struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid,
-			     int tls_keyring)
+struct nofuse_port *add_port(unsigned int id, const char *transport,
+			     const char *traddr, int trsvcid, int tls_keyring)
 {
 	struct nofuse_port *port;
 	const char *adrfam = "ipv4";
@@ -29,12 +29,12 @@ struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid,
 	if (!port)
 		return NULL;
 	memset(port, 0, sizeof(*port));
-	port->listenfd = -1;
+	port->transport.tcp.listenfd = -1;
 	port->portid = id;
 	if (traddr && !strchr(traddr, '.'))
 		adrfam = "ipv6";
 
-	ret = configdb_add_port(id, traddr, adrfam, trsvcid);
+	ret = configdb_add_port(id, transport, traddr, adrfam, trsvcid);
 	if (ret < 0) {
 		port_err(port, "cannot register port, error %d", ret);
 		free(port);
@@ -55,7 +55,7 @@ struct nofuse_port *add_port(unsigned int id, const char *traddr, int trsvcid,
 			ret = configdb_set_port_attr(port->portid, "addr_treq",
 						     "not required");
 			if (!ret)
-                               port->tls = true;
+                               port->transport.tcp.tls = true;
 		}
 	}
 
@@ -136,9 +136,16 @@ int del_port(struct nofuse_port *port)
 
 static int start_listener(struct nofuse_port *port)
 {
+	char transport[8];
 	int ret;
 
-	port->ops = tcp_register_ops();
+	ret = configdb_get_port_attr(port->portid, "addr_trtype", transport);
+	if (ret < 0)
+		return ret;
+	if (!strcmp(transport, "tcp")) {
+		port->ops = tcp_register_ops();
+		port->thread_func = tcp_queue_thread;
+	}
 	if (!port->ops)
 		return -EINVAL;
 
@@ -210,7 +217,7 @@ static void *run_port(void *arg)
 					    PTHREAD_CREATE_DETACHED);
 
 		ret = pthread_create(&ep->pthread, &pthread_attr,
-				     queue_thread, ep);
+				     port->thread_func, ep);
 		if (ret) {
 			ep->pthread = 0;
 			port_err(port, "pthread_create failed with %d", ret);

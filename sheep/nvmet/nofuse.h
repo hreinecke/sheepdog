@@ -219,11 +219,16 @@ struct nofuse_port {
 	struct list_node node;
 	pthread_t pthread;
 	struct xp_ops *ops;
+	void *(*thread_func)(void *);
 	struct list_head ep_list;
 	pthread_mutex_t ep_mutex;
+	union {
+		struct {
+			int listenfd;
+			bool tls;
+		} tcp;
+	} transport;
 	int portid;
-	int listenfd;
-	bool tls;
 };
 
 struct nofuse_ctrl {
@@ -344,8 +349,9 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);
 struct nofuse_queue *create_queue(void *id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
-void *queue_thread(void *arg);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
+
+void *tcp_queue_thread(void *arg);
 
 int default_subsys_type(const char *nqn);
 
@@ -355,8 +361,8 @@ int del_host(const char *nqn);
 int add_subsys(const char *nqn, int type);
 int del_subsys(const char *nqn);
 
-struct nofuse_port *add_port(unsigned int id, const char *traddr,
-			     int trsvcid, int tls_keyring);
+struct nofuse_port *add_port(unsigned int id, const char *transport,
+			     const char *traddr, int trsvcid, int tls_keyring);
 int del_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
@@ -390,6 +396,6 @@ const uint8_t *lookup_dhchap_psk(struct sd_inode *inode,
 				 uint8_t *shash_id,
 				 size_t *key_len);
 
-int nofuse_init(const char *traddr, int trsvcid);
+int nofuse_init(const char *transport, const char *traddr, int trsvcid);
 void nofuse_exit(void);
 #endif

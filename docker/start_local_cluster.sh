@@ -8,7 +8,7 @@ for node in $(seq 0 4); do
     [ -d /srv/sheep/${node} ] || mkdir /srv/sheep/${node}
     cp $SHEEP /srv/sheep/${node}
     pushd /srv/sheep/${node} > /dev/null
-    ./sheep -c local /srv/sheep/${node} -l level=debug -p 700${node} -z ${node} -t 127.0.0.1 -s 800${node}
+    ./sheep -c local /srv/sheep/${node} -l level=debug -p 700${node} -z ${node} -t tcp -a 127.0.0.1 -s 800${node}
     popd > /dev/null
 done
 

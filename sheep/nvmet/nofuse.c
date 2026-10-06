@@ -47,6 +47,7 @@ struct nofuse_context {
 	struct list_head event_list;
 	struct sd_mutex event_lock;
 	char *dbname;
+	char *transport;
 	char *traddr;
 	int tls_keyring;
 	unsigned int portid;
@@ -568,11 +569,13 @@ retry:
 	vls = (struct vdi_lock_state *)buf;
 	for (int i = 0; i < rsp->data_length; i += sizeof(*vls)) {
 		struct sd_node *node, node_key;
+		const char *transport = "tcp";
 		char *traddr;
 		const char *adrfam = "ipv4";
 		uint16_t trsvcid;
 		bool port_present;
 		bool tls = false;
+		bool rdma = false;
 
 		if (rsp->data_length - i < sizeof(*vls))
 			break;
@@ -590,12 +593,14 @@ retry:
 		}
 		port_present = configdb_check_port(node->zone + 1);
 
-		traddr = str_to_tr(vls->owner, &trsvcid, &tls);
+		traddr = str_to_tr(vls->owner, &trsvcid, &tls, &rdma);
 		if (!traddr) {
 			sd_warn("failed to parse owner '%s'", vls->owner);
 			vls++;
 			continue;
 		}
+		if (rdma)
+			transport = "rdma";
 		if (!strchr(traddr, '.'))
 			adrfam = "ipv6";
 		if (lock_state == LOCK_STATE_LOCKED) {
@@ -604,20 +609,20 @@ retry:
 			continue;
 		} else if (lock_state == LOCK_STATE_SHARED) {
 			uint16_t portid = node->zone + 1;
-			sd_debug("adding port %d (%s:%d)",
-				 portid, traddr, trsvcid);
+			sd_debug("adding port %d (%s:%s:%d)",
+				 portid, transport, traddr, trsvcid);
 
 			if (port_present) {
-				sd_debug("port '%s:%d' present, skipping",
-					 traddr, trsvcid);
+				sd_debug("port '%s:%s:%d' present, skipping",
+					 transport, traddr, trsvcid);
 				vls++;
 				continue;
 			}
-			ret = configdb_add_port(portid,
+			ret = configdb_add_port(portid, transport,
 						traddr, adrfam, trsvcid);
 			if (ret < 0) {
-				sd_warn("cannot add port '%s:%d', error %d",
-					traddr, trsvcid, ret);
+				sd_warn("cannot add port '%s:%s:%d', error %d",
+					transport, traddr, trsvcid, ret);
 				if (traddr)
 					free(traddr);
 				vls++;
@@ -628,6 +633,10 @@ retry:
 						       "tls1.3");
 				configdb_set_port_attr(portid, "addr_treq",
 						       "not required");
+			}
+			if (rdma) {
+				configdb_set_port_attr(portid, "addr_trtype",
+						       transport);
 			}
 			ret = configdb_add_ana_port_group(portid);
 			if (ret < 0) {
@@ -1206,7 +1215,10 @@ static void nofuse_cleanup(void *arg)
 	sd_mutex_unlock(&ctx->root_lock);
 	rb_destroy(&ctx->ns_root, struct nofuse_namespace, rb);
 	rb_destroy(&ctx->subsys_root, struct nofuse_subsystem, rb);
-	free(ctx->traddr);
+	if (ctx->traddr)
+		free(ctx->traddr);
+	if (ctx->transport)
+		free(ctx->transport);
 	free(ctx->dbname);
 	free(ctx);
 }
@@ -1243,9 +1255,10 @@ static void *nofuse_main(void *arg)
 		goto out_close;
 	}
 
-	sd_debug("register nvmet port traddr '%s' trsvcid '%d'",
-		 ctx->traddr, ctx->trsvcid);
-	port = add_port(agid, ctx->traddr, ctx->trsvcid, ctx->tls_keyring);
+	sd_debug("register nvmet '%s' port traddr '%s' trsvcid '%d'",
+		 ctx->transport, ctx->traddr, ctx->trsvcid);
+	port = add_port(agid, ctx->transport, ctx->traddr,
+			ctx->trsvcid, ctx->tls_keyring);
 	if (!port) {
 		sd_err("failed to add nvmet port");
 		goto out_close;
@@ -1344,7 +1357,7 @@ out_pop:
 	return NULL;
 }
 
-int nofuse_init(const char *traddr, int trsvcid)
+int nofuse_init(const char *transport, const char *traddr, int trsvcid)
 {
 	struct nofuse_context *ctx;
 	int err;
@@ -1356,6 +1369,9 @@ int nofuse_init(const char *traddr, int trsvcid)
 	if (!ctx)
 		return -1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
+	if (strcmp(transport, "tcp") && strcmp(transport, "rdma"))
+		return -1;
+	ctx->transport = strdup(transport);
 	ctx->traddr = strdup(traddr);
 	ctx->trsvcid = trsvcid;
 	ctx->dbname = strdup("nofuse.sqlite");

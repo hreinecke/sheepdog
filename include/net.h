@@ -71,7 +71,7 @@ int create_unix_domain_socket(const char *unix_path,
 			      int (*callback)(int, void *), void *data);
 
 const char *addr_to_str(const uint8_t *addr, uint16_t port);
-char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls);
+char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls, bool *rdma);
 int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port);
 char *sockaddr_in_to_str(struct sockaddr_in *sockaddr);
 int set_nodelay(int fd);
@@ -79,7 +79,7 @@ int set_keepalive(int fd);
 int set_snd_timeout(int fd);
 int set_rcv_timeout(int fd);
 int get_local_addr(uint8_t *bytes);
-bool inetaddr_is_valid(char *addr);
+bool inetaddr_is_valid(const char *addr);
 int do_writev2(int fd, void *hdr, size_t hdr_len, void *body, size_t body_len);
 
 /* for typical usage of do_writev2() */

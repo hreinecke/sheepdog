@@ -25,7 +25,7 @@
 #endif
 
 #ifdef HAVE_NVMET
-extern int nofuse_init(const char *traddr, int trsvcid);
+extern int nofuse_init(const char *trtype, const char *traddr, int trsvcid);
 extern void nofuse_exit(void);
 #endif
 
@@ -163,7 +163,8 @@ static struct sd_option sheep_options[] = {
 	 recovery_help},
 #ifdef HAVE_NVMET
 	{'s', "trsvcid", true, "specify the transport service ID for nvmet"},
-	{'t', "traddr", true, "specify the transport address for nvmet"},
+	{'a', "traddr", true, "specify the transport address for nvmet"},
+	{'t', "transport", true, "specify the transport type for nvmet"},
 #endif
 	{'u', "upgrade", false, "upgrade to the latest data layout"},
 	{'v', "version", false, "show the version"},
@@ -824,7 +825,8 @@ int main(int argc, char **argv, char **envp)
 	const char *http_options = NULL;
 #endif
 #ifdef HAVE_NVMET
-	char *traddr = NULL;
+	const char *transport = NULL;
+	const char *traddr = NULL;
 	unsigned int trsvcid = 0;
 #endif
 	static struct logger_user_info sheep_info;
@@ -893,6 +895,9 @@ int main(int argc, char **argv, char **envp)
 		uatomic_set_true(&sys->use_journal);
 	}
 #ifdef HAVE_NVMET
+	transport = getenv("SHEEP_TRANSPORT");
+	if (!transport)
+		transport = "tcp";
 	if ((traddr = getenv("SHEEP_TRADDR"))) {
 		if (!inetaddr_is_valid(traddr))
 			traddr = NULL;
@@ -1062,6 +1067,9 @@ int main(int argc, char **argv, char **envp)
 			break;
 #ifdef HAVE_NVMET
 		case 't':
+			transport = optarg;
+			break;
+		case 'a':
 			traddr = optarg;
 			break;
 		case 's':
@@ -1350,7 +1358,7 @@ int main(int argc, char **argv, char **envp)
 
 	#ifdef HAVE_NVMET
 	if (traddr) {
-		ret = nofuse_init(traddr, trsvcid);
+		ret = nofuse_init(transport, traddr, trsvcid);
 		if (ret)
 			goto cleanup_journal;
 	}

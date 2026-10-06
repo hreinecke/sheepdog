@@ -354,7 +354,7 @@ static int tcp_init_listener(struct nofuse_port *port)
 		goto err_close;
 	}
 	port_info(port, "listening on %s:%s", bindaddr, trsvcid);
-	port->listenfd = listenfd;
+	port->transport.tcp.listenfd = listenfd;
 	return 0;
 err_close:
 	close(listenfd);
@@ -365,10 +365,10 @@ err_free:
 
 static void tcp_destroy_listener(struct nofuse_port *port)
 {
-	if (port->listenfd < 0)
+	if (port->transport.tcp.listenfd < 0)
 		return;
-	close(port->listenfd);
-	port->listenfd = -1;
+	close(port->transport.tcp.listenfd);
+	port->transport.tcp.listenfd = -1;
 }
 
 static int tcp_accept_connection(struct nofuse_queue *ep)
@@ -505,15 +505,15 @@ static int tcp_wait_for_connection(struct nofuse_port *port, void **id)
 	int ret = -ESHUTDOWN;
 
 	sockfd = xzalloc(sizeof(int));
-	while (port->listenfd > 0) {
+	while (port->transport.tcp.listenfd > 0) {
 		fd_set rfd;
 		struct timeval tmo;
 
 		FD_ZERO(&rfd);
-		FD_SET(port->listenfd, &rfd);
+		FD_SET(port->transport.tcp.listenfd, &rfd);
 		tmo.tv_sec = (KATO_INTERVAL / 1000);
 		tmo.tv_usec = (KATO_INTERVAL % 1000) * 1000;
-		ret = select(port->listenfd + 1, &rfd, NULL, NULL, &tmo);
+		ret = select(port->transport.tcp.listenfd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
 			port_err(port, "select error %d", errno);
 			ret = -errno;
@@ -523,13 +523,13 @@ static int tcp_wait_for_connection(struct nofuse_port *port, void **id)
 			break;
 	}
 
-	if (port->listenfd < 0)
+	if (port->transport.tcp.listenfd < 0)
 		return -ESHUTDOWN;
 
 	if (ret <= 0)
 		return ret ? ret : -ETIMEDOUT;
 
-	fd = accept(port->listenfd, (struct sockaddr *) NULL,
+	fd = accept(port->transport.tcp.listenfd, (struct sockaddr *) NULL,
 		    NULL);
 	if (fd < 0) {
 		if (errno != EAGAIN)

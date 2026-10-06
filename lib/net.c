@@ -416,7 +416,7 @@ char *sockaddr_in_to_str(struct sockaddr_in *sockaddr)
 	return str;
 }
 
-char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls)
+char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls, bool *rdma)
 {
 	char *hoststr = strdup(ipstr);
 	char *portstr = NULL, *t;
@@ -445,6 +445,8 @@ char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls)
 	if (t) {
 		if (tls && !strcmp(t, ":tls"))
 			*tls = true;
+		if (rdma && !strcmp(t, ":rdma"))
+			*rdma = true;
 		t[0] = '\0';
 	}
 	if (port) {
@@ -471,7 +473,7 @@ int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
 	int addr_start_idx;
 	char *hoststr = NULL;
 
-	hoststr = str_to_tr(ipstr, port, NULL);
+	hoststr = str_to_tr(ipstr, port, NULL, NULL);
 	if (!hoststr)
 		return -EINVAL;
 
@@ -659,7 +661,7 @@ err:
 	return -1;
 }
 
-bool inetaddr_is_valid(char *addr)
+bool inetaddr_is_valid(const char *addr)
 {
 	unsigned char buf[INET6_ADDRSTRLEN];
 	int af;
