@@ -503,7 +503,7 @@ void *tcp_queue_thread(void *arg)
 		io_uring_cqe_seen(&ep->uring, cqe);
 		cqe_data = io_uring_cqe_get_data(cqe);
 		num_cqe++;
-		if (num_cqe > 500) {
+		if (num_cqe > 500 && ep->io_ops) {
 			ctrl_err(ep, "trigger rekey");
 			if (ep->io_ops->io_reset)
 				ep->io_ops->io_reset(ep);
@@ -611,7 +611,6 @@ struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
 	ep->transport.tcp.recv_state = RECV_PDU;
-	ep->io_ops = tcp_register_io_ops();
 	INIT_LIST_NODE(&ep->node);
 	INIT_LIST_HEAD(&ep->io_done_list);
 	pthread_mutex_init(&ep->io_done_lock, NULL);

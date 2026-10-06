@@ -318,21 +318,9 @@ static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 	ep->transport.rdma.id = id;
 	ep->qsize = depth;
 
-	if (posix_memalign(&cmd, PAGE_SIZE, PAGE_SIZE))
-		return -ENOMEM;
-	memset(cmd, 0, PAGE_SIZE);
-	ep->transport.rdma.cmd = cmd;
-
-	mr = ep->ops->alloc_key(ep, cmd, PAGE_SIZE);
-	if (!mr) {
-		ret = -ENOMEM;
-		goto out_free_cmd;
-	}
-
-	ep->transport.rdma.cmd_mr = mr;
 	ret = rdma_create_completion_queues(ep);
 	if (ret < 0)
-		goto out_dealloc;
+		return ret;
 
 	ret = rdma_create_queue_pairs(ep);
 	if (ret < 0)
@@ -342,15 +330,25 @@ static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 	if (ret < 0)
 		goto out_destroy_qp;
 
+	if (posix_memalign(&cmd, PAGE_SIZE, PAGE_SIZE)) {
+		rdma_destroy_queue(ep);
+		return -ENOMEM;
+	}
+	memset(cmd, 0, PAGE_SIZE);
+	ep->transport.rdma.cmd = cmd;
+
+	mr = ep->ops->alloc_key(ep, cmd, PAGE_SIZE);
+	if (!mr) {
+		rdma_destroy_queue(ep);
+		return -ENOMEM;
+	}
+
+	ep->transport.rdma.cmd_mr = mr;
 	return 0;
 out_destroy_qp:
 	rdma_destroy_queue_pairs(ep);
 out_destroy_comp:
 	rdma_destroy_completion_queues(ep);
-out_dealloc:
-	ep->ops->dealloc_key(ep, mr);
-out_free_cmd:
-	free(cmd);
 	return ret;
 }
 
@@ -384,7 +382,6 @@ static int rdma_init_listener(struct nofuse_port *port)
 	if (!strcmp(adrfam_str, "ipv6"))
 		adrfam = AF_INET6;
 
-	sprintf(bindaddr, "127.0.0.1");
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = adrfam;
 	hints.ai_qp_type = IBV_QPT_RC;
@@ -404,16 +401,24 @@ static int rdma_init_listener(struct nofuse_port *port)
 
 	ec = rdma_create_event_channel();
 	if (!ec) {
+		port_err(port, "failed to create event channel");
 		ret = -errno;
 		goto out_free_addrinfo;
 	}
 
 	flags = fcntl(ec->fd, F_GETFL);
-	fcntl(ec->fd, F_SETFL, flags | O_NONBLOCK);
+	ret = fcntl(ec->fd, F_SETFL, flags | O_NONBLOCK);
+	if (ret) {
+		port_err(port, "fcntl failed, error %d", errno);
+		ret = -errno;
+		goto out_destroy_ec;
+	}
 
 	ret = rdma_create_id(ec, &listener, NULL, RDMA_PS_TCP);
-	if (ret)
+	if (ret) {
+		port_err(port, "failed to create listener");
 		goto out_destroy_ec;
+	}
 
 	tmp_ai = ai;
 	while (tmp_ai) {
@@ -427,12 +432,18 @@ static int rdma_init_listener(struct nofuse_port *port)
 		tmp_ai = tmp_ai->ai_next;
 	}
 	ret = rdma_bind_addr(listener, ai->ai_src_addr);
-	if (ret)
+	if (ret) {
+		port_err(port, "failed to bind address to rdma port %s:%s",
+			 bindaddr, trsvcid);
 		goto out_destroy_id;
+	}
 
 	ret = rdma_listen(listener, BACKLOG);
-	if (ret)
+	if (ret) {
+		port_err(port, "failed to listen on rdma port %s:%s",
+			 bindaddr, trsvcid);
 		goto out_destroy_id;
+	}
 
 	port->transport.rdma.id = listener;
 	port->transport.rdma.ec = ec;
@@ -485,11 +496,14 @@ static int rdma_accept_connection(struct nofuse_queue *ep)
 	rdma_ack_cm_event(ep->transport.rdma.id->event);
 	ep->transport.rdma.id->event = NULL;
 
-	params.flow_control	= 1;
-	params.retry_count	= 15;
-	params.rnr_retry_count	= 7;
+	params.flow_control = 1;
+	params.retry_count = 15;
+	params.rnr_retry_count = 7;
 
-	return rdma_accept(ep->transport.rdma.id, &params);
+	ret = rdma_accept(ep->transport.rdma.id, &params);
+	if (ret)
+		rdma_err(ep, "rdma_accept() failed, error %d", ret);
+	return ret;
 }
 
 static int rdma_wait_for_event(struct rdma_event_channel *ec,
