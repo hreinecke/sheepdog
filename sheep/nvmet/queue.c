@@ -403,6 +403,7 @@ static void pop_free(void *arg)
 void *rdma_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
+	int retry = POLL_TIMEOUT * 10;
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 	while (ep->state == CONNECTED) {
@@ -413,14 +414,19 @@ void *rdma_queue_thread(void *arg)
 		ret = ep->ops->poll_for_msg(ep, &qe);
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 		if (!ret) {
+			struct nvme_command *cmd = (void *)qe->data;
+			sd_info("qe data len %lu", qe->data_len);
 			if (ep->ctrl)
 				kato_reset_counter(ep->ctrl);
-			ret = handle_request(ep, qe, ep->transport.rdma.cmd);
+			ret = handle_request(ep, qe, cmd);
 		}
 		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
 			if (!ep->ctrl) {
-				sd_err("qid %d no controller timeout",
-				       ep->qid);
+				if (--retry) {
+					usleep(100);
+					continue;
+				}
+				ctrl_err(ep, "no controller timeout");
 			} else {
 				if (ep->qid != 0) {
 					if (ep->ctrl->kato_countdown)
@@ -437,9 +443,8 @@ void *rdma_queue_thread(void *arg)
 			break;
 		}
 		if (ret < 0) {
-			int retry = ep->ctrl ?
-				ep->ctrl->kato_countdown : RETRY_COUNT;
-			ctrl_err(ep, "error %d retry %d", ret, retry);
+			ctrl_err(ep, "error %d retry %d", ret,
+				 ep->ctrl ? ep->ctrl->kato_countdown : retry);
 			break;
 		}
 	}
