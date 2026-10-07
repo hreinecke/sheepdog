@@ -315,6 +315,7 @@ static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 	int ret;
 	void *cmd, *mr;
 
+	ep->trtype = NVMF_TRTYPE_RDMA;
 	ep->transport.rdma.id = id;
 	ep->qsize = depth;
 

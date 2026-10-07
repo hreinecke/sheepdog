@@ -97,6 +97,7 @@ static int tcp_create_queue(struct nofuse_queue *ep, void *id, int depth)
 	int *conn = (int *)id;
 	int flags, i;
 
+	ep->trtype = NVMF_TRTYPE_TCP;
 	ep->io_ops = tcp_register_io_ops();
 	ep->transport.tcp.sockfd = *conn;
 	free(conn);

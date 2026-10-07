@@ -141,6 +141,7 @@ struct nofuse_queue_auth {
 struct nofuse_queue {
 	struct list_node node;
 	pthread_t pthread;
+	unsigned int trtype;
 	struct io_uring uring;
 	struct io_ops *io_ops;
 	struct xp_ops *ops;

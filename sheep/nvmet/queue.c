@@ -313,6 +313,9 @@ static int queue_submit_cancel(struct nofuse_queue *ep)
 	struct io_uring_sqe *sqe;
 	int ret;
 
+	if (ep->trtype != NVMF_TRTYPE_TCP)
+		return 0;
+
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
 		sd_err("qid %d failed to get poll sqe", ep->qid);
