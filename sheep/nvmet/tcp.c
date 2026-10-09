@@ -555,7 +555,8 @@ static void tcp_destroy_connection(struct nofuse_port *port, void *id)
 }
 
 static int tcp_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
-			void *data, size_t data_len, void *mr)
+			void *data, uint64_t addr, size_t data_len,
+			uint32_t key, void *mr)
 {
 	int len = 0;
 	off_t offset = 0;
@@ -792,7 +793,7 @@ static int tcp_handle_h2c_data(struct nofuse_queue *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 
-	ret = tcp_rma_read(ep, qe, qe->iovec.iov_base, data_len, NULL);
+	ret = tcp_rma_read(ep, qe, qe->iovec.iov_base, 0, data_len, 0, NULL);
 	if (ret < 0) {
 		tcp_err(ep, "h2c data read failed, error %d", errno);
 		ret = NVME_SC_SGL_INVALID_DATA;
@@ -975,7 +976,8 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 }
 
 static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
-			 void *data, size_t data_len, void *mr)
+			 void *data, uint64_t addr, size_t data_len,
+			 uint32_t key, void *mr)
 {
 	tcp_info(ep, "write cid %x offset %"PRIu64" len %lu",
 		  qe->ccid, qe->data_pos, data_len);
@@ -1040,9 +1042,7 @@ static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 	qe->resp.result.u32 = htole32(result);
 	qe->resp.status = NVME_SC_SUCCESS;
 
-	ret = tcp_send_rsp(ep, qe, &qe->resp);
-	tcp_release_tag(ep, qe);
-	return ret;
+	return tcp_send_rsp(ep, qe, &qe->resp);
 }
 
 static void *tcp_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)

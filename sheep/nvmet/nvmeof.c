@@ -230,11 +230,15 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 	qid = le16toh(cmd->connect.qid);
 	sqsize = le16toh(cmd->connect.sqsize);
 	kato = le32toh(cmd->connect.kato);
+	if (qe->data_len < sizeof(struct nvmf_connect_data)) {
+		ctrl_err(ep, "connect data truncated");
+		return NVME_SC_INTERNAL;
+	}
+	ctrl_info(ep, "nvme_fabrics_connect qid %u sqsize %u kato %u len %lu",
+		  qid, sqsize, kato, qe->data_len);
 
-	ctrl_info(ep, "nvme_fabrics_connect qid %u sqsize %u kato %u",
-		  qid, sqsize, kato);
-
-	ret = ep->ops->rma_read(ep, qe, connect, qe->data_len, qe->data_mr);
+	ret = ep->ops->rma_read(ep, qe, connect, qe->data_addr,
+				qe->data_len, qe->data_key, qe->data_mr);
 
 	cntlid = le16toh(connect->cntlid);
 
@@ -608,7 +612,6 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 	uint8_t csi = cmd->identify.csi;
 	uint32_t nsid = le32toh(cmd->identify.nsid);
 	uint16_t cid = cmd->identify.command_id;
-	void *mr;
 	int ret, id_len;
 
 	ctrl_info(ep, "cid %#x nvme_fabrics_identify cns %d len %"PRIu64,
@@ -660,15 +663,14 @@ static int handle_identify(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (id_len < 0)
 		return NVME_SC_INVALID_NS;
 
-	mr = ep->ops->alloc_key(ep, qe->data, id_len);
-	if (!mr) {
-		ctrl_err(ep, "failed to register memory");
-		return NVME_SC_INTERNAL;
+	if (id_len > qe->data_len) {
+		ctrl_err(ep, "buffer truncated");
+		id_len = qe->data_len;
 	}
 		
 	qe->data_pos = 0;
-	ret = ep->ops->rma_write(ep, qe, qe->data, id_len, mr);
-	ep->ops->dealloc_key(ep, mr);
+	ret = ep->ops->rma_write(ep, qe, qe->data, qe->data_addr, id_len,
+				 qe->data_key, qe->data_mr);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with %d", ret);
 	return ret;
@@ -824,11 +826,11 @@ static int format_ns_chg_log(struct nofuse_queue *ep, void *data,
 }
 
 static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
-			       struct nvme_command *cmd)
+			       struct nvme_command *cmd, uint64_t addr,
+			       uint32_t len, uint32_t key)
 {
 	uint32_t *log_page;
 	int ret = 0, log_len;
-	void *mr;
 	uint64_t offset = le64toh(cmd->get_log_page.lpo);
 
 	ctrl_info(ep, "nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
@@ -890,13 +892,12 @@ static int handle_get_log_page(struct nofuse_queue *ep, struct ep_qe *qe,
 			 __func__, cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
-	mr = ep->ops->alloc_key(ep, qe->data, log_len);
-	if (!mr) {
-		ctrl_err(ep, "failed to register memory");
-		return NVME_SC_INTERNAL;
+	if (log_len > qe->data_len) {
+		ctrl_err(ep, "truncating log page");
+		log_len = qe->data_len;
 	}
-	ret = ep->ops->rma_write(ep, qe, qe->data, log_len, mr);
-	ep->ops->dealloc_key(ep, mr);
+	ret = ep->ops->rma_write(ep, qe, qe->data, qe->data_addr, log_len,
+				 qe->data_key, qe->data_mr);
 	if (ret)
 		ctrl_err(ep, "rma_write failed with error %d", ret);
 
@@ -925,6 +926,7 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->opcode = nvme_cmd_read;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
+	qe->data_remaining = le32toh(cmd->rw.length) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
@@ -954,18 +956,19 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->opcode = nvme_cmd_write;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
+	qe->data_remaining = le32toh(cmd->rw.length) * qe->ns->blksize;
+	qe->fua = (cdw12 & ((uint32_t)1 << 30));
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
-	qe->data_remaining = qe->data_len;
-	qe->fua = (cdw12 & ((uint32_t)1 << 30));
 
-	if (sgl_type == NVME_SGL_FMT_OFFSET) {
+	if ((sgl_type & 0x0f) == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		ctrl_info(ep, "nsid %u tag %#x ccid %#x inline write pos %"PRIu64" len %"PRIu64,
-			   nsid, qe->tag, qe->ccid,
-			   qe->data_pos, qe->data_len);
-		ret = ep->ops->rma_read(ep, qe, qe->iovec.iov_base,
-					qe->iovec.iov_len, qe->data_mr);
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x inline write "
+			  "pos %"PRIu64" len %"PRIu64"/%"PRIu64,
+			  nsid, qe->tag, qe->ccid,
+			  qe->data_pos, qe->data_len, qe->data_remaining);
+		ret = ep->ops->rma_read(ep, qe, qe->data, qe->data_addr,
+					qe->data_len, qe->data_key, qe->data_mr);
 		if (ret < 0) {
 			ctrl_err(ep, "tag %#x rma_read error %d",
 				 qe->tag, ret);
@@ -982,8 +985,10 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (ret) {
 		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else
-		ctrl_info(ep, "nsid %u tag %#x ccid %#x write pos %"PRIu64" len %"PRIu64,
-			  nsid, qe->tag, qe->ccid, qe->data_pos, qe->data_len);
+		ctrl_info(ep, "nsid %u tag %#x ccid %#x write pos %"PRIu64
+			  " len %"PRIu64"/%"PRIu64,
+			  nsid, qe->tag, qe->ccid, qe->data_pos,
+			  qe->data_len, qe->data_remaining);
 
 	return ret;
 }
@@ -1012,14 +1017,13 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_ANA_TRANSITION;
 
 	qe->opcode = nvme_cmd_dsm;
-	qe->iovec.iov_base = qe->data;
-	qe->iovec.iov_len = qe->data_len;
 	qe->data_remaining = qe->data_len;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
-		ret = ep->ops->rma_read(ep, qe, qe->iovec.iov_base,
-					qe->iovec.iov_len, qe->data_mr);
+		ret = ep->ops->rma_read(ep, qe, qe->data, qe->data_addr,
+					qe->data_len, qe->data_key,
+					qe->data_mr);
 		if (ret < 0) {
 			ctrl_err(ep, "dsm: tag %#x rma_read error %d",
 				 qe->tag, ret);
@@ -1045,7 +1049,27 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		   struct nvme_command *cmd)
 {
+	uint8_t sgl_type = cmd->common.dptr.sgl.type;
+	uint64_t addr;
+	uint32_t len, key;
 	int ret;
+
+	if ((sgl_type >> 4) == NVME_KEY_SGL_FMT_DATA_DESC) {
+		qe->data_addr = le64toh(cmd->common.dptr.ksgl.addr);
+		qe->data_len = get_unaligned_le24(cmd->common.dptr.ksgl.length);
+		qe->data_key = get_unaligned_le32(cmd->common.dptr.ksgl.key);
+	} else if ((sgl_type >> 4) == NVME_SGL_FMT_DATA_DESC) {
+		qe->data_addr = le64toh(cmd->common.dptr.sgl.addr);
+		qe->data_len = le32toh(cmd->common.dptr.sgl.length);
+		qe->data_key = 0;
+	} else if ((sgl_type >> 4) == NVME_TRANSPORT_SGL_DATA_DESC) {
+		qe->data_addr = 0;
+		qe->data_len = le32toh(cmd->common.dptr.sgl.length);
+		qe->data_key = 0;
+	} else {
+		ctrl_err(ep, "invalid SGL format %d", sgl_type >> 4);
+		return NVME_SC_SGL_INVALID_TYPE;
+	}
 
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
@@ -1100,7 +1124,7 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		kato_reset_counter(ep->ctrl);
 		ret = 0;
 	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
-		ret = handle_get_log_page(ep, qe, cmd);
+		ret = handle_get_log_page(ep, qe, cmd, addr, len, key);
 		if (!ret)
 			return 0;
 	} else if (cmd->common.opcode == nvme_admin_set_features) {

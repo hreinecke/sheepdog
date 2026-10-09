@@ -495,7 +495,8 @@ out_write:
 		status = NVME_SC_INTERNAL;
 	} else if (qe->opcode == nvme_cmd_read) {
 		/* rma_write() sends the data and releases the tag itself. */
-		return ep->ops->rma_write(ep, qe, qe->data, qe->data_len,
+		return ep->ops->rma_write(ep, qe, qe->data, qe->data_addr,
+					  qe->data_len, qe->data_key,
 					  qe->data_mr);
 	}
 

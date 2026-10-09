@@ -20,9 +20,11 @@ struct xp_ops {
 	void (*destroy_connection)(struct nofuse_port *port, void *id);
 	struct ep_qe *(*get_aen)(struct nofuse_queue *ep);
 	int (*rma_read)(struct nofuse_queue *ep, struct ep_qe *qe,
-			void *data, size_t data_len, void *mr);
+			void *data, uint64_t data_addr, size_t data_len,
+			uint32_t key, void *mr);
 	int (*rma_write)(struct nofuse_queue *ep, struct ep_qe *qe,
-			 void *data, size_t data_len, void *mr);
+			 void *data, uint64_t data_addr, size_t data_len,
+			 uint32_t key, void *mr);
 	int (*prep_rma_read)(struct nofuse_queue *ep, uint16_t ttag);
 	int (*send_rsp)(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_completion *comp);

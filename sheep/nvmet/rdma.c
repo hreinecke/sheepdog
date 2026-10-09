@@ -568,7 +568,8 @@ static int rdma_wait_for_connection(struct nofuse_port *port, void **_id)
 }
 
 static int rdma_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
-			 void *buf, size_t len, void *_mr)
+			 void *buf, uint64_t addr, size_t len,
+			 uint32_t key, void *_mr)
 {
 	struct ibv_mr *mr = _mr;
 	struct ibv_send_wr wr, *bad_wr = NULL;
@@ -586,8 +587,8 @@ static int rdma_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	sge.lkey = mr->lkey;
 
 	wr.opcode = IBV_WR_RDMA_READ;
-	wr.wr.rdma.remote_addr = (uintptr_t) qe->data_addr;
-	wr.wr.rdma.rkey = qe->data_key;
+	wr.wr.rdma.remote_addr = (uintptr_t) addr;
+	wr.wr.rdma.rkey = key;
 	wr.send_flags = IBV_SEND_SIGNALED;
 
 	ret = ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
@@ -608,7 +609,8 @@ static int rdma_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
 }
 
 static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
-			  void *buf, size_t len, void *_mr)
+			  void *buf, uint64_t addr, size_t len,
+			  uint32_t key, void *_mr)
 {
 	struct ibv_mr *mr = _mr;
 	struct ibv_send_wr wr, *bad_wr = NULL;
@@ -626,8 +628,8 @@ static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	sge.lkey = mr->lkey;
 
 	wr.opcode = IBV_WR_RDMA_WRITE;
-	wr.wr.rdma.remote_addr = (uintptr_t) qe->data_addr;
-	wr.wr.rdma.rkey = qe->data_key;
+	wr.wr.rdma.remote_addr = (uintptr_t) addr;
+	wr.wr.rdma.rkey = key;
 	wr.send_flags = IBV_SEND_SIGNALED;
 
 	ret = ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
