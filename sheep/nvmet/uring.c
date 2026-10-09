@@ -489,11 +489,13 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		}
 	}
 out_write:
-	if (res < 0) {
-		ctrl_err(ep, "tag %#x vdi %s failed, error %d", qe->tag,
-			 qe->opcode == nvme_cmd_write ? "write" : "read", res);
-		status = NVME_SC_INTERNAL;
-	} else if (qe->opcode == nvme_cmd_read) {
+	/*
+	 * Reaching here means success: real failures already set status
+	 * and jumped to out_rsp above. res itself is useless for this
+	 * check -- see the async_started comment in nofuse.h, it's always
+	 * -EINPROGRESS on both the kickoff and completion calls.
+	 */
+	if (qe->opcode == nvme_cmd_read) {
 		/* rma_write() sends the data and releases the tag itself. */
 		return ep->ops->rma_write(ep, qe, qe->data, qe->data_addr,
 					  qe->data_len, qe->data_key,
