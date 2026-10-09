@@ -304,7 +304,7 @@ static void rdma_destroy_queue(struct nofuse_queue *ep)
 	rdma_destroy_queue_pairs(ep);
 	rdma_destroy_completion_queues(ep);
 	if (ep->transport.rdma.cmd) {
-		ep->ops->dealloc_key(ep, ep->transport.rdma.cmd_mr);
+		ibv_dereg_mr(ep->transport.rdma.cmd_mr);
 		free(ep->transport.rdma.cmd);
 		ep->transport.rdma.cmd = NULL;
 	}
@@ -313,7 +313,6 @@ static void rdma_destroy_queue(struct nofuse_queue *ep)
 static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 {
 	int ret;
-	void *cmd, *mr;
 
 	ep->trtype = NVMF_TRTYPE_RDMA;
 	ep->transport.rdma.id = id;
@@ -331,20 +330,12 @@ static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
 	if (ret < 0)
 		goto out_destroy_qp;
 
-	if (posix_memalign(&cmd, PAGE_SIZE, PAGE_SIZE)) {
+	ep->transport.rdma.cmd = alloc_buffer(ep, PAGE_SIZE,
+					      &ep->transport.rdma.cmd_mr);
+	if (!ep->transport.rdma.cmd) {
 		rdma_destroy_queue(ep);
 		return -ENOMEM;
 	}
-	memset(cmd, 0, PAGE_SIZE);
-	ep->transport.rdma.cmd = cmd;
-
-	mr = ep->ops->alloc_key(ep, cmd, PAGE_SIZE);
-	if (!mr) {
-		rdma_destroy_queue(ep);
-		return -ENOMEM;
-	}
-
-	ep->transport.rdma.cmd_mr = mr;
 	return 0;
 out_destroy_qp:
 	rdma_destroy_queue_pairs(ep);
