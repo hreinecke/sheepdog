@@ -70,15 +70,15 @@ static inline uint32_t get_unaligned_le24(uint8_t *p)
 	uint32_t v;
 
 	v = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-		((uint32_t)p[1] << 16);
+		((uint32_t)p[2] << 16);
 	return v;
 }
 static inline uint32_t get_unaligned_le32(uint8_t *p)
 {
 	uint32_t v;
 
-	v = (uint32_t)p[0] | ((uint32_t)p[1] << 0) |
-		((uint32_t)p[1] << 16) | ((uint32_t)p[2]);
+	v = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+		((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 	return v;
 }
 #define uninitialized_var(x) x = x
