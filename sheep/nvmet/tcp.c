@@ -945,8 +945,12 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 		if (ret || ep->transport.tcp.recv_state != HANDLE_PDU)
 			return ret;
 	}
-	if (hdr->type == nvme_tcp_h2c_data)
-		return tcp_handle_h2c_data(ep, pdu);
+	if (hdr->type == nvme_tcp_h2c_data) {
+		ret = tcp_handle_h2c_data(ep, pdu);
+		ep->transport.tcp.recv_pdu_len = 0;
+		ep->transport.tcp.recv_state = RECV_PDU;
+		return ret;
+	}
 
 	if (hdr->type == nvme_tcp_h2c_term) {
 		ep->transport.tcp.recv_state = RECV_PDU;

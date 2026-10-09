@@ -926,7 +926,8 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->opcode = nvme_cmd_read;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
-	qe->data_remaining = le32toh(cmd->rw.length) * qe->ns->blksize;
+	/* NLB is 0's based: 0 means 1 block. */
+	qe->data_remaining = (le32toh(cmd->rw.length) + 1) * qe->ns->blksize;
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
 
@@ -956,7 +957,8 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->opcode = nvme_cmd_write;
 	qe->data_pos = le64toh(cmd->rw.slba) * qe->ns->blksize;
-	qe->data_remaining = le32toh(cmd->rw.length) * qe->ns->blksize;
+	/* NLB is 0's based: 0 means 1 block. */
+	qe->data_remaining = (le32toh(cmd->rw.length) + 1) * qe->ns->blksize;
 	qe->fua = (cdw12 & ((uint32_t)1 << 30));
 	qe->iovec.iov_base = qe->data;
 	qe->iovec.iov_len = qe->data_len;
@@ -1018,6 +1020,8 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 
 	qe->opcode = nvme_cmd_dsm;
 	qe->data_remaining = qe->data_len;
+	qe->iovec.iov_base = qe->data;
+	qe->iovec.iov_len = qe->data_len;
 
 	if (sgl_type == NVME_SGL_FMT_OFFSET) {
 		/* Inline data */
