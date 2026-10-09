@@ -408,6 +408,11 @@ void *rdma_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	int retry = POLL_TIMEOUT * 10;
+	/*
+	 * Accumulates idle time between admin-queue messages, in the same
+	 * ms unit as ep->kato_interval -- see the comment below.
+	 */
+	int idle_ms = 0;
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 	while (ep->state == CONNECTED) {
@@ -420,6 +425,7 @@ void *rdma_queue_thread(void *arg)
 		if (!ret) {
 			struct nvme_command *cmd = (void *)qe->data;
 			sd_info("qe data len %lu", qe->data_len);
+			idle_ms = 0;
 			ret = handle_request(ep, qe, cmd);
 		}
 		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
@@ -429,25 +435,18 @@ void *rdma_queue_thread(void *arg)
 					continue;
 				}
 				ctrl_err(ep, "no controller timeout");
+			} else if (ep->qid != 0) {
+				if (ep->ctrl->kato_countdown)
+					continue;
 			} else {
-				if (ep->qid != 0) {
-					if (ep->ctrl->kato_countdown)
-						continue;
-				} else {
-					/*
-					 * Unlike tcp_queue_thread()'s
-					 * io_uring_wait_cqe_timeout(), poll_for_msg()
-					 * here is a non-blocking ibv_poll_cq(): without
-					 * this sleep, an idle admin queue busy-spins
-					 * through the whole kato_countdown budget in
-					 * well under a second instead of over
-					 * RETRY_COUNT * kato_interval of real time.
-					 */
-					usleep(ep->kato_interval * 1000);
-					if (--ep->ctrl->kato_countdown > 0)
-						continue;
-					ctrl_err(ep, "kato timeout");
-				}
+				usleep(1000);
+				idle_ms += 1;
+				if (idle_ms < ep->kato_interval)
+					continue;
+				idle_ms = 0;
+				if (--ep->ctrl->kato_countdown > 0)
+					continue;
+				ctrl_err(ep, "kato timeout");
 			}
 		}
 		if (ret == -ENODATA) {

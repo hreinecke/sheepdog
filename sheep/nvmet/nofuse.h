@@ -338,7 +338,8 @@ static inline void set_response(struct nvme_completion *resp,
 
 static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)
 {
-	ctrl->kato_countdown = ctrl->kato;
+	if (ctrl)
+		ctrl->kato_countdown = ctrl->kato;
 }
 
 static inline uint32_t aen_pending(struct nofuse_ctrl *ctrl)
