@@ -420,8 +420,6 @@ void *rdma_queue_thread(void *arg)
 		if (!ret) {
 			struct nvme_command *cmd = (void *)qe->data;
 			sd_info("qe data len %lu", qe->data_len);
-			if (ep->ctrl)
-				kato_reset_counter(ep->ctrl);
 			ret = handle_request(ep, qe, cmd);
 		}
 		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
@@ -436,6 +434,16 @@ void *rdma_queue_thread(void *arg)
 					if (ep->ctrl->kato_countdown)
 						continue;
 				} else {
+					/*
+					 * Unlike tcp_queue_thread()'s
+					 * io_uring_wait_cqe_timeout(), poll_for_msg()
+					 * here is a non-blocking ibv_poll_cq(): without
+					 * this sleep, an idle admin queue busy-spins
+					 * through the whole kato_countdown budget in
+					 * well under a second instead of over
+					 * RETRY_COUNT * kato_interval of real time.
+					 */
+					usleep(ep->kato_interval * 1000);
 					if (--ep->ctrl->kato_countdown > 0)
 						continue;
 					ctrl_err(ep, "kato timeout");

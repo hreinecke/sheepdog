@@ -599,6 +599,9 @@ static int rdma_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	return 0;
 }
 
+static int rdma_send_msg(struct nofuse_queue *ep, struct ep_qe *qe,
+			 struct nvme_completion *comp);
+
 static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
 			  void *buf, uint64_t addr, size_t len,
 			  uint32_t key, void *_mr)
@@ -637,7 +640,17 @@ static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		return -ECONNRESET;
 	}
 
-	return 0;
+	/*
+	 * Unlike tcp_send_data() (whose last c2h_data PDU carries
+	 * NVME_TCP_F_DATA_SUCCESS, doubling as the completion), RDMA has no
+	 * such piggybacking: the data RDMA_WRITE above never tells the host
+	 * the command is done. Every caller of ops->rma_write expects it to
+	 * send the data *and* finish the command (see the comment in
+	 * uring_handle_qe()), so send the completion capsule here too.
+	 */
+	memset(&qe->resp, 0, sizeof(qe->resp));
+	set_response(&qe->resp, qe->ccid, NVME_SC_SUCCESS, true);
+	return rdma_send_msg(ep, qe, &qe->resp);
 }
 
 static int rdma_repost_recv(struct nofuse_queue *ep, struct ep_qe *qe)
@@ -714,6 +727,7 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 {
 	struct ibv_wc wc;
 	struct ep_qe *_qe;
+	struct nvme_command *cmd;
 	int ret;
 
 	ret = ibv_poll_cq(ep->transport.rdma.rcq, 1, &wc);
@@ -732,6 +746,9 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 	_qe = (struct ep_qe *) wc.wr_id;
 
 	_qe->data_len = wc.byte_len;
+	/* ccid is considered opaque; no endian conversion */
+	cmd = _qe->data;
+	_qe->ccid = cmd->common.command_id;
 	*qe = _qe;
 
 	return 0;
