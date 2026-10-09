@@ -731,10 +731,8 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 	int ret;
 
 	ret = ibv_poll_cq(ep->transport.rdma.rcq, 1, &wc);
-	if (ret < 0)
+	if (ret <= 0)
 		return ret;
-	if (!ret)
-		return -EAGAIN;
 
 	if (wc.status != IBV_WC_SUCCESS) {
 		if (wc.status != IBV_WC_WR_FLUSH_ERR)
@@ -751,7 +749,7 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 	_qe->ccid = cmd->common.command_id;
 	*qe = _qe;
 
-	return 0;
+	return 1;
 }
 
 static void *rdma_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)

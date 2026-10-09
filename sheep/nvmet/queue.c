@@ -422,20 +422,28 @@ void *rdma_queue_thread(void *arg)
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 		ret = ep->ops->poll_for_msg(ep, &qe);
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-		if (!ret) {
-			struct nvme_command *cmd = (void *)qe->data;
-			sd_info("qe data len %lu", qe->data_len);
-			idle_ms = 0;
-			ret = handle_request(ep, qe, cmd);
+		if (ret < 0) {
+			ctrl_err(ep, "poll error %d", ret);
+			break;
 		}
-		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
+		if (!ret) {
 			if (!ep->ctrl) {
 				if (--retry) {
 					usleep(100);
 					continue;
 				}
 				ctrl_err(ep, "no controller timeout");
-			} else if (ep->qid != 0) {
+				ret = -ETIMEDOUT;
+			}
+			ret = -EAGAIN;
+		} else if (ret > 0) {
+			struct nvme_command *cmd = (void *)qe->data;
+			sd_info("qe data len %lu", qe->data_len);
+			idle_ms = 0;
+			ret = handle_request(ep, qe, cmd);
+		}
+		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
+			if (ep->qid != 0) {
 				if (ep->ctrl->kato_countdown)
 					continue;
 			} else {
