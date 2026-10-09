@@ -38,8 +38,11 @@ endif
 
 if BUILD_NVMET
 sheep_SOURCES		+= nvmet/nofuse.c nvmet/nvmeof.c nvmet/port.c \
-			   nvmet/queue.c nvmet/tcp.c nvmet/rdma.c \
-			   nvmet/uring.c nvmet/vdi.c nvmet/configdb.c
+			   nvmet/queue.c nvmet/tcp.c nvmet/uring.c \
+			   nvmet/vdi.c nvmet/configdb.c
+if BUILD_RDMA
+sheep_SOURCES		+= nvmet/rdma.c
+endif
 if BUILD_CRYPTO
 sheep_SOURCES		+= nvmet/auth.c
 endif
@@ -94,7 +97,10 @@ sheep_LDADD		+= -lssl -lcrypto
 endif
 sheep_LDADD		+= -lkeyutils
 endif
-sheep_LDADD		+= -luring -lsqlite3 -libverbs -lrdmacm
+if BUILD_RDMA
+sheep_LDADD		+= -libverbs -lrdmacm
+endif
+sheep_LDADD		+= -luring -lsqlite3
 endif
 
 if BUILD_TRACE

@@ -30,7 +30,9 @@
 unsigned long genctr;
 
 int stopped;
+#ifdef HAVE_RDMA
 bool rdma_debug = true;
+#endif
 bool tcp_debug = true;
 bool cmd_debug = true;
 bool port_debug = true;

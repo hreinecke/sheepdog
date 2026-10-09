@@ -403,6 +403,7 @@ static void pop_free(void *arg)
 	free(ep);
 }
 
+#ifdef HAVE_RDMA
 void *rdma_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
@@ -454,7 +455,7 @@ void *rdma_queue_thread(void *arg)
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	pthread_exit(NULL);
 }
-
+#endif
 void *tcp_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;

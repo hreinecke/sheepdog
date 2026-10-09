@@ -1003,7 +1003,6 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
 
 static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 {
-	int ret;
 	uint8_t type, level = NVME_AER_NOTICE;
 	uint16_t log_page;
 	uint32_t result, pending;

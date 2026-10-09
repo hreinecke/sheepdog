@@ -33,7 +33,9 @@
 #include "nvme.h"
 #include "tcp.h"
 
+#ifdef HAVE_RDMA
 extern bool rdma_debug;
+#endif
 extern bool tcp_debug;
 extern bool cmd_debug;
 extern bool port_debug;
@@ -159,6 +161,7 @@ struct nofuse_queue {
 			int sockfd;
 			int recv_state;
 		} tcp;
+#ifdef HAVE_RDMA
 		struct {
 			struct nvme_command *cmd;
 			struct ibv_mr *cmd_mr;
@@ -169,6 +172,7 @@ struct nofuse_queue {
 			struct rdma_event_channel *ec;
 			struct rdma_cm_id *id;
 		} rdma;
+#endif
 	} transport;
 	int allocated_qsize;
 	int qsize;
@@ -241,10 +245,12 @@ struct nofuse_port {
 	struct list_head ep_list;
 	pthread_mutex_t ep_mutex;
 	union {
+#ifdef HAVE_RDMA
 		struct {
 			struct rdma_event_channel *ec;
 			struct rdma_cm_id *id;
 		} rdma;
+#endif
 		struct {
 			int listenfd;
 			bool tls;
@@ -374,7 +380,9 @@ void destroy_queue(struct nofuse_queue *ep);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
 void *tcp_queue_thread(void *arg);
+#ifdef HAVE_RDMA
 void *rdma_queue_thread(void *arg);
+#endif
 
 int default_subsys_type(const char *nqn);
 

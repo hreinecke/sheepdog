@@ -297,6 +297,16 @@ if test x$enable_gnutls = xyes -o x$enable_openssl = xyes; then
 		AC_DEFINE(HAVE_KEYUTILS, 1, [Have keyutils])
 	fi
 fi
+PKG_CHECK_MODULES([librdmacm],[librdmacm],
+	[have_rdma_cm="yes"],[have_rdma_cm="no"])
+PKG_CHECK_MODULES([libibverbs],[libibverbs],
+	[have_ibverbs="yes"],[have_ibverbs="no"])
+if test "x$have_rdma_cm" != xyes -a "x$have_ibverbs" = xyes; then
+	have_ibverbs=no
+fi
+AC_ARG_ENABLE([rdma],
+	[  --enable-rdma	: enable rdma (default yes) ],,
+	[ enable_rdma=$have_ibverbs ],)
 
 AC_ARG_ENABLE([nvmet],
 	[  --enable-nvmet	    : enable nvme-over-fabric target (default yes)],,
@@ -515,6 +525,11 @@ if test "x${enable_nvmet}" = xyes; then
 		fi
 		PACKAGE_FEATURES="$PACKAGE_FEATURES crypto"
 	fi
+	if test "x${enable_rdma}" = xyes; then
+		AC_DEFINE_UNQUOTED(HAVE_RDMA, 1, [enable rdma])
+		PACKAGE_FEATURES="$PACKAGE_FEATURES rdma"
+	fi
+	AM_CONDITIONAL(BUILD_RDMA, test "x${enable_rdma}" = xyes)
 	AM_CONDITIONAL(BUILD_TLS, test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes)
 fi
 AM_CONDITIONAL(BUILD_CRYPTO, test "x$enable_nvmet" = xyes -a \

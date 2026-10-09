@@ -143,8 +143,13 @@ static int start_listener(struct nofuse_port *port)
 	if (ret < 0)
 		return ret;
 	if (!strcmp(transport, "rdma")) {
+#ifdef HAVE_RDMA
 		port->ops = rdma_register_ops();
 		port->thread_func = rdma_queue_thread;
+#else
+		port_err(port, "rdma support disabled");
+		return -EINVAL;
+#endif
 	} else {
 		port->ops = tcp_register_ops();
 		port->thread_func = tcp_queue_thread;
