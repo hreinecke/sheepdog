@@ -1539,6 +1539,13 @@ static int sql_disc_entry_cb(void *argp, int argc, char **argv, char **colname)
 		entry->adrfam = NVMF_ADDR_FAMILY_LOOP;
 	if (entry->trtype == NVMF_TRTYPE_FC)
 		entry->adrfam = NVMF_ADDR_FAMILY_FC;
+	if (entry->trtype == NVMF_TRTYPE_RDMA) {
+		entry->adrfam = NVMF_ADDR_FAMILY_IP4;
+		entry->tsas.rdma.qptype = NVMF_RDMA_QPTYPE_CONNECTED;
+		entry->tsas.rdma.prtype = NVMF_RDMA_PRTYPE_ROCEV2;
+		entry->tsas.rdma.cms = NVMF_RDMA_CMS_RDMA_CM;
+		entry->tsas.rdma.pkey = 0;
+	}
 	if (entry->trtype == NVMF_TRTYPE_TCP &&
 	    (entry->adrfam != NVMF_ADDR_FAMILY_IP4 &&
 	     entry->adrfam != NVMF_ADDR_FAMILY_IP6)) {

@@ -204,8 +204,11 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 		 ns->nsid);
 	buf = xzalloc(256);
 	sprintf(buf, "%s:%u", this_ctx->traddr, this_ctx->trsvcid);
-	if (this_ctx->tls_keyring > 0)
-		strcat(buf, ":tls");
+	if (!strcmp(this_ctx->transport, "tcp")) {
+		if (this_ctx->tls_keyring > 0)
+			strcat(buf, ":tls");
+	} else if (!strcmp(this_ctx->transport, "rdma"))
+		strcat(buf, ":rdma");
 	sd_init_req(&req, unregister ?
 		    SD_OP_UNREGISTER_VDI : SD_OP_REGISTER_VDI);
 	req.vdi_lock.vid = ns->nsid;
