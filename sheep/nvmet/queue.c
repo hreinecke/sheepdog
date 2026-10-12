@@ -407,7 +407,8 @@ static void pop_free(void *arg)
 void *rdma_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
-	int retry = POLL_TIMEOUT * 10;
+	/* retry decrements once per 100us sleep below; wait POLL_TIMEOUT seconds total */
+	int retry = POLL_TIMEOUT * 10000;
 	/*
 	 * Accumulates idle time between admin-queue messages, in the same
 	 * ms unit as ep->kato_interval -- see the comment below.
@@ -434,8 +435,9 @@ void *rdma_queue_thread(void *arg)
 				}
 				ctrl_err(ep, "no controller timeout");
 				ret = -ETIMEDOUT;
+			} else {
+				ret = -EAGAIN;
 			}
-			ret = -EAGAIN;
 		} else if (ret > 0) {
 			struct nvme_command *cmd = (void *)qe->data;
 			sd_info("qe data len %lu", qe->data_len);
