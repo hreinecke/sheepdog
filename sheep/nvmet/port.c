@@ -19,10 +19,12 @@ LIST_HEAD(port_linked_list);
 static void *run_port(void *arg);
 
 struct nofuse_port *add_port(unsigned int id, const char *transport,
-			     const char *traddr, int trsvcid, int tls_keyring)
+			     const char *tsas, const char *traddr,
+			     int trsvcid, int tls_keyring)
 {
 	struct nofuse_port *port;
 	const char *adrfam = "ipv4";
+	const char *treq = "required";
 	int ret;
 
 	port = malloc(sizeof(*port));
@@ -37,25 +39,38 @@ struct nofuse_port *add_port(unsigned int id, const char *transport,
 	ret = configdb_add_port(id, transport, traddr, adrfam, trsvcid);
 	if (ret < 0) {
 		port_err(port, "cannot register port, error %d", ret);
-		free(port);
-		return NULL;
+		goto out_free_port;
 	}
 	
 	ret = configdb_add_ana_port_group(port->portid);
 	if (ret < 0) {
 		port_err(port, "cannot add ana group to port, error %d", ret);
-		configdb_del_port(port->portid);
-		free(port);
-		return NULL;
+		goto out_del_port;
 	}
-	if (tls_keyring > 0) {
-		ret = configdb_set_port_attr(port->portid, "tsas",
-					     "tls1.3");
-		if (!ret) {
-			ret = configdb_set_port_attr(port->portid, "treq",
-						     "not required");
-			if (!ret)
-                               port->transport.tcp.tls = true;
+	if (tls_keyring) {
+		if (!tsas) {
+			treq = "not required";
+			tsas = "tls1.3";
+		}
+	} else if (!strcmp(transport, "tcp"))
+		tsas = NULL;
+	else
+		treq = NULL;
+
+	if (tsas) {
+		ret = configdb_set_port_attr(port->portid, "tsas", tsas);
+		if (ret) {
+			port_err(port, "cannot set TSAS, error %d", ret);
+			goto out_del_port;
+		}
+		if (!strcmp(transport, "tcp"))
+			port->transport.tcp.tls = true;
+	}
+	if (treq) {
+		ret = configdb_set_port_attr(port->portid, "treq", treq);
+		if (ret) {
+			port_err(port, "cannot set TREQ, error %d", ret);
+			goto out_del_port;
 		}
 	}
 
@@ -66,6 +81,11 @@ struct nofuse_port *add_port(unsigned int id, const char *transport,
 	port_info(port, "created");
 
 	return port;
+out_del_port:
+	configdb_del_port(port->portid);
+out_free_port:
+	free(port);
+	return NULL;
 }
 
 int start_port(struct nofuse_port *port)

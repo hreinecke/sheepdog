@@ -51,6 +51,7 @@ struct nofuse_context {
 	struct sd_mutex event_lock;
 	char *dbname;
 	char *transport;
+	char *tsas;
 	char *traddr;
 	int tls_keyring;
 	unsigned int portid;
@@ -204,11 +205,10 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 		 ns->nsid);
 	buf = xzalloc(256);
 	sprintf(buf, "%s:%u", this_ctx->traddr, this_ctx->trsvcid);
-	if (!strcmp(this_ctx->transport, "tcp")) {
-		if (this_ctx->tls_keyring > 0)
-			strcat(buf, ":tls");
-	} else if (!strcmp(this_ctx->transport, "rdma"))
-		strcat(buf, ":rdma");
+	if (this_ctx->tsas) {
+		strcat(buf, ":");
+		strcat(buf, this_ctx->tsas);
+	}
 	sd_init_req(&req, unregister ?
 		    SD_OP_UNREGISTER_VDI : SD_OP_REGISTER_VDI);
 	req.vdi_lock.vid = ns->nsid;
@@ -576,12 +576,12 @@ retry:
 	for (int i = 0; i < rsp->data_length; i += sizeof(*vls)) {
 		struct sd_node *node, node_key;
 		const char *transport = "tcp";
+		char *tsas;
 		char *traddr;
 		const char *adrfam = "ipv4";
 		uint16_t trsvcid;
 		bool port_present;
 		bool tls = false;
-		bool rdma = false;
 
 		if (rsp->data_length - i < sizeof(*vls))
 			break;
@@ -599,14 +599,18 @@ retry:
 		}
 		port_present = configdb_check_port(node->zone + 1);
 
-		traddr = str_to_tr(vls->owner, &trsvcid, &tls, &rdma);
+		traddr = str_to_tr(vls->owner, &trsvcid, &tsas);
 		if (!traddr) {
 			sd_warn("failed to parse owner '%s'", vls->owner);
 			vls++;
 			continue;
 		}
-		if (rdma)
-			transport = "rdma";
+		if (tsas) {
+			if (!strcmp(tsas, "tls1.3"))
+				tls = true;
+			else
+				transport = "rdma";
+		}
 		if (!strchr(traddr, '.'))
 			adrfam = "ipv6";
 		if (lock_state == LOCK_STATE_LOCKED) {
@@ -634,12 +638,11 @@ retry:
 				vls++;
 				continue;
 			}
-			if (tls) {
-				configdb_set_port_attr(portid, "tsas",
-						       "tls1.3");
+			if (tsas)
+				configdb_set_port_attr(portid, "tsas", tsas);
+			if (tls)
 				configdb_set_port_attr(portid, "treq",
 						       "not required");
-			}
 			ret = configdb_add_ana_port_group(portid);
 			if (ret < 0) {
 				sd_warn("cannot register ana port group %d",
@@ -1221,6 +1224,8 @@ static void nofuse_cleanup(void *arg)
 		free(ctx->traddr);
 	if (ctx->transport)
 		free(ctx->transport);
+	if (ctx->tsas)
+		free(ctx->tsas);
 	free(ctx->dbname);
 	free(ctx);
 }
@@ -1259,7 +1264,7 @@ static void *nofuse_main(void *arg)
 
 	sd_debug("register nvmet '%s' port traddr '%s' trsvcid '%d'",
 		 ctx->transport, ctx->traddr, ctx->trsvcid);
-	port = add_port(agid, ctx->transport, ctx->traddr,
+	port = add_port(agid, ctx->transport, ctx->tsas, ctx->traddr,
 			ctx->trsvcid, ctx->tls_keyring);
 	if (!port) {
 		sd_err("failed to add nvmet port");
@@ -1359,7 +1364,8 @@ out_pop:
 	return NULL;
 }
 
-int nofuse_init(const char *transport, const char *traddr, int trsvcid)
+int nofuse_init(const char *transport, const char *tsas,
+		const char *traddr, int trsvcid)
 {
 	struct nofuse_context *ctx;
 	int err;
@@ -1371,9 +1377,35 @@ int nofuse_init(const char *transport, const char *traddr, int trsvcid)
 	if (!ctx)
 		return -1;
 	memset(ctx, 0, sizeof(struct nofuse_context));
-	if (strcmp(transport, "tcp") && strcmp(transport, "rdma"))
+	if (strcmp(transport, "tcp") && strcmp(transport, "rdma")) {
+		sd_err("Invalid transport '%s'", transport);
+		free(ctx);
 		return -1;
+	}
 	ctx->transport = strdup(transport);
+	if (tsas) {
+		if (!strcmp(transport, "tcp")) {
+			if (strncmp(tsas, "tls", 3)) {
+				sd_err("invalid transport mode '%s'", tsas);
+				free(ctx->transport);
+				free(ctx);
+				return -1;
+			}
+			ctx->tsas = strdup("tls1.3");
+		} else {
+			if (strcmp(tsas, "roce") &&
+			    strcmp(tsas, "rocev2") &&
+			    strcmp(tsas, "ib") &&
+			    strcmp(tsas, "iwarp")) {
+				sd_err("invalid transport mode '%s'", tsas);
+				free(ctx->transport);
+				free(ctx);
+				return -1;
+			}
+			ctx->tsas = strdup(tsas);
+		}
+	} else if (!strcmp(transport, "rdma"))
+		ctx->tsas = strdup("roce");
 	ctx->traddr = strdup(traddr);
 	ctx->trsvcid = trsvcid;
 	ctx->dbname = strdup("nofuse.sqlite");

@@ -25,7 +25,8 @@
 #endif
 
 #ifdef HAVE_NVMET
-extern int nofuse_init(const char *trtype, const char *traddr, int trsvcid);
+extern int nofuse_init(const char *trtype, const char *tsas,
+		       const char *traddr, int trsvcid);
 extern void nofuse_exit(void);
 #endif
 
@@ -163,6 +164,7 @@ static struct sd_option sheep_options[] = {
 	 recovery_help},
 #ifdef HAVE_NVMET
 	{'s', "trsvcid", true, "specify the transport service ID for nvmet"},
+	{'m', "tsas", true, "specify the transport mode for nvmet"},
 	{'a', "traddr", true, "specify the transport address for nvmet"},
 	{'t', "transport", true, "specify the transport type for nvmet"},
 #endif
@@ -826,6 +828,7 @@ int main(int argc, char **argv, char **envp)
 #endif
 #ifdef HAVE_NVMET
 	const char *transport = NULL;
+	const char *tsas = NULL;
 	const char *traddr = NULL;
 	unsigned int trsvcid = 0;
 #endif
@@ -898,6 +901,7 @@ int main(int argc, char **argv, char **envp)
 	transport = getenv("SHEEP_TRANSPORT");
 	if (!transport)
 		transport = "tcp";
+	tsas = getenv("SHEEP_TSAS");
 	if ((traddr = getenv("SHEEP_TRADDR"))) {
 		if (!inetaddr_is_valid(traddr))
 			traddr = NULL;
@@ -1068,6 +1072,9 @@ int main(int argc, char **argv, char **envp)
 #ifdef HAVE_NVMET
 		case 't':
 			transport = optarg;
+			break;
+		case 'm':
+			tsas = optarg;
 			break;
 		case 'a':
 			traddr = optarg;
@@ -1358,7 +1365,7 @@ int main(int argc, char **argv, char **envp)
 
 	#ifdef HAVE_NVMET
 	if (traddr) {
-		ret = nofuse_init(transport, traddr, trsvcid);
+		ret = nofuse_init(transport, tsas, traddr, trsvcid);
 		if (ret)
 			goto cleanup_journal;
 	}

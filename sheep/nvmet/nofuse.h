@@ -393,8 +393,9 @@ int del_host(const char *nqn);
 int add_subsys(const char *nqn, int type);
 int del_subsys(const char *nqn);
 
-struct nofuse_port *add_port(unsigned int id, const char *transport,
-			     const char *traddr, int trsvcid, int tls_keyring);
+struct nofuse_port *add_port(unsigned int id,const char *transport,
+			     const char *trmode, const char *traddr,
+			     int trsvcid, int tls_keyring);
 int del_port(struct nofuse_port *port);
 int start_port(struct nofuse_port *port);
 int stop_port(struct nofuse_port *port);
@@ -428,6 +429,7 @@ const uint8_t *lookup_dhchap_psk(struct sd_inode *inode,
 				 uint8_t *shash_id,
 				 size_t *key_len);
 
-int nofuse_init(const char *transport, const char *traddr, int trsvcid);
+int nofuse_init(const char *transport, const char *trmode,
+		const char *traddr, int trsvcid);
 void nofuse_exit(void);
 #endif

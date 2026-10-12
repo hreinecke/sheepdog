@@ -416,7 +416,7 @@ char *sockaddr_in_to_str(struct sockaddr_in *sockaddr)
 	return str;
 }
 
-char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls, bool *rdma)
+char *str_to_tr(const char *ipstr, uint16_t *port, char **trmode)
 {
 	char *hoststr = strdup(ipstr);
 	char *portstr = NULL, *t;
@@ -425,6 +425,7 @@ char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls, bool *rdma)
 		char *p = strchr(hoststr, ']');
 		if (!p) {
 			free(hoststr);
+			*trmode = NULL;
 			return NULL;
 		}
 		if (strlen(p) > 1 && p[1] == ':') {
@@ -438,15 +439,15 @@ char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls, bool *rdma)
 			portstr = p + 1;
 		}
 	}
-	if (!portstr)
+	if (!portstr) {
+		*trmode = NULL;
 		return hoststr;
+	}
 
 	t = strchr(portstr, ':');
 	if (t) {
-		if (tls && !strcmp(t, ":tls"))
-			*tls = true;
-		if (rdma && !strcmp(t, ":rdma"))
-			*rdma = true;
+		if (trmode)
+			*trmode = strdup(t + 1);
 		t[0] = '\0';
 	}
 	if (port) {
@@ -456,6 +457,8 @@ char *str_to_tr(const char *ipstr, uint16_t *port, bool *tls, bool *rdma)
 		p = strtoul(portstr, &end, 10);
 		if (portstr == end) {
 			free(hoststr);
+			free(*trmode);
+			*trmode = NULL;
 			return NULL;
 		}
 		*port = p;
@@ -473,7 +476,7 @@ int str_to_addr(const char *ipstr, uint8_t *addr, uint16_t *port)
 	int addr_start_idx;
 	char *hoststr = NULL;
 
-	hoststr = str_to_tr(ipstr, port, NULL, NULL);
+	hoststr = str_to_tr(ipstr, port, NULL);
 	if (!hoststr)
 		return -EINVAL;
 
