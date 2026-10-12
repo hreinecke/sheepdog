@@ -195,11 +195,11 @@ static int rdma_create_completion_queues(struct nofuse_queue *ep)
 	if (ret < 0)
 		goto err1;
 
-	rcq = ibv_create_cq(ctx, ep->qsize, NULL, ep->transport.rdma.comp, 0);
+	rcq = ibv_create_cq(ctx, ep->qsize, NULL, comp, 0);
 	if (!rcq)
 		goto err2;
 
-	scq = ibv_create_cq(ctx, ep->qsize, NULL, ep->transport.rdma.comp, 0);
+	scq = ibv_create_cq(ctx, ep->qsize, NULL, comp, 0);
 	if (!scq)
 		goto err3;
 
@@ -750,6 +750,47 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 	*qe = _qe;
 
 	return 1;
+}
+
+/*
+ * Block for up to timeout_ms waiting for a completion event on either of
+ * this queue's CQs (they share one completion channel), instead of
+ * busy-polling ibv_poll_cq() in a tight loop. Drains and re-arms every
+ * event the channel fd reports ready so a later ibv_poll_cq() call is
+ * guaranteed to see the completions that triggered it.
+ *
+ * Returns 1 if at least one event was processed, 0 on timeout, or a
+ * negative errno on error.
+ */
+int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms)
+{
+	struct ibv_comp_channel *comp = ep->transport.rdma.comp;
+	struct pollfd pfd = { .fd = comp->fd, .events = POLLIN };
+	int ret, got = 0;
+
+	ret = poll(&pfd, 1, timeout_ms);
+	if (ret <= 0)
+		return ret;
+
+	for (;;) {
+		struct ibv_cq *ev_cq;
+		void *ev_ctx;
+
+		ret = ibv_get_cq_event(comp, &ev_cq, &ev_ctx);
+		if (ret) {
+			if (errno == EAGAIN)
+				break;
+			return got ? got : -errno;
+		}
+		ibv_ack_cq_events(ev_cq, 1);
+		if (ibv_req_notify_cq(ev_cq, 0)) {
+			rdma_err(ep, "ibv_req_notify_cq failed, error %d",
+				 errno);
+			return got ? got : -errno;
+		}
+		got = 1;
+	}
+	return got;
 }
 
 static void *rdma_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)

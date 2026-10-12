@@ -383,6 +383,7 @@ void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 void *tcp_queue_thread(void *arg);
 #ifdef HAVE_RDMA
 void *rdma_queue_thread(void *arg);
+int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms);
 #endif
 
 int default_subsys_type(const char *nqn);

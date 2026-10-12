@@ -446,10 +446,12 @@ void *rdma_queue_thread(void *arg)
 		}
 		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
 			if (ep->qid != 0) {
-				if (ep->ctrl->kato_countdown)
+				if (ep->ctrl->kato_countdown) {
+					rdma_wait_for_msg(ep, 1000);
 					continue;
+				}
 			} else {
-				usleep(1000);
+				rdma_wait_for_msg(ep, 1);
 				idle_ms += 1;
 				if (idle_ms < ep->kato_interval)
 					continue;
