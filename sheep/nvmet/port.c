@@ -49,10 +49,10 @@ struct nofuse_port *add_port(unsigned int id, const char *transport,
 		return NULL;
 	}
 	if (tls_keyring > 0) {
-		ret = configdb_set_port_attr(port->portid, "addr_tsas",
+		ret = configdb_set_port_attr(port->portid, "tsas",
 					     "tls1.3");
 		if (!ret) {
-			ret = configdb_set_port_attr(port->portid, "addr_treq",
+			ret = configdb_set_port_attr(port->portid, "treq",
 						     "not required");
 			if (!ret)
                                port->transport.tcp.tls = true;
@@ -139,7 +139,7 @@ static int start_listener(struct nofuse_port *port)
 	char transport[8];
 	int ret;
 
-	ret = configdb_get_port_attr(port->portid, "addr_trtype", transport);
+	ret = configdb_get_port_attr(port->portid, "trtype", transport);
 	if (ret < 0)
 		return ret;
 	if (!strcmp(transport, "rdma")) {

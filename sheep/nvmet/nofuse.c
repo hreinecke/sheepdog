@@ -635,14 +635,10 @@ retry:
 				continue;
 			}
 			if (tls) {
-				configdb_set_port_attr(portid, "addr_tsas",
+				configdb_set_port_attr(portid, "tsas",
 						       "tls1.3");
-				configdb_set_port_attr(portid, "addr_treq",
+				configdb_set_port_attr(portid, "treq",
 						       "not required");
-			}
-			if (rdma) {
-				configdb_set_port_attr(portid, "addr_trtype",
-						       transport);
 			}
 			ret = configdb_add_ana_port_group(portid);
 			if (ret < 0) {

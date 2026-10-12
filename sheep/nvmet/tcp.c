@@ -289,17 +289,17 @@ static int tcp_init_listener(struct nofuse_port *port)
 	char adrfam_str[32];
 	sa_family_t adrfam = AF_INET;
 
-	ret = configdb_get_port_attr(port->portid, "addr_bindaddr", bindaddr);
+	ret = configdb_get_port_attr(port->portid, "bindaddr", bindaddr);
 	if (ret < 0) {
 		port_err(port, "failed to get bindaddr, error %d", ret);
 		return ret;
 	}
-	ret = configdb_get_port_attr(port->portid, "addr_trsvcid", trsvcid);
+	ret = configdb_get_port_attr(port->portid, "trsvcid", trsvcid);
 	if (ret < 0) {
 		port_err(port, "failed to get trsvcid, errot %d", ret);
 		return ret;
 	}
-	ret = configdb_get_port_attr(port->portid, "addr_adrfam", adrfam_str);
+	ret = configdb_get_port_attr(port->portid, "adrfam", adrfam_str);
 	if (ret < 0) {
 		port_err(port, "failed to get adrfam, error %d", ret);
 		return ret;

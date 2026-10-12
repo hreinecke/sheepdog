@@ -318,17 +318,17 @@ static const char *init_sql[NUM_TABLES] = {
 	"napg.s_id = NEW.subsys_id AND napg.nsid = NEW.nsid; END;",
 	/* ports */
 	"CREATE TABLE ports ( id INTEGER PRIMARY KEY, "
-	"addr_trtype CHAR(32) DEFAULT 'tcp', "
-	"addr_adrfam CHAR(32) DEFAULT 'ipv4', "
-	"addr_treq char(32) DEFAULT 'not specified', "
-	"addr_bindaddr CHAR(255) DEFAULT '0.0.0.0', "
-	"addr_traddr CHAR(255) DEFAULT '127.0.0.1', "
-	"addr_trsvcid CHAR(32) DEFAULT '4420', "
-	"addr_tsas CHAR(255) DEFAULT 'none', ctime TIME, "
-	"UNIQUE(addr_trtype,addr_adrfam,addr_traddr,addr_trsvcid) );",
+	"trtype CHAR(32) DEFAULT 'tcp', "
+	"adrfam CHAR(32) DEFAULT 'ipv4', "
+	"treq char(32) DEFAULT 'not specified', "
+	"bindaddr CHAR(255) DEFAULT '0.0.0.0', "
+	"traddr CHAR(255) DEFAULT '127.0.0.1', "
+	"trsvcid CHAR(32) DEFAULT '4420', "
+	"tsas CHAR(255) DEFAULT 'none', ctime TIME, "
+	"UNIQUE(trtype,adrfam,traddr,trsvcid) );",
 	/* port_addr_idx */
 	"CREATE UNIQUE INDEX port_addr_idx ON "
-	"ports(addr_trtype, addr_adrfam, addr_traddr, addr_trsvcid);",
+	"ports(trtype, adrfam, traddr, trsvcid);",
 	/* ana_port_group */
 	"CREATE TABLE ana_port_group ( "
 	"ana_group_id INT, ana_state INT DEFAULT '1', port_id INTEGER, "
@@ -946,7 +946,7 @@ int configdb_add_port(unsigned int portid, const char *transport,
 
 	ret = asprintf(&sql,
 		       "INSERT OR IGNORE INTO ports "
-		       "(id, addr_trtype, addr_traddr, addr_adrfam, addr_trsvcid, ctime)"
+		       "(id, trtype, traddr, adrfam, trsvcid, ctime)"
 		       " VALUES ('%d', '%s', '%s', '%s', '%u', CURRENT_TIMESTAMP);",
 		       portid, transport, traddr, adrfam, trsvcid);
 	if (ret < 0)
@@ -996,19 +996,19 @@ int configdb_set_port_attr(unsigned int port, const char *attr,
 	char *sql;
 	int ret;
 
-	if (!strcmp(attr, "addr_trtype")) {
+	if (!strcmp(attr, "trtype")) {
 		if (strcmp(value, "tcp")) {
 			return -EINVAL;
 		}
-	} else if (!strcmp(attr, "addr_adrfam")) {
+	} else if (!strcmp(attr, "adrfam")) {
 		if (strcmp(value, ADRFAM_STR_IPV4) &&
 		    strcmp(value, ADRFAM_STR_IPV6))
 			return -EINVAL;
-	} else if (!strcmp(attr, "addr_tsas")) {
+	} else if (!strcmp(attr, "tsas")) {
 		if (strcmp(value, "tls1.3") &&
 		    strcmp(value, "none"))
 			return -EINVAL;
-	} else if (!strcmp(attr, "addr_treq")) {
+	} else if (!strcmp(attr, "treq")) {
 		if (strcmp(value, "not required") &&
 		    strcmp(value, "required") &&
 		    strcmp(value, "not specified"))
@@ -1566,9 +1566,9 @@ next:
 
 static char any_disc_entry_sql[] =
 	"SELECT s.nqn AS subsys_nqn, "
-	"p.id, s.type AS subtype, p.addr_trtype AS trtype, "
-	"p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
-	"p.addr_treq AS treq, p.addr_tsas AS tsas "
+	"p.id, s.type AS subtype, p.trtype AS trtype, "
+	"p.traddr AS traddr, p.trsvcid AS trsvcid, "
+	"p.treq AS treq, p.tsas AS tsas "
 	"FROM subsys_port AS sp "
 	"INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 	"INNER JOIN ports AS p ON sp.port_id = p.id "
@@ -1586,9 +1586,9 @@ int configdb_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len)
 
 	ret = asprintf(&sql,
 		       "SELECT s.nqn AS subsys_nqn, "
-		       "p.id, s.type AS subtype, p.addr_trtype AS trtype, "
-		       "p.addr_traddr AS traddr, p.addr_trsvcid AS trsvcid, "
-		       "p.addr_treq AS treq, p.addr_tsas AS tsas "
+		       "p.id, s.type AS subtype, p.trtype AS trtype, "
+		       "p.traddr AS traddr, p.trsvcid AS trsvcid, "
+		       "p.treq AS treq, p.tsas AS tsas "
 		       "FROM subsys_port AS sp "
 		       "INNER JOIN subsystems AS s ON s.oid = sp.subsys_id "
 		       "INNER JOIN host_subsys AS hs ON hs.subsys_id = sp.subsys_id "
