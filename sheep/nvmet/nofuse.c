@@ -924,7 +924,7 @@ out_unlock:
 
 static void process_nofuse_event(struct nofuse_event *ev)
 {
-	if (!this_ctx || stopped) {
+	if (!this_ctx) {
 		sd_warn("Ignoring event '%d', nvmet not running",
 			ev->type);
 		return;
@@ -976,7 +976,7 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	int ret;
 	struct nofuse_subsystem *new, *subsys = xzalloc(sizeof(*subsys));
 
-	if (!this_ctx || stopped) {
+	if (!this_ctx) {
 		sd_warn("Ignoring register subsystem '%s', nvmet not running",
 			subsysnqn);
 		return 0;
@@ -1322,6 +1322,7 @@ static void *nofuse_main(void *arg)
 
 	pthread_cleanup_push(nofuse_stop, arg);
 
+	stopped = 0;
 	ret = start_port(port);
 	if (ret) {
 		sd_err("failed to start nvmet port");
