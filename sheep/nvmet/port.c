@@ -60,7 +60,8 @@ struct nofuse_port *add_port(unsigned int id, const char *transport,
 	if (tsas) {
 		ret = configdb_set_port_attr(port->portid, "tsas", tsas);
 		if (ret) {
-			port_err(port, "cannot set TSAS, error %d", ret);
+			port_err(port, "cannot set TSAS to '%s', error %d",
+				 tsas, ret);
 			goto out_del_port;
 		}
 		if (!strcmp(transport, "tcp"))
@@ -69,7 +70,8 @@ struct nofuse_port *add_port(unsigned int id, const char *transport,
 	if (treq) {
 		ret = configdb_set_port_attr(port->portid, "treq", treq);
 		if (ret) {
-			port_err(port, "cannot set TREQ, error %d", ret);
+			port_err(port, "cannot set TREQ to '%s', error %d",
+				 treq, ret);
 			goto out_del_port;
 		}
 	}

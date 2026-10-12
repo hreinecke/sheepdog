@@ -924,6 +924,11 @@ out_unlock:
 
 static void process_nofuse_event(struct nofuse_event *ev)
 {
+	if (!this_ctx || stopped) {
+		sd_warn("Ignoring event '%d', nvmet not running",
+			ev->type);
+		return;
+	}
 	switch (ev->type) {
 	case NOFUSE_EVENT_ACL_CHANGE:
 		sd_debug("process 'ACL CHANGE' event");
@@ -971,6 +976,11 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	int ret;
 	struct nofuse_subsystem *new, *subsys = xzalloc(sizeof(*subsys));
 
+	if (!this_ctx || stopped) {
+		sd_warn("Ignoring register subsystem '%s', nvmet not running",
+			subsysnqn);
+		return 0;
+	}
 	strcpy(subsys->nqn, subsysnqn);
 	sd_mutex_lock(&this_ctx->subsys_lock);
 	subsys->id = subsys_id;
@@ -1021,6 +1031,11 @@ int nvmet_unregister_subsystem(uint32_t subsys_id)
 	struct nofuse_subsystem *subsys;
 	int ret;
 
+	if (!this_ctx || stopped) {
+		sd_warn("Ignoring unregister subsystem '%06x', nvmet not running",
+			subsys_id);
+		return 0;
+	}
 	sd_debug("unregister subsystem %06x", subsys_id);
 	sd_mutex_lock(&this_ctx->subsys_lock);
 	subsys = lookup_subsystem_by_id(subsys_id);
@@ -1230,6 +1245,11 @@ static void nofuse_cleanup(void *arg)
 	free(ctx);
 }
 
+static void nofuse_stop(void *arg)
+{
+	stopped = 1;
+}
+
 static void *nofuse_main(void *arg)
 {
 	struct nofuse_context *ctx = arg;
@@ -1300,12 +1320,13 @@ static void *nofuse_main(void *arg)
 		goto out_destroy;
 	}
 
-	stopped = 0;
+	pthread_cleanup_push(nofuse_stop, arg);
 
 	ret = start_port(port);
 	if (ret) {
 		sd_err("failed to start nvmet port");
-		goto out_destroy;
+		stopped = 1;
+		goto out_stop;
 	}
 
 	/*
@@ -1344,6 +1365,8 @@ static void *nofuse_main(void *arg)
 		}
 	}
 
+out_stop:
+	pthread_cleanup_pop(1);
 out_destroy:
 	rb_destroy(&this_ctx->subsys_root, struct nofuse_subsystem, rb);
 out_close:
@@ -1372,6 +1395,9 @@ int nofuse_init(const char *transport, const char *tsas,
 
 	if (!traddr)
 		return 0;
+
+	/* Indicate that we are starting up */
+	stopped = 1;
 
 	ctx = malloc(sizeof(struct nofuse_context));
 	if (!ctx)
