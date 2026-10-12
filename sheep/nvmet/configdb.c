@@ -1004,10 +1004,6 @@ int configdb_set_port_attr(unsigned int port, const char *attr,
 		if (strcmp(value, ADRFAM_STR_IPV4) &&
 		    strcmp(value, ADRFAM_STR_IPV6))
 			return -EINVAL;
-	} else if (!strcmp(attr, "tsas")) {
-		if (strcmp(value, "tls1.3") &&
-		    strcmp(value, "none"))
-			return -EINVAL;
 	} else if (!strcmp(attr, "treq")) {
 		if (strcmp(value, "not required") &&
 		    strcmp(value, "required") &&
