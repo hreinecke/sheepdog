@@ -407,13 +407,7 @@ static void pop_free(void *arg)
 void *rdma_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
-	/* retry decrements once per 100us sleep below; wait POLL_TIMEOUT seconds total */
-	int retry = POLL_TIMEOUT * 10000;
-	/*
-	 * Accumulates idle time between admin-queue messages, in the same
-	 * ms unit as ep->kato_interval -- see the comment below.
-	 */
-	int idle_ms = 0;
+	int retry = POLL_TIMEOUT * 1000 / ep->kato_interval;
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 	while (ep->state == CONNECTED) {
@@ -429,38 +423,26 @@ void *rdma_queue_thread(void *arg)
 		}
 		if (!ret) {
 			if (!ep->ctrl) {
-				if (--retry) {
-					usleep(100);
+				if (--retry)
 					continue;
-				}
 				ctrl_err(ep, "no controller timeout");
 				ret = -ETIMEDOUT;
-			} else {
-				ret = -EAGAIN;
+				break;
 			}
-		} else if (ret > 0) {
+			ret = -EAGAIN;
+		}
+		if (ret > 0) {
 			struct nvme_command *cmd = (void *)qe->data;
 			sd_info("qe data len %lu", qe->data_len);
-			idle_ms = 0;
 			ret = handle_request(ep, qe, cmd);
+		} else {
+			if (--ep->ctrl->kato_countdown > 0)
+				continue;
+			ctrl_err(ep, "kato timeout");
+			ret = -ETIMEDOUT;
 		}
-		if (ret == -EAGAIN || ret == -ETIME || ret == -EINPROGRESS) {
-			if (ep->qid != 0) {
-				if (ep->ctrl->kato_countdown) {
-					rdma_wait_for_msg(ep, 1000);
-					continue;
-				}
-			} else {
-				rdma_wait_for_msg(ep, 1);
-				idle_ms += 1;
-				if (idle_ms < ep->kato_interval)
-					continue;
-				idle_ms = 0;
-				if (--ep->ctrl->kato_countdown > 0)
-					continue;
-				ctrl_err(ep, "kato timeout");
-			}
-		}
+		if (ret == -EAGAIN || ret == -EINPROGRESS)
+			continue;
 		if (ret == -ENODATA) {
 			ctrl_info(ep, "connection closed");
 			break;

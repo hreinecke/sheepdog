@@ -722,14 +722,59 @@ static int rdma_send_msg(struct nofuse_queue *ep, struct ep_qe *qe,
 	return 0;
 }
 
+/*
+ * Block for up to timeout_ms waiting for a completion event on either of
+ * this queue's CQs (they share one completion channel), instead of
+ * busy-polling ibv_poll_cq() in a tight loop. Drains and re-arms every
+ * event the channel fd reports ready so a later ibv_poll_cq() call is
+ * guaranteed to see the completions that triggered it.
+ *
+ * Returns 1 if at least one event was processed, 0 on timeout, or a
+ * negative errno on error.
+ */
+int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms)
+{
+	struct ibv_comp_channel *comp = ep->transport.rdma.comp;
+	struct pollfd pfd = { .fd = comp->fd, .events = POLLIN };
+	struct ibv_cq *ev_cq;
+	void *ev_ctx;
+	int ret;
+
+	ret = poll(&pfd, 1, timeout_ms);
+	if (ret < 0)
+		return -errno;
+	if (ret == 0)
+		return -ESHUTDOWN;
+
+	ret = ibv_get_cq_event(comp, &ev_cq, &ev_ctx);
+	if (ret) {
+		rdma_err(ep, "ibv_get_cq_event failed, error %d");
+		return -errno;
+	}
+	ibv_ack_cq_events(ev_cq, 1);
+	if (ibv_req_notify_cq(ev_cq, 0)) {
+		rdma_err(ep, "ibv_req_notify_cq failed, error %d",
+			 errno);
+		return -errno;
+	}
+	return 0;
+}
+
 static int rdma_poll_for_msg(struct nofuse_queue *ep,
 			     struct ep_qe **qe)
 {
+	struct ibv_comp_channel *comp = ep->transport.rdma.comp;
+	struct pollfd pfd = { .fd = comp->fd, .events = POLLIN };
+	struct timeval tv;
+	fd_set fds;
 	struct ibv_wc wc;
 	struct ep_qe *_qe;
 	struct nvme_command *cmd;
 	int ret;
 
+	ret = rdma_wait_for_msg(ep, ep->kato_interval * 10);
+	if (ret < 0)
+		return ret;
 	ret = ibv_poll_cq(ep->transport.rdma.rcq, 1, &wc);
 	if (ret <= 0)
 		return ret;
@@ -750,47 +795,6 @@ static int rdma_poll_for_msg(struct nofuse_queue *ep,
 	*qe = _qe;
 
 	return 1;
-}
-
-/*
- * Block for up to timeout_ms waiting for a completion event on either of
- * this queue's CQs (they share one completion channel), instead of
- * busy-polling ibv_poll_cq() in a tight loop. Drains and re-arms every
- * event the channel fd reports ready so a later ibv_poll_cq() call is
- * guaranteed to see the completions that triggered it.
- *
- * Returns 1 if at least one event was processed, 0 on timeout, or a
- * negative errno on error.
- */
-int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms)
-{
-	struct ibv_comp_channel *comp = ep->transport.rdma.comp;
-	struct pollfd pfd = { .fd = comp->fd, .events = POLLIN };
-	int ret, got = 0;
-
-	ret = poll(&pfd, 1, timeout_ms);
-	if (ret <= 0)
-		return ret;
-
-	for (;;) {
-		struct ibv_cq *ev_cq;
-		void *ev_ctx;
-
-		ret = ibv_get_cq_event(comp, &ev_cq, &ev_ctx);
-		if (ret) {
-			if (errno == EAGAIN)
-				break;
-			return got ? got : -errno;
-		}
-		ibv_ack_cq_events(ev_cq, 1);
-		if (ibv_req_notify_cq(ev_cq, 0)) {
-			rdma_err(ep, "ibv_req_notify_cq failed, error %d",
-				 errno);
-			return got ? got : -errno;
-		}
-		got = 1;
-	}
-	return got;
 }
 
 static void *rdma_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)
