@@ -268,7 +268,7 @@ static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 		return NULL;
 	}
 
-	io_uring_prep_poll_add(sqe, ep->transport.fd, poll_flags);
+	io_uring_prep_poll_add(sqe, ep->fd, poll_flags);
 	io_uring_sqe_set_data(sqe, ep);
 
 	ret = io_uring_submit(&ep->uring);
@@ -428,12 +428,12 @@ void *epoll_queue_thread(void *arg)
 		goto out_disconnect;
 	}
 	ev.events = EPOLLIN;
-	ev.data.fd = ep->transport.fd;
+	ev.data.fd = ep->fd;
 
 	pthread_cleanup_push(pop_epoll_close, ep);
 
 	if (epoll_ctl(ep->io_pollfd, EPOLL_CTL_ADD,
-		      ep->transport.fd, &ev) < 0) {
+		      ep->fd, &ev) < 0) {
 		ctrl_err(ep, "epoll_ctl add fd error %d", -errno);
 		goto out_epoll_close;
 	}

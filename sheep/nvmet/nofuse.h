@@ -155,8 +155,8 @@ struct nofuse_queue {
 	unsigned int qnum;
 	int io_evtfd;
 	int io_pollfd;
+	int fd;
 	union {
-		int fd;
 		struct {
 			union nvme_tcp_pdu *recv_pdu;
 			int recv_pdu_len;

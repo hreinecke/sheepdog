@@ -213,7 +213,7 @@ static int rdma_create_completion_queues(struct nofuse_queue *ep)
 	ep->transport.rdma.rcq = rcq;
 	ep->transport.rdma.scq = scq;
 	ep->transport.rdma.comp = comp;
-	ep->transport.fd = comp->fd;
+	ep->fd = comp->fd;
 
 	return 0;
 err4:
@@ -241,7 +241,7 @@ static void rdma_destroy_completion_queues(struct nofuse_queue *ep)
 	if (ep->transport.rdma.comp) {
 		ibv_destroy_comp_channel(ep->transport.rdma.comp);
 		ep->transport.rdma.comp = NULL;
-		ep->transport.fd = -1;
+		ep->fd = -1;
 	}
 	if (ep->transport.rdma.pd) {
 		ibv_dealloc_pd(ep->transport.rdma.pd);

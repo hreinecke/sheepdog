@@ -144,7 +144,7 @@ int tls_handshake(struct nofuse_queue *ep)
 		ret = -ENOPROTOOPT;
 		goto out_ctx_free;
 	}
-	SSL_set_fd(ep->ssl, ep->transport.fd);
+	SSL_set_fd(ep->ssl, ep->fd);
 	SSL_set_accept_state(ep->ssl);
 
 retry_handshake:
