@@ -426,7 +426,7 @@ void *rdma_queue_thread(void *arg)
 				if (--retry)
 					continue;
 				ctrl_err(ep, "no controller timeout");
-				ret = -ETIMEDOUT;
+				ret = -ETIME;
 				break;
 			}
 			ret = -EAGAIN;
@@ -439,7 +439,7 @@ void *rdma_queue_thread(void *arg)
 			if (--ep->ctrl->kato_countdown > 0)
 				continue;
 			ctrl_err(ep, "kato timeout");
-			ret = -ETIMEDOUT;
+			ret = -ETIME;
 		}
 		if (ret == -EAGAIN || ret == -EINPROGRESS)
 			continue;

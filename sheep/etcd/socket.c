@@ -51,7 +51,7 @@ static int ne_status_to_errno(int ne_status)
 		ret = -ENETUNREACH;
 		break;
 	case NE_TIMEOUT:
-		ret = -ETIMEDOUT;
+		ret = -ETIME;
 		break;
 	case NE_REDIRECT:
 		ret = -EAGAIN;

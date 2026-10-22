@@ -82,7 +82,7 @@ static int gnutls_ep_wait(struct nofuse_queue *ep, short events)
 	if (ret < 0)
 		return -errno;
 	if (ret == 0)
-		return -ETIMEDOUT;
+		return -ETIME;
 	return 0;
 }
 

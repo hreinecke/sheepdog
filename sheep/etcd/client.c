@@ -1211,7 +1211,7 @@ retry:
 	if (ret < 0) {
 		sd_debug("%s: cluster id failed, error %d",
 		       __func__, ret);
-		if ((ret == -ENETUNREACH || ret == -ETIMEDOUT) && tmo) {
+		if ((ret == -ENETUNREACH || ret == -ETIME) && tmo) {
 			sleep(1);
 			tmo--;
 			goto retry;

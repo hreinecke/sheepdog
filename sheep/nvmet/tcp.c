@@ -77,7 +77,7 @@ static int tcp_ep_wait(struct nofuse_queue *ep, short events)
 	if (ret < 0)
 		return -errno;
 	if (ret == 0)
-		return -ETIMEDOUT;
+		return -ETIME;
 	return 0;
 }
 
@@ -418,7 +418,7 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 	ret = ep->io_ops->io_wait(ep, POLLIN);
 	if (ret < 0) {
 		tcp_err(ep, "timeout waiting for icreq");
-		return -ETIMEDOUT;
+		return -ETIME;
 	}
 	ret = ep->io_ops->io_read(ep, icreq, hdr_len);
 	if (ret < 0) {
@@ -443,7 +443,7 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 	ret = ep->io_ops->io_wait(ep, POLLIN);
 	if (ret < 0) {
 		tcp_err(ep, "timeout waiting for rest of icreq");
-		ret = -ETIMEDOUT;
+		ret = -ETIME;
 		goto out_free;
 	}
 	ret = ep->io_ops->io_read(ep, (uint8_t *)icreq + hdr_len, len);
@@ -531,7 +531,7 @@ static int tcp_wait_for_connection(struct nofuse_port *port, void **id)
 		return -ESHUTDOWN;
 
 	if (ret <= 0)
-		return ret ? ret : -ETIMEDOUT;
+		return ret ? ret : -ETIME;
 
 	fd = accept(port->transport.tcp.listenfd, (struct sockaddr *) NULL,
 		    NULL);
