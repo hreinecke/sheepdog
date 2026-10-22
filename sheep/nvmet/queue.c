@@ -11,6 +11,7 @@
 #include <inttypes.h>
 #include <arpa/inet.h>
 #include <sys/poll.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 
 #include "sheep.h"
@@ -254,6 +255,7 @@ retry:
 	return 0;
 }
 
+#ifdef HAVE_IO_URING
 static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 					      int poll_flags)
 {
@@ -266,7 +268,7 @@ static struct io_uring_sqe *queue_submit_poll(struct nofuse_queue *ep,
 		return NULL;
 	}
 
-	io_uring_prep_poll_add(sqe, ep->transport.tcp.sockfd, poll_flags);
+	io_uring_prep_poll_add(sqe, ep->transport.fd, poll_flags);
 	io_uring_sqe_set_data(sqe, ep);
 
 	ret = io_uring_submit(&ep->uring);
@@ -307,6 +309,7 @@ static struct io_uring_sqe *queue_submit_io_evtfd_poll(struct nofuse_queue *ep)
 	}
 	return sqe;
 }
+#endif
 
 static int queue_submit_cancel(struct nofuse_queue *ep)
 {
@@ -371,14 +374,6 @@ static void pop_disconnect(void *arg)
 	disconnect_queue(ep);
 }
 
-static void pop_uring_exit(void *arg)
-{
-	struct nofuse_queue *ep = arg;
-
-	ep->state = STOPPED;
-	io_uring_queue_exit(&ep->uring);
-}
-
 static void pop_free(void *arg)
 {
 	struct nofuse_queue *ep = arg;
@@ -403,19 +398,54 @@ static void pop_free(void *arg)
 	free(ep);
 }
 
-#ifdef HAVE_RDMA
-void *rdma_queue_thread(void *arg)
+static void pop_epoll_close(void *arg)
 {
 	struct nofuse_queue *ep = arg;
+
+	ep->state = STOPPED;
+	close(ep->io_pollfd);
+}
+
+void *epoll_queue_thread(void *arg)
+{
+	struct nofuse_queue *ep = arg;
+	sigset_t set;
+	struct epoll_event ev;
 	int retry = POLL_TIMEOUT * 1000 / ep->kato_interval;
+
+	pthread_cleanup_push(pop_free, ep);
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGPIPE);
+	pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+	pthread_cleanup_push(pop_disconnect, ep);
+
+	ep->io_pollfd = epoll_create(1);
+	if (ep->io_pollfd < 0) {
+		ctrl_err(ep, "epoll_create error %d", -errno);
+		ep->state = STOPPED;
+		goto out_disconnect;
+	}
+	ev.events = EPOLLIN;
+	ev.data.fd = ep->transport.fd;
+
+	pthread_cleanup_push(pop_epoll_close, ep);
+
+	if (epoll_ctl(ep->io_pollfd, EPOLL_CTL_ADD,
+		      ep->transport.fd, &ev) < 0) {
+		ctrl_err(ep, "epoll_ctl add fd error %d", -errno);
+		goto out_epoll_close;
+	}
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 	while (ep->state == CONNECTED) {
-		struct ep_qe *qe;
+		struct timeval tv;
 		int ret;
 
+		gettimeofday(&tv, NULL);
 		pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-		ret = ep->ops->poll_for_msg(ep, &qe);
+		ret = epoll_wait(ep->io_pollfd, &ev, 1, ep->kato_interval);
 		pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 		if (ret < 0) {
 			ctrl_err(ep, "poll error %d", ret);
@@ -430,19 +460,16 @@ void *rdma_queue_thread(void *arg)
 				break;
 			}
 			ret = -EAGAIN;
+			continue;
 		}
-		if (ret > 0) {
-			struct nvme_command *cmd = (void *)qe->data;
-			sd_info("qe data len %lu", qe->data_len);
-			ret = handle_request(ep, qe, cmd);
-		} else {
+		ret = ep->ops->handle_msg(ep);
+		if (ret == 0) {
 			if (--ep->ctrl->kato_countdown > 0)
 				continue;
 			ctrl_err(ep, "kato timeout");
 			ret = -ETIME;
-		}
-		if (ret == -EAGAIN || ret == -EINPROGRESS)
 			continue;
+		}
 		if (ret == -ENODATA) {
 			ctrl_info(ep, "connection closed");
 			break;
@@ -454,10 +481,28 @@ void *rdma_queue_thread(void *arg)
 		}
 	}
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+out_epoll_close:
+	pthread_cleanup_pop(1);
+out_disconnect:
+	pthread_cleanup_pop(1);
+
+	pthread_cleanup_pop(1);
+
 	pthread_exit(NULL);
+
+	return NULL;
 }
-#endif
-void *tcp_queue_thread(void *arg)
+
+#ifdef HAVE_IO_URING
+static void pop_uring_exit(void *arg)
+{
+	struct nofuse_queue *ep = arg;
+
+	ep->state = STOPPED;
+	io_uring_queue_exit(&ep->uring);
+}
+
+void *uring_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	struct io_uring_sqe *pollin_sqe = NULL;
@@ -603,6 +648,7 @@ out_disconnect:
 
 	return NULL;
 }
+#endif
 
 struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 {

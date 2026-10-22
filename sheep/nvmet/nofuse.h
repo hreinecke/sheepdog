@@ -153,12 +153,14 @@ struct nofuse_queue {
 	uint32_t qes_map[NVMF_SQ_DEPTH / 8];
 	unsigned int qes_map_index;
 	unsigned int qnum;
+	int io_evtfd;
+	int io_pollfd;
 	union {
+		int fd;
 		struct {
 			union nvme_tcp_pdu *recv_pdu;
 			int recv_pdu_len;
 			union nvme_tcp_pdu *send_pdu;
-			int sockfd;
 			int recv_state;
 		} tcp;
 #ifdef HAVE_RDMA
@@ -182,7 +184,6 @@ struct nofuse_queue {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
-	int io_evtfd;
 	struct list_head io_done_list;
 	pthread_mutex_t io_done_lock;
 	/*
@@ -380,10 +381,9 @@ struct nofuse_queue *create_queue(void *id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
 void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
-void *tcp_queue_thread(void *arg);
-#ifdef HAVE_RDMA
-void *rdma_queue_thread(void *arg);
-int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms);
+void *epoll_queue_thread(void *arg);
+#ifdef HAVE_IO_URING
+void *uring_queue_thread(void *arg);
 #endif
 
 int default_subsys_type(const char *nqn);

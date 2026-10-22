@@ -43,12 +43,12 @@
 
 static int tcp_ep_read(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
-	return read(ep->transport.tcp.sockfd, buf, buf_len);
+	return read(ep->transport.fd, buf, buf_len);
 }
 
 static int tcp_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 {
-	return write(ep->transport.tcp.sockfd, buf, buf_len);
+	return write(ep->transport.fd, buf, buf_len);
 }
 
 /*
@@ -65,7 +65,7 @@ static int tcp_ep_write(struct nofuse_queue *ep, void *buf, size_t buf_len)
 static int tcp_ep_wait(struct nofuse_queue *ep, short events)
 {
 	struct pollfd pfd = {
-		.fd = ep->transport.tcp.sockfd,
+		.fd = ep->transport.fd,
 		.events = events,
 	};
 	int ret;
@@ -99,11 +99,11 @@ static int tcp_create_queue(struct nofuse_queue *ep, void *id, int depth)
 
 	ep->trtype = NVMF_TRTYPE_TCP;
 	ep->io_ops = tcp_register_io_ops();
-	ep->transport.tcp.sockfd = *conn;
+	ep->transport.fd = *conn;
 	free(conn);
 
-	flags = fcntl(ep->transport.tcp.sockfd, F_GETFL);
-	fcntl(ep->transport.tcp.sockfd, F_SETFL, flags | O_NONBLOCK);
+	flags = fcntl(ep->transport.fd, F_GETFL);
+	fcntl(ep->transport.fd, F_SETFL, flags | O_NONBLOCK);
 
 	ep->transport.tcp.send_pdu = malloc(sizeof(union nvme_tcp_pdu));
 	if (!ep->transport.tcp.send_pdu) {
@@ -167,9 +167,9 @@ static void tcp_destroy_queue(struct nofuse_queue *ep)
 		ep->transport.tcp.send_pdu = NULL;
 	}
 	tls_free_queue(ep);
-	if (ep->transport.tcp.sockfd >= 0) {
-		close(ep->transport.tcp.sockfd);
-		ep->transport.tcp.sockfd = -1;
+	if (ep->transport.fd >= 0) {
+		close(ep->transport.fd);
+		ep->transport.fd = -1;
 	}
 }
 
@@ -391,7 +391,7 @@ static int tcp_accept_connection(struct nofuse_queue *ep)
 	memset(icreq, 0, sizeof(*icreq));
 
 	hdr_len = sizeof(struct nvme_tcp_hdr);
-	ret = recv(ep->transport.tcp.sockfd, icreq, hdr_len, MSG_PEEK);
+	ret = recv(ep->transport.fd, icreq, hdr_len, MSG_PEEK);
 	if (ret < 0) {
 		if (errno != EAGAIN)
 			tcp_err(ep, "icreq header peek error %d", errno);
