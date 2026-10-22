@@ -464,11 +464,16 @@ void *epoll_queue_thread(void *arg)
 		}
 		ret = ep->ops->handle_msg(ep);
 		if (ret == 0) {
-			if (--ep->ctrl->kato_countdown > 0)
-				continue;
-			ctrl_err(ep, "kato timeout");
-			ret = -ETIME;
-			continue;
+			if (ep->qid != 0) {
+				if (ep->ctrl->kato_countdown)
+					continue;
+				ret = -ETIME;
+			} else {
+				if (--ep->ctrl->kato_countdown > 0)
+					continue;
+				ctrl_err(ep, "kato timeout");
+				ret = -ETIME;
+			}
 		}
 		if (ret == -ENODATA) {
 			ctrl_info(ep, "connection closed");
