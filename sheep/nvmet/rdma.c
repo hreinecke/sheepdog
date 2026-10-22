@@ -292,6 +292,11 @@ static void rdma_destroy_queue(struct nofuse_queue *ep)
 	struct ep_qe *qe = ep->qes;
 
 	ep->state = DISCONNECTED;
+	if (ep->transport.rdma.cmd) {
+		ibv_dereg_mr(ep->transport.rdma.cmd_mr);
+		free(ep->transport.rdma.cmd);
+		ep->transport.rdma.cmd = NULL;
+	}
 	if (qe) {
 		while (i > 0) {
 			if (qe[--i].data) {
@@ -305,11 +310,6 @@ static void rdma_destroy_queue(struct nofuse_queue *ep)
 	}
 	rdma_destroy_queue_pairs(ep);
 	rdma_destroy_completion_queues(ep);
-	if (ep->transport.rdma.cmd) {
-		ibv_dereg_mr(ep->transport.rdma.cmd_mr);
-		free(ep->transport.rdma.cmd);
-		ep->transport.rdma.cmd = NULL;
-	}
 }
 
 static int rdma_create_queue(struct nofuse_queue *ep, void *id, int depth)
