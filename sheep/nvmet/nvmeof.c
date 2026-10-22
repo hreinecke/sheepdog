@@ -977,10 +977,6 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 		}
 		return handle_data(ep, qe, -EINPROGRESS);
 	}
-	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
-		ctrl_err(ep, "Invalid sgl type %x", sgl_type);
-		return NVME_SC_SGL_INVALID_TYPE;
-	}
 
 	ret = qe->ns->ops->ns_prep_read(ep, qe);
 	if (ret) {
@@ -1033,10 +1029,6 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 			return ret;
 		}
 		return handle_data(ep, qe, -EINPROGRESS);
-	}
-	if ((sgl_type & 0x0f) != NVME_SGL_FMT_TRANSPORT_A) {
-		ctrl_err(ep, "dsm: invalid sgl type %x", sgl_type);
-		return NVME_SC_SGL_INVALID_TYPE;
 	}
 
 	ret = qe->ns->ops->ns_prep_read(ep, qe);
