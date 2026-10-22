@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "sheep.h"
 #include "nofuse.h"
@@ -115,6 +116,8 @@ int start_port(struct nofuse_port *port)
 int stop_port(struct nofuse_port *port)
 {
 	struct nofuse_queue *ep, *_ep;
+	pthread_t *tids = NULL;
+	int ntids = 0, i;
 
 	port_info(port, "stop pthread %ld", port->pthread);
 	if (port->pthread) {
@@ -124,9 +127,33 @@ int stop_port(struct nofuse_port *port)
 	}
 
 	pthread_mutex_lock(&port->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &port->ep_list, node)
+	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
+		if (ep->pthread) {
+			pthread_t *tmp = realloc(tids,
+						 (ntids + 1) * sizeof(*tids));
+			if (tmp) {
+				tids = tmp;
+				tids[ntids++] = ep->pthread;
+			}
+		}
 		destroy_queue(ep);
+	}
 	pthread_mutex_unlock(&port->ep_mutex);
+
+	/*
+	 * destroy_queue() only requests cancellation; the cancelled
+	 * thread's own cleanup (disconnect_queue(), including a
+	 * configdb_del_ctrl() call, then freeing 'ep' itself via
+	 * pop_free()) still runs asynchronously on its own thread. Wait
+	 * for it here -- with ep_mutex already released, since pop_free()
+	 * needs to take that same mutex to unlink 'ep' -- so the caller
+	 * (nofuse_main(), about to call del_port()/configdb_close()) never
+	 * races with a queue thread still using the port or configdb.
+	 */
+	for (i = 0; i < ntids; i++)
+		pthread_join(tids[i], NULL);
+	free(tids);
+
 	return 0;
 }
 

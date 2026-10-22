@@ -715,28 +715,6 @@ void destroy_queue(struct nofuse_queue *ep)
 	}
 }
 
-void terminate_queues(struct nofuse_port *port, const char *subsysnqn)
-{
-	struct nofuse_queue *ep = NULL, *_ep;
-
-	pthread_mutex_lock(&port->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &port->ep_list, node) {
-		sd_debug("%s: ctrl %d qid %d subsys %s",
-		       __func__,
-		       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		       strlen(ep->ctrl->subsys->nqn) ?
-		       ep->ctrl->subsys->nqn : "<none>");
-		if (ep->state != CONNECTED)
-			continue;
-		if (!ep->ctrl)
-			continue;
-		if (strcmp(ep->ctrl->subsys->nqn, subsysnqn))
-			continue;
-		destroy_queue(ep);
-	}
-	pthread_mutex_unlock(&port->ep_mutex);
-}
-
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 {
 	const char *aen_type = NULL;

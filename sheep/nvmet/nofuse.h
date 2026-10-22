@@ -388,7 +388,6 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);
 struct nofuse_queue *create_queue(void *id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
-void terminate_queues(struct nofuse_port *port, const char *subsysnqn);
 
 void *epoll_queue_thread(void *arg);
 #ifdef HAVE_IO_URING
