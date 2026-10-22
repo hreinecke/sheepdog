@@ -748,7 +748,7 @@ int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms)
 
 	ret = ibv_get_cq_event(comp, &ev_cq, &ev_ctx);
 	if (ret) {
-		rdma_err(ep, "ibv_get_cq_event failed, error %d");
+		rdma_err(ep, "ibv_get_cq_event failed, error %d", -errno);
 		return -errno;
 	}
 	ibv_ack_cq_events(ev_cq, 1);
@@ -763,10 +763,6 @@ int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms)
 static int rdma_poll_for_msg(struct nofuse_queue *ep,
 			     struct ep_qe **qe)
 {
-	struct ibv_comp_channel *comp = ep->transport.rdma.comp;
-	struct pollfd pfd = { .fd = comp->fd, .events = POLLIN };
-	struct timeval tv;
-	fd_set fds;
 	struct ibv_wc wc;
 	struct ep_qe *_qe;
 	struct nvme_command *cmd;
