@@ -301,7 +301,12 @@ static int handle_identify_ctrl(struct nofuse_queue *ep,
 	memset(id.mn, ' ', sizeof(id.mn));
 	memset(id.sn, ' ', sizeof(id.sn));
 
-	id.mdts = 0;
+	/*
+	 * MDTS is (2^mdts) * (2^(12+CAP.MPSMIN)) bytes; MPSMIN is 0, so with
+	 * mdts=4 this advertises NVMF_MDTS_SIZE (64K), matching the size of
+	 * the per-qe data buffer the RDMA transport pre-allocates.
+	 */
+	id.mdts = 4;
 	id.cmic = NVME_CTRL_CMIC_MULTI_PORT | NVME_CTRL_CMIC_MULTI_CTRL;
 	if (ep->ctrl->subsys->type == NVME_NQN_NVM)
 		id.cmic |= NVME_CTRL_CMIC_ANA;
@@ -915,12 +920,6 @@ static int handle_read(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 	}
 
-	if ((cmd->rw.dptr.sgl.type >> 4) != NVME_TRANSPORT_SGL_DATA_DESC) {
-		ctrl_err(ep, "unhandled sgl type %d",
-			 cmd->rw.dptr.sgl.type >> 4);
-		return NVME_SC_SGL_INVALID_TYPE;
-	}
-
 	if (nofuse_node_in_recovery())
 		return NVME_SC_ANA_TRANSITION;
 
@@ -1073,6 +1072,19 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 	} else {
 		ctrl_err(ep, "invalid SGL format %d", sgl_type >> 4);
 		return NVME_SC_SGL_INVALID_TYPE;
+	}
+
+	/*
+	 * Guard against a host ignoring the advertised MDTS (or a
+	 * corrupted/malicious SGL length): qe->data is sized to
+	 * NVMF_MDTS_SIZE (RDMA) or malloc()ed to this exact length (TCP),
+	 * so anything bigger must be rejected here rather than overrunning
+	 * it in handle_read()/handle_write()/handle_dsm().
+	 */
+	if (qe->data_len > ep->mdts) {
+		ctrl_err(ep, "data length %"PRIu64" exceeds mdts %d",
+			 qe->data_len, ep->mdts);
+		return NVME_SC_INVALID_FIELD;
 	}
 
 	if (cmd->common.opcode == nvme_fabrics_command) {

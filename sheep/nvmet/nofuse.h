@@ -48,6 +48,15 @@ extern struct list_head port_linked_list;
 #define NVMF_AQ_DEPTH		32
 #define NVMF_SQ_DEPTH		128
 #define NVMF_NUM_QUEUES		8
+/*
+ * Max per-command data transfer size. Backs ep->mdts (and the advertised
+ * NVMe Identify Controller MDTS field), and sizes the RDMA per-qe data
+ * buffer in rdma_create_queue_recv_pool() -- unlike tcp_acquire_tag(),
+ * which malloc()s qe->data to the exact request size, RDMA pre-allocates
+ * and pre-registers qe->data once up front, so it must be big enough to
+ * hold the largest transfer a host is allowed to request.
+ */
+#define NVMF_MDTS_SIZE		0x10000
 
 #define MAX_NQN_SIZE		256
 #define MAX_ALIAS_SIZE		64

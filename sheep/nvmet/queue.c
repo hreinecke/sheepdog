@@ -664,7 +664,8 @@ struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 	ep->ops = port->ops;
 	ep->port = port;
 	ep->kato_interval = KATO_INTERVAL;
-	ep->maxh2cdata = 0x10000;
+	ep->maxh2cdata = NVMF_MDTS_SIZE;
+	ep->mdts = NVMF_MDTS_SIZE;
 	ep->qid = -1;
 	ep->transport.tcp.recv_state = RECV_PDU;
 	INIT_LIST_NODE(&ep->node);

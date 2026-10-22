@@ -130,12 +130,12 @@ static int rdma_create_queue_recv_pool(struct nofuse_queue *ep)
 		return -ENOMEM;
 	ep->allocated_qsize = 0;
 	for (i = 0; i < ep->qsize; i++) {
-		qe[i].data = alloc_buffer(ep, PAGE_SIZE, &qe[i].data_mr);
+		qe[i].data = alloc_buffer(ep, NVMF_MDTS_SIZE, &qe[i].data_mr);
 		if (!qe[i].data) {
 			errno = ENOMEM;
 			goto err;
 		}
-		qe[i].data_len = PAGE_SIZE;
+		qe[i].data_len = NVMF_MDTS_SIZE;
 		ep->allocated_qsize++;
 	}
 
