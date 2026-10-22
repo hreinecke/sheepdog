@@ -425,7 +425,8 @@ char *str_to_tr(const char *ipstr, uint16_t *port, char **trmode)
 		char *p = strchr(hoststr, ']');
 		if (!p) {
 			free(hoststr);
-			*trmode = NULL;
+			if (trmode)
+				*trmode = NULL;
 			return NULL;
 		}
 		if (strlen(p) > 1 && p[1] == ':') {
@@ -440,7 +441,8 @@ char *str_to_tr(const char *ipstr, uint16_t *port, char **trmode)
 		}
 	}
 	if (!portstr) {
-		*trmode = NULL;
+		if (trmode)
+			*trmode = NULL;
 		return hoststr;
 	}
 
@@ -457,8 +459,10 @@ char *str_to_tr(const char *ipstr, uint16_t *port, char **trmode)
 		p = strtoul(portstr, &end, 10);
 		if (portstr == end) {
 			free(hoststr);
-			free(*trmode);
-			*trmode = NULL;
+			if (trmode) {
+				free(*trmode);
+				*trmode = NULL;
+			}
 			return NULL;
 		}
 		*port = p;
