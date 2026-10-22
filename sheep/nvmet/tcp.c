@@ -837,7 +837,7 @@ out_rsp:
 	return ret;
 }
 
-static int tcp_read_msg(struct nofuse_queue *ep)
+static int tcp_read_pdu(struct nofuse_queue *ep)
 {
 	uint8_t *msg = (uint8_t *)ep->transport.tcp.recv_pdu +
 		ep->transport.tcp.recv_pdu_len;
@@ -941,7 +941,7 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 	int ret;
 
 	if (ep->transport.tcp.recv_state == RECV_PDU) {
-		ret = ep->ops->read_msg(ep);
+		ret = tcp_read_pdu(ep);
 		if (ret || ep->transport.tcp.recv_state != HANDLE_PDU)
 			return ret;
 	}
@@ -1071,7 +1071,6 @@ static struct xp_ops tcp_ops = {
 	.rma_write		= tcp_send_data,
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
-	.read_msg		= tcp_read_msg,
 	.poll_msg		= tcp_poll_msg,
 	.handle_msg		= tcp_handle_msg,
 	.handle_aen		= tcp_handle_aen,
