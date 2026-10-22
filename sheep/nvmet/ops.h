@@ -28,8 +28,6 @@ struct xp_ops {
 	int (*prep_rma_read)(struct nofuse_queue *ep, uint16_t ttag);
 	int (*send_rsp)(struct nofuse_queue *ep, struct ep_qe *qe,
 			struct nvme_completion *comp);
-	int (*poll_msg)(struct nofuse_queue *ep, struct nvme_command *cmd,
-			struct ep_qe **qe);
 	int (*handle_msg)(struct nofuse_queue *ep);
 	int (*handle_aen)(struct nofuse_queue *ep, struct ep_qe *qe);
 	void *(*alloc_key)(struct nofuse_queue *ep, void *buf, size_t len);

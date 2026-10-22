@@ -907,8 +907,8 @@ static int tcp_read_pdu(struct nofuse_queue *ep)
 	return 0;
 }
 
-static int tcp_poll_msg(struct nofuse_queue *ep, struct nvme_command *cmd,
-			struct ep_qe **_qe)
+static int tcp_get_qe(struct nofuse_queue *ep, struct nvme_command *cmd,
+		      struct ep_qe **_qe)
 {
 	struct ep_qe *qe;
 	uint32_t len;
@@ -966,9 +966,9 @@ static int tcp_handle_msg(struct nofuse_queue *ep)
 					 0, false, pdu, hdr->hlen);
 	}
 
-	ret = tcp_poll_msg(ep, &pdu->cmd.cmd, &qe);
+	ret = tcp_get_qe(ep, &pdu->cmd.cmd, &qe);
 	if (ret < 0) {
-		tcp_err(ep, "poll_for_msg error %d", ret);
+		tcp_err(ep, "failed to get qe, error %d", ret);
 		return ret;
 	}
 	if (qe) {
@@ -1071,7 +1071,6 @@ static struct xp_ops tcp_ops = {
 	.rma_write		= tcp_send_data,
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
-	.poll_msg		= tcp_poll_msg,
 	.handle_msg		= tcp_handle_msg,
 	.handle_aen		= tcp_handle_aen,
 	.alloc_key		= tcp_alloc_key,
