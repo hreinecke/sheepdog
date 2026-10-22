@@ -797,6 +797,34 @@ static int rdma_handle_msg(struct nofuse_queue *ep)
 	return ret;
 }
 
+/*
+ * RDMA has no TCP-style R2T handshake: the keyed SGL in the original
+ * command already carries the host buffer's addr/key, so "getting ready
+ * to read" just means pulling the data now via RDMA_READ (same as the
+ * in-capsule branch in handle_write()/handle_dsm()), then handing off to
+ * handle_data() to actually process it.
+ */
+static int rdma_prep_rma_read(struct nofuse_queue *ep, uint16_t tag)
+{
+	struct ep_qe *qe;
+	int ret;
+
+	if (!ep->qes || tag >= ep->qsize) {
+		rdma_err(ep, "invalid ttag %#x", tag);
+		return -EINVAL;
+	}
+	qe = &ep->qes[tag];
+
+	ret = ep->ops->rma_read(ep, qe, qe->data, qe->data_addr,
+				qe->data_len, qe->data_key, qe->data_mr);
+	if (ret < 0) {
+		rdma_err(ep, "tag %#x rma_read error %d", qe->tag, ret);
+		return ret;
+	}
+
+	return handle_data(ep, qe, -EINPROGRESS);
+}
+
 static void *rdma_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)
 {
 	struct ibv_mr *mr;
@@ -839,6 +867,7 @@ static struct xp_ops rdma_ops = {
 	.accept_connection	= rdma_accept_connection,
 	.rma_read		= rdma_rma_read,
 	.rma_write		= rdma_rma_write,
+	.prep_rma_read		= rdma_prep_rma_read,
 	.send_rsp		= rdma_send_msg,
 	.handle_msg		= rdma_handle_msg,
 	.alloc_key		= rdma_alloc_key,
