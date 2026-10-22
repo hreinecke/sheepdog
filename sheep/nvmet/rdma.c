@@ -745,31 +745,6 @@ static int rdma_wait_event(struct nofuse_queue *ep,
 	return 0;
 }
 
-/*
- * Block for up to timeout_ms waiting for a completion event on either of
- * this queue's CQs (they share one completion channel), instead of
- * busy-polling ibv_poll_cq() in a tight loop. Drains and re-arms every
- * event the channel fd reports ready so a later ibv_poll_cq() call is
- * guaranteed to see the completions that triggered it.
- *
- * Returns 1 if at least one event was processed, 0 on timeout, or a
- * negative errno on error.
- */
-int rdma_wait_for_msg(struct nofuse_queue *ep, int timeout_ms)
-{
-	struct ibv_comp_channel *comp = ep->transport.rdma.comp;
-	struct pollfd pfd = { .fd = ep->transport.fd, .events = POLLIN };
-	int ret;
-
-	ret = poll(&pfd, 1, timeout_ms);
-	if (ret < 0)
-		return -errno;
-	if (ret == 0)
-		return -ESHUTDOWN;
-
-	return rdma_wait_event(ep, comp);
-}
-
 static int rdma_get_qe(struct nofuse_queue *ep,
 		       struct ep_qe **qe)
 {
@@ -779,13 +754,16 @@ static int rdma_get_qe(struct nofuse_queue *ep,
 	int ret;
 
 	ret = ibv_poll_cq(ep->transport.rdma.rcq, 1, &wc);
-	if (ret <= 0)
+	if (ret <= 0) {
+		*qe = NULL;
 		return ret;
+	}
 
 	if (wc.status != IBV_WC_SUCCESS) {
 		if (wc.status != IBV_WC_WR_FLUSH_ERR)
 			rdma_err(ep, "recv wc.status %s (%d)",
 				 wc_str_status(wc.status), wc.status);
+		*qe = NULL;
 		return -ECONNRESET;
 	}
 
@@ -798,17 +776,6 @@ static int rdma_get_qe(struct nofuse_queue *ep,
 	*qe = _qe;
 
 	return 1;
-}
-
-static int rdma_poll_for_msg(struct nofuse_queue *ep,
-			     struct ep_qe **qe)
-{
-	int ret;
-
-	ret = rdma_wait_for_msg(ep, ep->kato_interval * 10);
-	if (ret < 0)
-		return ret;
-	return rdma_get_qe(ep, qe);
 }
 
 static int rdma_handle_msg(struct nofuse_queue *ep)
@@ -874,7 +841,6 @@ static struct xp_ops rdma_ops = {
 	.rma_write		= rdma_rma_write,
 	.send_rsp		= rdma_send_msg,
 	.handle_msg		= rdma_handle_msg,
-	.poll_for_msg		= rdma_poll_for_msg,
 	.alloc_key		= rdma_alloc_key,
 	.dealloc_key		= rdma_dealloc_key,
 };

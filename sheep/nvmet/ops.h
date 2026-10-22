@@ -32,7 +32,6 @@ struct xp_ops {
 	int (*handle_aen)(struct nofuse_queue *ep, struct ep_qe *qe);
 	void *(*alloc_key)(struct nofuse_queue *ep, void *buf, size_t len);
 	int (*dealloc_key)(struct nofuse_queue *ep, void *mr);
-	int (*poll_for_msg)(struct nofuse_queue *ep, struct ep_qe **qe);
 };
 
 struct xp_ops *tcp_register_ops(void);
