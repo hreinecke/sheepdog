@@ -122,8 +122,13 @@ struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 		.subsys_id = ctrl->subsys->id,
 		.nsid = nsid,
 	};
+	struct nofuse_namespace *ns;
 
-	return rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+	sd_mutex_lock(&this_ctx->ns_lock);
+	ns = rb_search(&this_ctx->ns_root, &key, rb, ns_cmp);
+	sd_mutex_unlock(&this_ctx->ns_lock);
+
+	return ns;
 }
 
 static int lookup_nodes(struct nofuse_context *ctx)
