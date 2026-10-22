@@ -218,15 +218,18 @@ static void disconnect_queue(struct nofuse_queue *ep)
 		qnum = ctrl->num_queues;
 	}
 	pthread_mutex_unlock(&ctrl->ctrl_mutex);
-	pthread_mutex_lock(&ctrl_list_mutex);
 	if (!qnum) {
+		unsigned int subsys_id = ctrl->subsys->id;
+		unsigned int cntlid = ctrl->cntlid;
+
+		pthread_mutex_lock(&ctrl_list_mutex);
 		sd_debug("ctrl %u qid %d: deleting controller",
-			 ctrl->cntlid, ep->qid);
-		configdb_del_ctrl(ctrl->subsys->id, ctrl->cntlid);
+			 cntlid, ep->qid);
 		list_del(&ctrl->node);
 		free(ctrl);
+		pthread_mutex_unlock(&ctrl_list_mutex);
+		configdb_del_ctrl(subsys_id, cntlid);
 	}
-	pthread_mutex_unlock(&ctrl_list_mutex);
 }
 
 static int start_queue(struct nofuse_queue *ep, void *id, int depth)
