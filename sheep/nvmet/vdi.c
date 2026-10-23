@@ -16,6 +16,51 @@
 #include "nvme.h"
 #include "ops.h"
 
+/*
+ * A write to this VDI's inode or data objects can come back with
+ * SD_RES_INODE_INVALIDATED: another node sharing this VDI (nofuse
+ * exposes the same VDI through every sheep node for NVMe multipath)
+ * created a data object of its own and invalidated our cached inode
+ * via the cluster-wide coherence protocol (sheep/vdi.c,
+ * invalidate_other_nodes()/is_refresh_required()). The protocol
+ * requires re-reading the whole inode (a "refresh read": the VDI
+ * object, offset 0, length exactly covering the full data_vdi_id[]
+ * array -- see is_inode_refresh_req() in sheep/gateway.c) before
+ * retrying; that read both clears our invalidated state
+ * (validate_myself()) and gives us the current data_vdi_id[] map.
+ * See sheep/nvmet/uring.c's async equivalent of this dance.
+ */
+static int vdi_refresh_inode(struct nofuse_namespace *ns)
+{
+	size_t refresh_len = data_vid_offset(SD_INODE_DATA_INDEX);
+	char *buf = xmalloc(refresh_len);
+	int ret;
+
+	/*
+	 * No SD_FLAG_CMD_TGT: this read must go through even while we're
+	 * marked invalidated (that's the whole point), and
+	 * is_inode_refresh_req() doesn't require the flag to run
+	 * validate_myself() on success.
+	 */
+	ret = sd_read_object(vid_to_vdi_oid(ns->nsid), buf, refresh_len, 0);
+	if (ret == SD_RES_SUCCESS) {
+		sd_mutex_lock(&ns->inode_lock);
+		memcpy(ns->inode, buf, refresh_len);
+		sd_mutex_unlock(&ns->inode_lock);
+	}
+	free(buf);
+	return ret;
+}
+
+/*
+ * How many times to chase a live SD_RES_INODE_INVALIDATED before giving
+ * up: under concurrent multipath writes to the same VDI, every refresh
+ * can race a fresh invalidation from another node, and each attempt costs
+ * a full cluster coherence round-trip, so retrying forever can stall the
+ * daemon under contention instead of making progress.
+ */
+#define INODE_INVALIDATED_MAX_RETRY 5
+
 static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
 	int ret;
@@ -27,46 +72,79 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid = vid_to_data_oid(qe->ns->nsid, idx), old_oid = 0;
+		uint64_t oid, old_oid;
 		uint32_t inode_vid, data_vid;
-		bool create = false;
-		bool is_writeable;
+		bool create, is_writeable;
+		int retry;
 
-		sd_mutex_lock(&qe->ns->inode_lock);
-		inode_vid = qe->ns->inode->header.vdi_id;
-		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
-		is_writeable = (inode_vid == data_vid);
-		sd_mutex_unlock(&qe->ns->inode_lock);
-		if (!data_vid)
-			create = true;
-		else if (!is_writeable) {
-			create = true;
-			old_oid = vid_to_data_oid(data_vid, idx);
+		for (retry = 0; ; retry++) {
+			old_oid = 0;
+			create = false;
+
+			sd_mutex_lock(&qe->ns->inode_lock);
+			inode_vid = qe->ns->inode->header.vdi_id;
+			data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+			is_writeable = (inode_vid == data_vid);
+			sd_mutex_unlock(&qe->ns->inode_lock);
+			if (!data_vid)
+				create = true;
+			else if (!is_writeable) {
+				create = true;
+				old_oid = vid_to_data_oid(data_vid, idx);
+			}
+			oid = vid_to_data_oid(qe->ns->nsid, idx);
+			ret = sd_write_object_tgt(oid, old_oid, (char *)data,
+						  len, off, create);
+			if (ret != SD_RES_INODE_INVALIDATED)
+				break;
+			if (retry >= INODE_INVALIDATED_MAX_RETRY)
+				break;
+			ctrl_info(ep, "tag %d VDI %"PRIx32" idx %"PRIx64
+				  " inode invalidated",
+				  qe->tag, qe->ns->nsid, idx);
+			ret = vdi_refresh_inode(qe->ns);
+			if (ret != SD_RES_SUCCESS)
+				break;
 		}
-		ret = sd_write_object_tgt(oid, old_oid, (char *)data, len, off,
-					  create);
 		if (ret != SD_RES_SUCCESS) {
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
 				 " off %lu size %lu write error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
+			return ret == SD_RES_INODE_INVALIDATED ?
+				NVME_SC_CMD_INTERRUPTED : NVME_SC_INTERNAL;
 		}
 		if (create) {
 			sd_mutex_lock(&qe->ns->inode_lock);
 			sd_inode_set_vid(qe->ns->inode, idx, inode_vid);
-			ret = sd_inode_write_vid(qe->ns->inode, idx,
-						 qe->ns->nsid, qe->ns->nsid,
-						 SD_FLAG_CMD_TGT,
-						 false, false);
-			if (ret != SD_RES_SUCCESS)
-				sd_inode_set_vid(qe->ns->inode, idx, 0);
 			sd_mutex_unlock(&qe->ns->inode_lock);
+			for (retry = 0; ; retry++) {
+				ret = sd_inode_write_vid(qe->ns->inode, idx,
+							 qe->ns->nsid,
+							 qe->ns->nsid,
+							 SD_FLAG_CMD_TGT,
+							 false, false);
+				if (ret != SD_RES_INODE_INVALIDATED)
+					break;
+				if (retry >= INODE_INVALIDATED_MAX_RETRY)
+					break;
+				ctrl_info(ep, "tag %d VDI %"PRIx32
+					  " idx %"PRIx64" inode invalidated",
+					  qe->tag, qe->ns->nsid, idx);
+				ret = vdi_refresh_inode(qe->ns);
+				if (ret != SD_RES_SUCCESS)
+					break;
+			}
 			if (ret != SD_RES_SUCCESS) {
+				sd_mutex_lock(&qe->ns->inode_lock);
+				sd_inode_set_vid(qe->ns->inode, idx, 0);
+				sd_mutex_unlock(&qe->ns->inode_lock);
 				ctrl_err(ep, "tag %d VDI %"PRIx32
 					 " idx %"PRIx64" failed to update inode: %s",
 					 qe->tag, qe->ns->nsid, idx,
 					 sd_strerror(ret));
-				return NVME_SC_INTERNAL;
+				return ret == SD_RES_INODE_INVALIDATED ?
+					NVME_SC_CMD_INTERRUPTED :
+					NVME_SC_INTERNAL;
 			}
 		}
 
