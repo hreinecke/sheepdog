@@ -383,6 +383,7 @@ int handle_auth_send_data(struct nofuse_queue *ep, struct ep_qe *qe);
 int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		   struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
+int handle_aen(struct nofuse_queue *ep, struct ep_qe *qe);
 int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);

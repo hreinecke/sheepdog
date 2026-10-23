@@ -1005,49 +1005,6 @@ static int tcp_send_data(struct nofuse_queue *ep, struct ep_qe *qe,
 	return 0;
 }
 
-static int tcp_handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
-{
-	uint8_t type, level = NVME_AER_NOTICE;
-	uint16_t log_page;
-	uint32_t result, pending;
-
-	if (!ep->ctrl)
-		return 0;
-
-	pending = aen_pending(ep->ctrl);
-	if (!pending)
-		return 0;
-	ctrl_info(ep, "aen pending %#x masked %#x",
-		  ep->ctrl->aen_pending,
-		  ep->ctrl->aen_masked);
-	if (pending & NVME_AEN_CFG_NS_ATTR) {
-		type = NVME_AER_NOTICE_NS_CHANGED;
-		log_page = NVME_LOG_CHANGED_NS;
-		ep->ctrl->aen_masked |= NVME_AEN_CFG_NS_ATTR;
-	} else if (pending & NVME_AEN_CFG_ANA_CHANGE) {
-		type = NVME_AER_NOTICE_ANA;
-		log_page = NVME_LOG_ANA;
-		ep->ctrl->aen_masked |= NVME_AEN_CFG_ANA_CHANGE;
-	} else if (pending & NVME_AEN_CFG_DISC_CHANGE) {
-		type = NVME_AER_NOTICE_DISC_CHANGED;
-		log_page = NVME_LOG_DISC;
-		ep->ctrl->aen_masked |= NVME_AEN_CFG_DISC_CHANGE;
-	} else {
-		ctrl_info(ep, "invalid aen %#x", pending);
-		ep->ctrl->aen_masked |= pending;
-		return 0;
-	}
-
-	ctrl_info(ep, "send aen level %u type %u", level, type);
-
-	result = level | type << 8 | log_page << 16;
-	qe->resp.command_id = qe->ccid;
-	qe->resp.result.u32 = htole32(result);
-	qe->resp.status = NVME_SC_SUCCESS;
-
-	return tcp_send_rsp(ep, qe, &qe->resp);
-}
-
 static void *tcp_alloc_key(struct nofuse_queue *ep, void *buf, size_t len)
 {
 	return &tcp_alloc_key;
@@ -1072,7 +1029,6 @@ static struct xp_ops tcp_ops = {
 	.prep_rma_read		= tcp_send_r2t,
 	.send_rsp		= tcp_send_rsp,
 	.handle_msg		= tcp_handle_msg,
-	.handle_aen		= tcp_handle_aen,
 	.alloc_key		= tcp_alloc_key,
 	.dealloc_key		= tcp_dealloc_key,
 };

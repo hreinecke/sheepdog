@@ -312,15 +312,11 @@ static struct io_uring_sqe *queue_submit_io_evtfd_poll(struct nofuse_queue *ep)
 	}
 	return sqe;
 }
-#endif
 
 static int queue_submit_cancel(struct nofuse_queue *ep)
 {
 	struct io_uring_sqe *sqe;
 	int ret;
-
-	if (ep->trtype != NVMF_TRTYPE_TCP)
-		return 0;
 
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
@@ -339,19 +335,26 @@ static int queue_submit_cancel(struct nofuse_queue *ep)
 	}
 	return 0;
 }
+#else
+static inline int queue_submit_cancel(struct nofuse_queue *ep) { return 0; }
+#endif
 
 static int queue_submit_aen(struct nofuse_queue *ep)
 {
+#ifdef HAVE_IO_URING
 	struct io_uring_sqe *sqe;
+#endif
 	struct ep_qe *qe;
 	int ret;
 
+retry_aen:
 	qe = ep->ops->get_aen(ep);
 	if (!qe) {
 		sd_info("qid %d no aen request", ep->qid);
 		return 0;
 	}
 	qe->opcode = nvme_admin_async_event;
+#ifdef HAVE_IO_URING
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
 		sd_err("qid %d failed to get nop sqe", ep->qid);
@@ -367,6 +370,15 @@ static int queue_submit_aen(struct nofuse_queue *ep)
 		       ep->qid, ret);
 		return ret;
 	}
+#else
+	ret = handle_aen(ep, qe);
+	if (ret) {
+		ctrl_err(ep, "handle aen failed, error %d", ret);
+		return ret;
+	}
+	if (aen_pending(ep->ctrl))
+		goto retry_aen;
+#endif
 	return 0;
 }
 
@@ -605,7 +617,7 @@ void *uring_queue_thread(void *arg)
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
 			if (qe->opcode == nvme_admin_async_event) {
-				ret = ep->ops->handle_aen(ep, qe);
+				ret = handle_aen(ep, qe);
 				if (!ret && aen_pending(ep->ctrl))
 					ret = queue_submit_aen(ep);
 			} else

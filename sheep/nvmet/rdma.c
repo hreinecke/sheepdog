@@ -148,6 +148,8 @@ static int rdma_create_queue_recv_pool(struct nofuse_queue *ep)
 	for (i = 0; i < ep->allocated_qsize; i++) {
 		qe[i].tag = i;
 		qe[i].ep = ep;
+		qe[i].busy = false;
+		qe[i].aen = false;
 		wr.wr_id = (uintptr_t) &qe[i];
 		sge.addr = (uintptr_t) qe[i].data;
 		sge.lkey = qe[i].data_mr->lkey;
@@ -661,6 +663,7 @@ static int rdma_repost_recv(struct nofuse_queue *ep, struct ep_qe *qe)
 	struct ibv_sge sge;
 
 	memset(&wr, 0, sizeof(wr));
+	qe->busy = false;
 
 	wr.wr_id = (uintptr_t) qe;
 	wr.sg_list = &sge;
@@ -773,9 +776,24 @@ static int rdma_get_qe(struct nofuse_queue *ep,
 	/* ccid is considered opaque; no endian conversion */
 	cmd = _qe->data;
 	_qe->ccid = cmd->common.command_id;
+	_qe->busy = true;
 	*qe = _qe;
 
 	return 1;
+}
+
+static struct ep_qe *rdma_get_aen(struct nofuse_queue *ep)
+{
+	int i;
+
+	if (!ep->qes)
+		return NULL;
+	for (i = 0; i < ep->qsize; i++) {
+		struct ep_qe *qe = &ep->qes[i];
+		if (qe->busy && qe->aen)
+			return qe;
+	}
+	return NULL;
 }
 
 static int rdma_handle_msg(struct nofuse_queue *ep)
@@ -865,6 +883,7 @@ static struct xp_ops rdma_ops = {
 	.destroy_listener	= rdma_destroy_listener,
 	.wait_for_connection	= rdma_wait_for_connection,
 	.accept_connection	= rdma_accept_connection,
+	.get_aen		= rdma_get_aen,
 	.rma_read		= rdma_rma_read,
 	.rma_write		= rdma_rma_write,
 	.prep_rma_read		= rdma_prep_rma_read,
