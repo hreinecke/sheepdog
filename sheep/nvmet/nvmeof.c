@@ -1089,6 +1089,8 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_FIELD;
 	}
 
+	kato_reset_counter(ep->ctrl);
+
 	if (cmd->common.opcode == nvme_fabrics_command) {
 		switch (cmd->fabrics.fctype) {
 		case nvme_fabrics_type_property_set:
@@ -1132,36 +1134,38 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 				  cmd->common.opcode);
 			ret = NVME_SC_INVALID_OPCODE;
 		}
-	} else if (cmd->common.opcode == nvme_admin_identify) {
-		ret = handle_identify(ep, qe, cmd);
-		if (!ret)
-			return 0;
-	} else if (cmd->common.opcode == nvme_admin_keep_alive) {
-		ctrl_info(ep, "tag %#x ccid %#x nvme_keep_alive",
-			  qe->tag, qe->ccid);
-		kato_reset_counter(ep->ctrl);
-		ret = 0;
-	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
-		ret = handle_get_log_page(ep, qe, cmd, addr, len, key);
-		if (!ret)
-			return 0;
-	} else if (cmd->common.opcode == nvme_admin_set_features) {
-		ret = handle_set_features(ep, qe, cmd);
-		if (ret)
-			ret = NVME_SC_INVALID_FIELD;
-	} else if (cmd->common.opcode == nvme_admin_get_features) {
-		ret = handle_get_features(ep, qe, cmd);
-		if (ret)
-			ret = NVME_SC_INVALID_FIELD;
-	} else if (cmd->common.opcode == nvme_admin_async_event) {
-		ctrl_info(ep, "tag %#x ccid %#x nvme_async_event",
-			  qe->tag, qe->ccid);
-		qe->aen = true;
-		return 0;
 	} else {
-		ctrl_err(ep, "unknown nvme admin opcode %d",
-			 cmd->common.opcode);
-		ret = NVME_SC_INVALID_OPCODE;
+		/* qid == 0: admin command. */
+		if (cmd->common.opcode == nvme_admin_identify) {
+			ret = handle_identify(ep, qe, cmd);
+			if (!ret)
+				return 0;
+		} else if (cmd->common.opcode == nvme_admin_keep_alive) {
+			ctrl_info(ep, "tag %#x ccid %#x nvme_keep_alive",
+				  qe->tag, qe->ccid);
+			ret = 0;
+		} else if (cmd->common.opcode == nvme_admin_get_log_page) {
+			ret = handle_get_log_page(ep, qe, cmd, addr, len, key);
+			if (!ret)
+				return 0;
+		} else if (cmd->common.opcode == nvme_admin_set_features) {
+			ret = handle_set_features(ep, qe, cmd);
+			if (ret)
+				ret = NVME_SC_INVALID_FIELD;
+		} else if (cmd->common.opcode == nvme_admin_get_features) {
+			ret = handle_get_features(ep, qe, cmd);
+			if (ret)
+				ret = NVME_SC_INVALID_FIELD;
+		} else if (cmd->common.opcode == nvme_admin_async_event) {
+			ctrl_info(ep, "tag %#x ccid %#x nvme_async_event",
+				  qe->tag, qe->ccid);
+			qe->aen = true;
+			return 0;
+		} else {
+			ctrl_err(ep, "unknown nvme admin opcode %d",
+				 cmd->common.opcode);
+			ret = NVME_SC_INVALID_OPCODE;
+		}
 	}
 
 	if (ret < 0) {

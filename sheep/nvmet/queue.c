@@ -479,7 +479,16 @@ void *epoll_queue_thread(void *arg)
 		}
 		ret = ep->ops->handle_msg(ep);
 		if (ret == 0) {
-			if (ep->qid != 0) {
+			/*
+			 * A KATO of 0 means the host disabled the Keep
+			 * Alive Timer for this controller entirely (NVMe
+			 * spec): never time out on it, rather than treating
+			 * a countdown pinned at 0 as "expired" on every
+			 * single command.
+			 */
+			if (!ep->ctrl->kato) {
+				/* nothing to do */
+			} else if (ep->qid != 0) {
 				if (ep->ctrl->kato_countdown)
 					continue;
 				ret = -ETIME;
@@ -630,6 +639,8 @@ void *uring_queue_thread(void *arg)
 			if (!ep->ctrl) {
 				sd_err("qid %d no controller timeout",
 				       ep->qid);
+			} else if (!ep->ctrl->kato) {
+				/* KATO 0: keep-alive disabled, never time out */
 			} else {
 				if (ep->qid != 0) {
 					if (ep->ctrl->kato_countdown)
