@@ -989,7 +989,7 @@ static int handle_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	}
 
 	ret = qe->ns->ops->ns_prep_read(ep, qe);
-	if (ret) {
+	if (ret && ret != -EINPROGRESS) {
 		ctrl_err(ep, "prep_rma_read failed with error %d", ret);
 	} else
 		ctrl_info(ep, "nsid %u tag %#x ccid %#x write pos %"PRIu64
