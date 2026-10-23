@@ -808,9 +808,31 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 			sd_err("failed to unlink %s: %m", tmp_path);
 		goto out_failed;
 	}
+	close(fd);
+
+	/*
+	 * Re-check right before committing: two writers targeting different,
+	 * non-overlapping regions of the same not-yet-existing object (e.g.
+	 * two NVMe write commands landing in the same never-before-touched
+	 * sheepdog object) can both reach here with md_exist() having been
+	 * false for both at entry. Each built its own tmp file via its own
+	 * xftruncate()+xpwrite() of just its own region (the rest left
+	 * sparse-zero) -- fine when both writers have identical data (the
+	 * scenario get_store_tmp_path()'s per-writer tmp name is designed
+	 * for), but renaming either of *these* tmp files over the other's
+	 * already-renamed one would silently discard whichever region that
+	 * other writer already committed. If the object now exists, someone
+	 * else won; fall through to a targeted write of just our own region
+	 * against the real file instead of clobbering it.
+	 */
+	if (md_exist(oid, iocb->ec_index, entry->path)) {
+		if (unlink(tmp_path) != 0)
+			sd_err("failed to unlink %s: %m", tmp_path);
+		ret = __default_write(entry, iocb);
+		goto out_free;
+	}
 
 	ret = rename(tmp_path, entry->path);
-	close(fd);
 	if (ret < 0) {
 		sd_err("failed to rename %s to %s: %m",
 		       tmp_path, entry->path);
