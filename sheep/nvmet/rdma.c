@@ -143,7 +143,7 @@ static int rdma_create_queue_recv_pool(struct nofuse_queue *ep)
 	wr.sg_list = &sge;
 	wr.num_sge = 1;
 
-	sge.length = PAGE_SIZE;
+	sge.length = NVMF_MDTS_SIZE;
 
 	for (i = 0; i < ep->allocated_qsize; i++) {
 		qe[i].tag = i;
@@ -585,14 +585,23 @@ static int rdma_rma_read(struct nofuse_queue *ep, struct ep_qe *qe,
 	wr.wr.rdma.remote_addr = (uintptr_t) addr;
 	wr.wr.rdma.rkey = key;
 	wr.send_flags = IBV_SEND_SIGNALED;
+	wr.wr_id = (uintptr_t)&wr;
 
 	ret = ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
 	if (ret)
 		return ret;
 
-	while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
-		if (stopped)
-			return -ESHUTDOWN;
+	for (;;) {
+		while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
+			if (stopped)
+				return -ESHUTDOWN;
+		if (wc.wr_id == wr.wr_id)
+			break;
+		rdma_err(ep, "rma_read tag %#x: reaped unrelated scq completion "
+			 "wr_id %#lx (status %s) while waiting for our own "
+			 "RDMA_READ (len %zu addr %#lx) -- retrying poll",
+			 qe->tag, wc.wr_id, wc_str_status(wc.status), len, addr);
+	}
 
 	if (wc.status != IBV_WC_SUCCESS) {
 		rdma_err(ep, "rma_read wc.status %s (%d)",
@@ -629,14 +638,23 @@ static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	wr.wr.rdma.remote_addr = (uintptr_t) addr;
 	wr.wr.rdma.rkey = key;
 	wr.send_flags = IBV_SEND_SIGNALED;
+	wr.wr_id = (uintptr_t)&wr;
 
 	ret = ibv_post_send(ep->transport.rdma.id->qp, &wr, &bad_wr);
 	if (ret)
 		return ret;
 
-	while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
-		if (stopped)
-			return -ESHUTDOWN;
+	for (;;) {
+		while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
+			if (stopped)
+				return -ESHUTDOWN;
+		if (wc.wr_id == wr.wr_id)
+			break;
+		rdma_err(ep, "rma_write tag %#x: reaped unrelated scq completion "
+			 "wr_id %#lx (status %s) while waiting for our own "
+			 "RDMA_WRITE (len %zu addr %#lx) -- retrying poll",
+			 qe->tag, wc.wr_id, wc_str_status(wc.status), len, addr);
+	}
 
 	if (wc.status != IBV_WC_SUCCESS) {
 		rdma_err(ep, "rma_write wc.status %s (%d)",
@@ -669,11 +687,11 @@ static int rdma_repost_recv(struct nofuse_queue *ep, struct ep_qe *qe)
 	wr.sg_list = &sge;
 	wr.num_sge = 1;
 
-	sge.length = PAGE_SIZE;
+	sge.length = NVMF_MDTS_SIZE;
 	sge.addr = (uintptr_t) qe->data;
 	sge.lkey = qe->data_mr->lkey;
 
-	memset(qe->data, 0, PAGE_SIZE);
+	memset(qe->data, 0, NVMF_MDTS_SIZE);
 
 	return ibv_post_recv(ep->transport.rdma.id->qp, &wr, &bad_wr);
 }
@@ -691,6 +709,7 @@ static int rdma_post_msg(struct nofuse_queue *ep, void *msg, size_t len,
 	wr.send_flags = IBV_SEND_SIGNALED;
 	wr.sg_list = &sge;
 	wr.num_sge = 1;
+	wr.wr_id = (uintptr_t) msg;
 
 	sge.length = len;
 	sge.addr = (uintptr_t) msg;
@@ -712,9 +731,17 @@ static int rdma_send_msg(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (ret)
 		return ret;
 
-	while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
-		if (stopped)
-			return -ESHUTDOWN;
+	for (;;) {
+		while (ibv_poll_cq(ep->transport.rdma.scq, 1, &wc) == 0)
+			if (stopped)
+				return -ESHUTDOWN;
+		if (wc.wr_id == (uintptr_t)resp)
+			break;
+		rdma_err(ep, "tag %#x: reaped unrelated scq completion "
+			 "wr_id %#lx (status %s) while waiting for our own "
+			 "SEND -- retrying poll",
+			 qe->tag, wc.wr_id, wc_str_status(wc.status));
+	}
 
 	if (wc.status != IBV_WC_SUCCESS) {
 		if (wc.status != IBV_WC_RETRY_EXC_ERR)
