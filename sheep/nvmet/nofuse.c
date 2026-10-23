@@ -314,8 +314,20 @@ static int register_namespace(struct nofuse_subsystem *subsys, uint32_t nsid,
 			ret = -1;
 			errno = EBUSY;
 		} else {
-			/* Can happen during start up */
+			/*
+			 * Can happen during start up: register_subsystems()'s
+			 * one-time local scan can run before lookup_nodes()
+			 * has seen the full cluster membership, computing
+			 * ana_grpid from an incomplete vnode ring. A later
+			 * re-registration (via the ACL_CHANGE event, once
+			 * membership has converged) must still take effect,
+			 * or nodes can permanently disagree on which ANA
+			 * group is optimized for this namespace.
+			 */
 			sd_debug("Namespace '%06x' already present", nsid);
+			new->ana_grpid = ns->ana_grpid;
+			new->size = ns->size;
+			free(ns->inode);
 			free(ns);
 			ret = 0;
 		}
