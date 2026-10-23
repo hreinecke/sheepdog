@@ -22,7 +22,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <uuid/uuid.h>
+#ifdef HAVE_IO_URING
 #include <liburing.h>
+#endif
 
 #ifdef HAVE_GNUTLS
 #include <gnutls/gnutls.h>
@@ -153,7 +155,9 @@ struct nofuse_queue {
 	struct list_node node;
 	pthread_t pthread;
 	unsigned int trtype;
+#ifdef HAVE_IO_URING
 	struct io_uring uring;
+#endif
 	struct io_ops *io_ops;
 	struct xp_ops *ops;
 	struct nofuse_port *port;

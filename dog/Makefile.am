@@ -53,12 +53,12 @@ dog_LDADD		+= -leq_embed
 endif
 
 if BUILD_NVMET
-if BUILD_TLS
 if BUILD_GNUTLS
 dog_LDADD		+= -lgnutls
 else
 dog_LDADD		+= -lcrypto -lssl
 endif
+if BUILD_KEYUTILS
 dog_LDADD		+= -lkeyutils
 endif
 endif

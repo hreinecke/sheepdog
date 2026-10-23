@@ -62,20 +62,23 @@ static unsigned char default_hmac(size_t key_len)
 static const EVP_MD *select_hmac(int hmac, size_t *hmac_len)
 {
 	const EVP_MD *md = NULL;
+	size_t len = (size_t)-1;
 
 	switch (hmac) {
 	case NVME_HMAC_ALG_SHA2_256:
 		md = EVP_sha256();
-		*hmac_len = 32;
+		len = 32;
 		break;
 	case NVME_HMAC_ALG_SHA2_384:
 		md = EVP_sha384();
-		*hmac_len = 48;
+		len = 48;
 		break;
 	default:
-		*hmac_len = 0;
+		len = 0;
 		break;
 	}
+	if (hmac_len)
+		*hmac_len = len;
 	return md;
 }
 
@@ -327,7 +330,11 @@ out_free_hkdf:
 
 int nvme_dhchap_hash_len(enum nvme_hmac_alg hmac)
 {
-	int len;
+	size_t len;
+	const EVP_MD *md = select_hmac(hmac, &len);
+
+	if (!md)
+		return 0;
 	return len;
 }
 
@@ -409,77 +416,10 @@ out_free_lib:
 	return ret;
 }
 
-static int auth_host_hash(struct nofuse_ctrl *ctrl, uint8_t *response,
-			  unsigned int shash_len)
-{
-	struct nvme_auth_hmac_ctx hmac;
-	u8 *challenge = ctrl->dhchap_c1;
-	struct nvme_dhchap_key *transformed_key;
-	u8 buf[4];
-	int ret;
-
-	if (gnutls_hmac_init
-	ret = nvme_auth_hmac_init(&hmac, ctrl->shash_id, transformed_key->key,
-				  transformed_key->len);
-	if (ret)
-		goto out_free_response;
-
-	if (shash_len != nvme_dhchap_hash_len(ctrl->shash_id)) {
-		pr_err("%s: hash len mismatch (len %u digest %zu)\n", __func__,
-		       shash_len, nvme_auth_hmac_hash_len(ctrl->shash_id));
-		ret = -EINVAL;
-		goto out_free_response;
-	}
-
-	if (ctrl->dh_gid != NVME_AUTH_DHGROUP_NULL) {
-		challenge = xmalloc(shash_len);
-		if (!challenge) {
-			ret = -ENOMEM;
-			goto out_free_response;
-		}
-		ret = nvme_auth_augmented_challenge(ctrl->shash_id,
-						    req->sq->dhchap_skey,
-						    req->sq->dhchap_skey_len,
-						    req->sq->dhchap_c1,
-						    challenge, shash_len);
-		if (ret)
-			goto out_free_challenge;
-	}
-	pr_debug("ctrl %d qid %d host response seq %u transaction %d\n",
-		 ctrl->cntlid, req->sq->qid, req->sq->dhchap_s1,
-		 req->sq->dhchap_tid);
-
-	nvme_auth_hmac_update(&hmac, challenge, shash_len);
-
-	put_unaligned_le32(req->sq->dhchap_s1, buf);
-	nvme_auth_hmac_update(&hmac, buf, 4);
-
-	put_unaligned_le16(req->sq->dhchap_tid, buf);
-	nvme_auth_hmac_update(&hmac, buf, 2);
-
-	*buf = req->sq->sc_c;
-	nvme_auth_hmac_update(&hmac, buf, 1);
-	nvme_auth_hmac_update(&hmac, "HostHost", 8);
-	memset(buf, 0, 4);
-	nvme_auth_hmac_update(&hmac, ctrl->hostnqn, strlen(ctrl->hostnqn));
-	nvme_auth_hmac_update(&hmac, buf, 1);
-	nvme_auth_hmac_update(&hmac, ctrl->subsys->subsysnqn,
-			      strlen(ctrl->subsys->subsysnqn));
-	nvme_auth_hmac_final(&hmac, response);
-	ret = 0;
-out_free_challenge:
-	if (challenge != req->sq->dhchap_c1)
-		kfree(challenge);
-out_free_response:
-	memzero_explicit(&hmac, sizeof(hmac));
-	nvme_auth_free_key(transformed_key);
-	return ret;
-}
-
-  static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
-		int version, int cipher,
-		unsigned char *retained, size_t key_len,
-		char *digest, size_t digest_len)
+static int derive_psk_digest(const char *hostnqn, const char *subsysnqn,
+			     int version, int cipher,
+			     unsigned char *retained, size_t key_len,
+			     char *digest, size_t digest_len)
 {
 	static const char hmac_seed[] = "NVMe-over-Fabrics";
 	unsigned char *psk_ctx = NULL;
@@ -509,11 +449,10 @@ out_free_response:
 		break;
 	}
 
+	ret = -ENOMEM;
 	lib_ctx = OSSL_LIB_CTX_new();
-	if (!lib_ctx) {
-		ret = -ENOMEM;
+	if (!lib_ctx)
 		goto out_free_mac_ctx;
-	}
 
 	mac = EVP_MAC_fetch(lib_ctx, OSSL_MAC_NAME_HMAC, progq);
 	if (!mac)
@@ -589,9 +528,9 @@ static int gen_tls_identity(const char *hostnqn, const char *subsysnqn,
 }
 
 static int derive_nvme_keys(const char *hostnqn, const char *subsysnqn,
-		char *identity, int version,
-		int hmac, unsigned char *configured,
-		unsigned char *psk, int key_len)
+			    char *identity, int version,
+			    int hmac, unsigned char *configured,
+			    unsigned char *psk, int key_len)
 {
 	unsigned char *retained = NULL;
 	char *digest = NULL;

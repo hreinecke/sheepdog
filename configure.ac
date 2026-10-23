@@ -291,12 +291,11 @@ AC_ARG_ENABLE([openssl],
 	[  --enable-openssl	    : enable openssl (default yes) ],,
 	[ enable_openssl=$have_openssl ],)
 
-if test x$enable_gnutls = xyes -o x$enable_openssl = xyes; then
-	PKG_CHECK_MODULES([keyutils],[libkeyutils],[have_keyutils="yes"])
-	if test "x$have_keyutils" = "xyes"; then
-		AC_DEFINE(HAVE_KEYUTILS, 1, [Have keyutils])
-	fi
+PKG_CHECK_MODULES([keyutils],[libkeyutils],[have_keyutils="yes"],[have_keyutils=no])
+if test "x$have_keyutils" = "xyes"; then
+	AC_DEFINE(HAVE_KEYUTILS, 1, [Have keyutils])
 fi
+
 PKG_CHECK_MODULES([librdmacm],[librdmacm],
 	[have_rdma_cm="yes"],[have_rdma_cm="no"])
 PKG_CHECK_MODULES([libibverbs],[libibverbs],
@@ -517,23 +516,22 @@ if test "x${enable_nvmet}" = xyes; then
 		AC_DEFINE_UNQUOTED(HAVE_GNUTLS, 1, [enable gnutls])
 		AC_DEFINE_UNQUOTED(HAVE_CRYPTO, 1, [enable gnutls crypto])
 		PACKAGE_FEATURES="$PACKAGE_FEATURES gnutls"
-	fi
-	if test "x${enable_openssl}" = xyes; then
-		AC_DEFINE_UNQUOTED(HAVE_OPENSSL, 1, [enable openssl])
-		if test "x${enable_gnutls}" != xyes; then
-			PACKAGE_FEATURES="$PACKAGE_FEATURES crypto"
-		fi
 		PACKAGE_FEATURES="$PACKAGE_FEATURES crypto"
+	elif test "x${enable_openssl}" = xyes; then
+		AC_DEFINE_UNQUOTED(HAVE_OPENSSL, 1, [enable openssl])
+		PACKAGE_FEATURES="$PACKAGE_FEATURES openssl"
 	fi
 	if test "x${enable_rdma}" = xyes; then
 		AC_DEFINE_UNQUOTED(HAVE_RDMA, 1, [enable rdma])
 		PACKAGE_FEATURES="$PACKAGE_FEATURES rdma"
 	fi
 	AM_CONDITIONAL(BUILD_RDMA, test "x${enable_rdma}" = xyes)
-	AM_CONDITIONAL(BUILD_TLS, test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes)
+	AM_CONDITIONAL(BUILD_TLS, test "x$have_keyutils" = xyes -a \
+				  \(test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes\))
 fi
 AM_CONDITIONAL(BUILD_CRYPTO, test "x$enable_nvmet" = xyes -a \
 	\( "x$enable_openssl" = xyes -o "x$enable_gnutls" = xyes \))
+AM_CONDITIONAL(BUILD_KEYUTILS, test "x$have_keyutils" = xyes)
 
 if test "x${enable_diskvnodes}" = xyes; then
 	AC_DEFINE_UNQUOTED(HAVE_DISKVNODES, 1, [have diskvnodes])
