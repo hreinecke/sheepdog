@@ -172,6 +172,28 @@ static int vdi_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 		sd_mutex_lock(&qe->ns->inode_lock);
 		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
 		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (!data_vid && is_refresh_required(qe->ns->nsid)) {
+			/*
+			 * Our cached inode is known stale (we're marked
+			 * invalidated): idx might have been created since we
+			 * last synced, so trusting "unowned" here could hand
+			 * back zeros for data that really exists. Refresh
+			 * and recheck before deciding -- see uring.c's
+			 * equivalent fix for the full story (observed as
+			 * mkfs.xfs CRC errors with no I/O error anywhere).
+			 */
+			ret = vdi_refresh_inode(qe->ns);
+			if (ret != SD_RES_SUCCESS) {
+				ctrl_err(ep, "tag %d VDI %"PRIx32
+					 " idx %u inode refresh failed: %s",
+					 qe->tag, qe->ns->nsid, idx,
+					 sd_strerror(ret));
+				return NVME_SC_INTERNAL;
+			}
+			sd_mutex_lock(&qe->ns->inode_lock);
+			data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+			sd_mutex_unlock(&qe->ns->inode_lock);
+		}
 		if (data_vid) {
 			oid = vid_to_data_oid(data_vid, idx);
 			ret = sd_read_object(oid, (char *)data, len, off);

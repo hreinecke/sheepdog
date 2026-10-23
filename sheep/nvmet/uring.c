@@ -100,6 +100,7 @@ struct uring_refresh_ctx {
 	char *data;
 	size_t len;
 	bool is_inode_write;
+	bool is_read;
 };
 
 static void uring_inode_write_done(struct request *req);
@@ -126,6 +127,26 @@ static void uring_refresh_done(struct request *req)
 	memcpy(qe->ns->inode, req->data, data_vid_offset(SD_INODE_DATA_INDEX));
 	sd_mutex_unlock(&qe->ns->inode_lock);
 	free(req->data);
+
+	if (ctx->is_read) {
+		uint32_t data_vid;
+
+		sd_mutex_lock(&qe->ns->inode_lock);
+		data_vid = sd_inode_get_vid(qe->ns->inode, ctx->idx);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (data_vid) {
+			uint64_t oid = vid_to_data_oid(data_vid, ctx->idx);
+
+			sd_read_object_async(oid, ctx->data, ctx->len,
+					     ctx->off, uring_io_done, qe);
+		} else {
+			memset(ctx->data, 0, ctx->len);
+			if (refcount_dec(&qe->async_pending) == 0)
+				uring_complete(qe->ep, qe);
+		}
+		free(ctx);
+		return;
+	}
 
 	if (ctx->is_inode_write) {
 		off_t inode_off = offsetof(struct sd_inode, data_vdi_id[ctx->idx]);
@@ -161,7 +182,8 @@ static void uring_refresh_done(struct request *req)
 }
 
 static void uring_refresh_and_retry(struct ep_qe *qe, uint64_t idx, off_t off,
-				    char *data, size_t len, bool is_inode_write)
+				    char *data, size_t len, bool is_inode_write,
+				    bool is_read)
 {
 	struct uring_refresh_ctx *ctx = xmalloc(sizeof(*ctx));
 	size_t refresh_len = data_vid_offset(SD_INODE_DATA_INDEX);
@@ -173,6 +195,7 @@ static void uring_refresh_and_retry(struct ep_qe *qe, uint64_t idx, off_t off,
 	ctx->data = data;
 	ctx->len = len;
 	ctx->is_inode_write = is_inode_write;
+	ctx->is_read = is_read;
 
 	/*
 	 * No SD_FLAG_CMD_TGT: this read must go through even while we're
@@ -200,17 +223,36 @@ static void uring_inode_write_done(struct request *req)
 		ctrl_info(qe->ep, "tag %d VDI %"PRIx32
 			  " idx %"PRIx64" inode invalidated",
 			  qe->tag, qe->ns->nsid, idx);
-		uring_refresh_and_retry(qe, idx, 0, NULL, 0, true);
+		uring_refresh_and_retry(qe, idx, 0, NULL, 0, true, false);
 		return;
 	}
+	/*
+	 * Only the cache update for a *confirmed* inode-index write landing
+	 * here, not an optimistic one made back when the data write first
+	 * succeeded: this cache (qe->ns->inode) is shared by every qe on
+	 * this namespace, and a concurrent chunk's invalidation refresh
+	 * (uring_refresh_done()) overwrites the whole data_vdi_id[] prefix
+	 * from the server's view under the same inode_lock. If we'd set
+	 * this idx's ownership here before the server actually durably
+	 * recorded it, such a refresh landing in the gap could silently
+	 * revert it back to unowned -- the index write below would still
+	 * succeed, but the in-memory cache would disagree with disk, and a
+	 * later read on this node would see stale/zeroed data instead of
+	 * what was just written (observed as mkfs.xfs CRC errors with the
+	 * io_uring backend; sheep/nvmet/vdi.c's synchronous equivalent
+	 * doesn't have this window because it holds inode_lock across the
+	 * whole optimistic-set+confirm+rollback sequence, which this async
+	 * code can't do since the confirmation is a separate callback).
+	 */
+	sd_mutex_lock(&qe->ns->inode_lock);
+	sd_inode_set_vid(qe->ns->inode, idx,
+			req->rp.result == SD_RES_SUCCESS ? qe->ns->nsid : 0);
+	sd_mutex_unlock(&qe->ns->inode_lock);
 	if (req->rp.result != SD_RES_SUCCESS) {
 		ctrl_err(qe->ep, "tag %d VDI %"PRIx32
 			 " idx %"PRIx64" failed to update inode: %s",
 			 qe->tag, qe->ns->nsid, idx,
 			 sd_strerror(req->rp.result));
-		sd_mutex_lock(&qe->ns->inode_lock);
-		sd_inode_set_vid(qe->ns->inode, idx, 0);
-		sd_mutex_unlock(&qe->ns->inode_lock);
 		qe->async_result = req->rp.result;
 	}
 	if (refcount_dec(&qe->async_pending) == 0)
@@ -235,7 +277,8 @@ static void uring_write_object_complete(struct request *req)
 			  " idx %"PRIx64" inode invalidated",
 			  qe->tag, qe->ns->nsid, idx);
 		uring_refresh_and_retry(qe, idx, req->rq.obj.offset,
-					req->data, req->data_length, false);
+					req->data, req->data_length, false,
+					false);
 		return;
 	}
 	if (req->rp.result != SD_RES_SUCCESS) {
@@ -248,10 +291,13 @@ static void uring_write_object_complete(struct request *req)
 	if (req->rq.opcode == SD_OP_CREATE_AND_WRITE_OBJ) {
 		off_t inode_off = offsetof(struct sd_inode, data_vdi_id[idx]);
 
-		sd_mutex_lock(&qe->ns->inode_lock);
-		sd_inode_set_vid(qe->ns->inode, idx, qe->ns->nsid);
-		sd_mutex_unlock(&qe->ns->inode_lock);
 		/*
+		 * Don't update qe->ns->inode's cached ownership for idx
+		 * here yet -- uring_inode_write_done() does that once the
+		 * index write below actually confirms it server-side; see
+		 * the comment there for why setting it optimistically here
+		 * instead is unsafe.
+		 *
 		 * qe->inode_vid_buf, not a local variable: sd_write_object_async()
 		 * only stores this pointer, it doesn't copy the bytes -- the
 		 * actual write reads it back later, asynchronously, quite
@@ -344,8 +390,21 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 			sd_read_object_async(oid, (char *)data, len,
 					     off, uring_io_done, qe);
 			ret = -EINPROGRESS;
+		} else if (is_refresh_required(qe->ns->nsid)) {
+			/*
+			 * Our cached inode is known stale (we're marked
+			 * invalidated): idx might actually have been created
+			 * since we last synced, so trusting "unowned" here
+			 * could hand back zeros for data that really exists.
+			 * Refresh and recheck before deciding. Reads that
+			 * aren't marked stale skip this (common sparse-read
+			 * fast path, no round trip) since in that case our
+			 * cache genuinely has no reason to be wrong.
+			 */
+			uring_refresh_and_retry(qe, idx, off, (char *)data,
+						len, false, true);
+			ret = -EINPROGRESS;
 		} else {
-			/* Todo: re-check inode */
 			memset(data, 0, len);
 		}
 		data += len;
@@ -482,7 +541,17 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 			status = ret;
 			goto out_rsp;
 		}
-		/* All of this command's sub-I/Os have completed. */
+		/*
+		 * All of this command's sub-I/Os have completed. Clear this
+		 * now, not just on the early-exit paths above: qe is a fixed,
+		 * per-tag slot that gets reused for a brand new command once
+		 * this response is sent, and async_started staying true would
+		 * make uring_handle_qe() skip straight to this "already
+		 * complete" branch for that *next* command -- checking this
+		 * stale qe->async_result and acking it without ever calling
+		 * uring_submit_read()/_write()/_dsm() at all.
+		 */
+		qe->async_started = false;
 		if (qe->async_result != SD_RES_SUCCESS) {
 			status = NVME_SC_INTERNAL;
 			goto out_rsp;
