@@ -247,7 +247,7 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			 cntlid, 0xffff);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
-	if (!sqsize || sqsize > NVMF_SQ_DEPTH) {
+	if (!sqsize || sqsize >= NVMF_SQ_DEPTH) {
 		ctrl_err(ep, "ctrl %d qid %d invalid sqsize %u",
 			 cntlid, qid, sqsize);
 		return NVME_SC_CONNECT_INVALID_PARAM;
@@ -257,10 +257,20 @@ static int handle_connect(struct nofuse_queue *ep, struct ep_qe *qe,
 			  ep->ctrl->cntlid, qid);
 		return NVME_SC_CONNECT_CTRL_BUSY;
 	}
-	if (qid == 0 && sqsize > NVMF_AQ_DEPTH)
+	/*
+	 * SQSIZE is a 0's based value (actual queue depth is sqsize + 1,
+	 * same convention the host side uses to fill it in): ep->qsize,
+	 * and everything that bounds-checks a qe's fixed ep->qes[] index
+	 * against it (e.g. rdma_prep_rma_read()'s ttag check), wants the
+	 * real entry count, not the raw wire value -- using sqsize
+	 * directly here made the last qe (tag sqsize) look out of range
+	 * and get rejected as an "invalid ttag" once the host actually
+	 * used the full negotiated queue depth.
+	 */
+	if (qid == 0 && (uint32_t)sqsize + 1 > NVMF_AQ_DEPTH)
 		ep->qsize = NVMF_AQ_DEPTH;
 	else
-		ep->qsize = sqsize;
+		ep->qsize = sqsize + 1;
 
 	ep->qid = qid;
 
