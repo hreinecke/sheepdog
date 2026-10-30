@@ -181,7 +181,7 @@ enum sd_node_status {
 	SD_NODE_STATUS_OK,
 };
 
-#ifdef HAVE_ACCELIO
+#ifdef HAVE_RDMA
 #define IO_TRANSPORT_TYPE_TCP 1
 #define IO_TRANSPORT_TYPE_RDMA 2
 #endif
@@ -191,7 +191,7 @@ struct node_id {
 	uint16_t port;
 	uint8_t io_addr[16];
 	uint16_t io_port;
-#ifndef HAVE_ACCELIO
+#ifndef HAVE_RDMA
 	uint8_t pad[4];
 #else
 	uint8_t io_transport_type;

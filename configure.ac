@@ -306,6 +306,11 @@ fi
 AC_ARG_ENABLE([rdma],
 	[  --enable-rdma	: enable rdma (default yes) ],,
 	[ enable_rdma=$have_ibverbs ],)
+if test "x${enable_rdma}" = xyes; then
+	AC_DEFINE_UNQUOTED(HAVE_RDMA, 1, [enable rdma])
+	PACKAGE_FEATURES="$PACKAGE_FEATURES rdma"
+fi
+AM_CONDITIONAL(BUILD_RDMA, test "x${enable_rdma}" = xyes)
 
 AC_ARG_ENABLE([nvmet],
 	[  --enable-nvmet	    : enable nvme-over-fabric target (default yes)],,
@@ -329,11 +334,6 @@ AM_CONDITIONAL(BUILD_LTTNG_UST, test x$enable_lttng_ust = xyes)
 
 AC_ARG_ENABLE(systemd, AS_HELP_STRING([--enable-systemd],[enable systemd support]),enable_systemd=$enableval,enable_systemd="no")
 AM_CONDITIONAL(BUILD_SYSTEMD, test x$enable_systemd = xyes)
-
-AC_ARG_ENABLE([accelio],
-	[  --enable-accelio         : enable accelio (default no)],,
-	[ enable_accelio=$HAVE_ACCELIO ],)
-AM_CONDITIONAL(BUILD_ACCELIO, test x$enable_accelio = xyes)
 
 AC_ARG_ENABLE([io-uring],
 	[  --enable-io-uring        : use io_uring for the event loop instead of epoll (default no) ],,
@@ -521,14 +521,10 @@ if test "x${enable_nvmet}" = xyes; then
 		AC_DEFINE_UNQUOTED(HAVE_OPENSSL, 1, [enable openssl])
 		PACKAGE_FEATURES="$PACKAGE_FEATURES openssl"
 	fi
-	if test "x${enable_rdma}" = xyes; then
-		AC_DEFINE_UNQUOTED(HAVE_RDMA, 1, [enable rdma])
-		PACKAGE_FEATURES="$PACKAGE_FEATURES rdma"
-	fi
-	AM_CONDITIONAL(BUILD_RDMA, test "x${enable_rdma}" = xyes)
-	AM_CONDITIONAL(BUILD_TLS, test "x$have_keyutils" = xyes -a \
-				  \(test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes\))
 fi
+AM_CONDITIONAL(BUILD_TLS, test "x$enable_nvmet" = xyes -a \
+			  "x$have_keyutils" = xyes -a \
+			  \(test "x${enable_gnutls}" = xyes -o "x$enable_openssl" = xyes\))
 AM_CONDITIONAL(BUILD_CRYPTO, test "x$enable_nvmet" = xyes -a \
 	\( "x$enable_openssl" = xyes -o "x$enable_gnutls" = xyes \))
 AM_CONDITIONAL(BUILD_KEYUTILS, test "x$have_keyutils" = xyes)
@@ -546,13 +542,6 @@ if test "x${enable_lttng_ust}" = xyes; then
 		AC_MSG_ERROR(headers of LTTng not found))
 	AC_DEFINE_UNQUOTED(HAVE_LTTNG_UST, 1, [have LTTng ust])
 	PACKAGE_FEATURES="$PACKAGE_FEATURES LTTng-ust"
-fi
-
-if test "x${enable_accelio}" = xyes; then
-	AC_CHECK_HEADERS([libxio.h],,
-		AC_MSG_ERROR(header of accelio not found))
-	AC_DEFINE_UNQUOTED(HAVE_ACCELIO, 1, [have accelio])
-	PACKAGE_FEATURES="$PACKAGE_FEATURES accelio"
 fi
 
 # extra warnings
@@ -638,18 +627,10 @@ else
 	LTTNG_UST_CFLAGS=""
 fi
 
-if test "x${enable_accelio}" = xyes ; then
-	AC_MSG_NOTICE([Enabling Accelio (-lxio)])
-	LIBS+="-lxio"
-	ACCELIO_CFLAGS="-DHAVE_ACCELIO"
-else
-	ACCELIO_CFLAGS=""
-fi
-
 # final build of *FLAGS
 CFLAGS="$ENV_CFLAGS $OPT_CFLAGS $GDB_FLAGS $OS_CFLAGS \
 	$TRACE_CFLAGS $COVERAGE_CFLAGS $EXTRA_WARNINGS $WERROR_CFLAGS \
-	$LTTNG_UST_CFLAGS $ACCELIO_CFLAGS -D_GNU_SOURCE -D_LGPL_SOURCE \
+	$LTTNG_UST_CFLAGS -D_GNU_SOURCE -D_LGPL_SOURCE \
 	-std=gnu99"
 CPPFLAGS="$ENV_CPPFLAGS $ANSI_CPPFLAGS $OS_CPPFLAGS"
 LDFLAGS="$ENV_LDFLAGS $COVERAGE_LDFLAGS $OS_LDFLAGS $TRACE_LDFLAGS"

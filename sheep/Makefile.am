@@ -87,12 +87,16 @@ AM_CPPFLAGS		+= -DENABLE_TRACE
 sheep_SOURCES		+= trace/trace.c trace/mcount.S trace/graph.c trace/checker.c
 endif
 
-if BUILD_ACCELIO
-sheep_SOURCES		+= xio_server.c xio_client.c
+if BUILD_RDMA
+sheep_SOURCES		+= rdma_server.c rdma_client.c
 endif
 
 sheep_LDADD	  	= ../lib/libsd.a ../lib/libisa.a -luuid -lpthread -lm -ljson-c \
 			  $(libacrd_LIBS) $(corosync_LIBS) $(LIBS)
+
+if BUILD_RDMA
+sheep_LDADD		+= -libverbs -lrdmacm
+endif
 
 if BUILD_NFS
 sheep_LDADD		+= -lrt
@@ -106,9 +110,6 @@ sheep_LDADD		+= -lssl -lcrypto
 endif
 if BUILD_KEYUTILS
 sheep_LDADD		+= -lkeyutils
-endif
-if BUILD_RDMA
-sheep_LDADD		+= -libverbs -lrdmacm
 endif
 if BUILD_IO_URING
 sheep_LDADD		+= -luring
@@ -133,6 +134,10 @@ sheep_DEPENDENCIES	= ../lib/libsd.a ../lib/libisa.a
 noinst_HEADERS		= sheep_priv.h cluster.h http/http.h trace/trace.h \
 			  nfs/nfs.h nfs/fs.h
 
+if BUILD_RDMA
+noinst_HEADERS		+= rdma.h
+endif
+
 EXTRA_DIST		=
 
 if BUILD_EARTHQUAKE
@@ -145,10 +150,6 @@ noinst_HEADERS		+=  tracepoint/request_tp.h
 
 if BUILD_LTTNG_UST
 sheep_SOURCES	+= tracepoint/request_tp.c
-endif
-
-if BUILD_ACCELIO
-sheep_LDADD		+= -lxio
 endif
 
 all-local:

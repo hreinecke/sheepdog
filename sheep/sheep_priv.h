@@ -67,8 +67,8 @@
 
 enum client_info_type {
 	CLIENT_INFO_TYPE_DEFAULT = 1,
-#ifdef HAVE_ACCELIO
-	CLIENT_INFO_TYPE_XIO,
+#ifdef HAVE_RDMA
+	CLIENT_INFO_TYPE_RDMA,
 #endif
 };
 
@@ -94,8 +94,10 @@ struct client_info {
 
 	refcnt_t refcnt;
 
-#ifdef HAVE_ACCELIO
-	struct xio_msg *xio_req;
+#ifdef HAVE_RDMA
+	/* the accepted RDMA connection (QP/CQs/comp channel/recv pool) this
+	 * client_info belongs to; owned by rdma_server.c */
+	struct rdma_server_conn *rdma_conn;
 #endif
 };
 
@@ -154,6 +156,16 @@ struct request {
 	enum REQUST_STATUS status;
 	bool stat; /* true if this request is during stat */
 	unsigned int retry_count; /* consecutive retries without progress */
+
+#ifdef HAVE_RDMA
+	/*
+	 * Set by rdma_server.c while handling the incoming request, consumed
+	 * and freed by rdma_send_reply() when the response goes out. Kept on
+	 * the request (not client_info) so pipelined requests on the same
+	 * RDMA connection don't stomp on each other's addr/rkey.
+	 */
+	struct rdma_req_ctx *rdma_ctx;
+#endif
 };
 
 struct sd_cache_stat {
@@ -390,8 +402,8 @@ static inline bool is_aligned_to_pagesize(void *p)
 }
 
 int create_listen_port(const char *bindaddr, int port);
-#ifdef HAVE_ACCELIO
-int xio_create_listen_port(const char *bindaddr, int port, bool rdma);
+#ifdef HAVE_RDMA
+int rdma_create_listen_port(const char *bindaddr, int port);
 #endif
 int init_unix_domain_socket(const char *dir);
 void unregister_listening_fds(void);
@@ -715,9 +727,11 @@ extern bool wildcard_recovery;
 struct request *alloc_request(struct client_info *ci, uint32_t data_length);
 void queue_request(struct request *req);
 void free_request(struct request *req);
+void clear_client_info(struct client_info *ci);
 
-#ifdef HAVE_ACCELIO
-void xio_send_reply(struct client_info *ci);
+#ifdef HAVE_RDMA
+void rdma_send_reply(struct client_info *ci);
+void rdma_destroy_connection(struct client_info *ci);
 #endif
 
 #ifdef HAVE_NVMET

@@ -17,8 +17,8 @@
 #include <systemd/sd-daemon.h>
 #endif
 
-#ifdef HAVE_ACCELIO
-#include "xio.h"
+#ifdef HAVE_RDMA
+#include "rdma.h"
 #endif
 
 #define TRACEPOINT_DEFINE
@@ -628,7 +628,6 @@ void requeue_request(struct request *req, unsigned int max_delay)
 	add_timer(&req->retry_timer, delay);
 }
 
-static void clear_client_info(struct client_info *ci);
 
 static struct request *alloc_local_request(void *data, int data_length)
 {
@@ -887,9 +886,9 @@ main_fn void put_request(struct request *req)
 						clear_client_info(ci);
 					}
 				break;
-#ifdef HAVE_ACCELIO
-			case CLIENT_INFO_TYPE_XIO:
-				xio_send_reply(ci);
+#ifdef HAVE_RDMA
+			case CLIENT_INFO_TYPE_RDMA:
+				rdma_send_reply(ci);
 				break;
 #endif
 			default:
@@ -1093,12 +1092,18 @@ static void tx_main(struct work *work)
 
 static void destroy_client(struct client_info *ci)
 {
+#ifdef HAVE_RDMA
+	if (ci->type == CLIENT_INFO_TYPE_RDMA) {
+		rdma_destroy_connection(ci);
+		return;
+	}
+#endif
 	sd_debug("connection from: %s:%d", ci->conn.ipstr, ci->conn.port);
 	close(ci->conn.fd);
 	free(ci);
 }
 
-static void clear_client_info(struct client_info *ci)
+void clear_client_info(struct client_info *ci)
 {
 	struct request *req, *tmp;
 
@@ -1111,7 +1116,10 @@ static void clear_client_info(struct client_info *ci)
 		free_request(req);
 	}
 
-	unregister_event(ci->conn.fd);
+#ifdef HAVE_RDMA
+	if (ci->type != CLIENT_INFO_TYPE_RDMA)
+#endif
+		unregister_event(ci->conn.fd);
 
 	sd_debug("refcnt:%d, fd:%d, %s:%d", refcount_read(&ci->refcnt),
 		 ci->conn.fd, ci->conn.ipstr, ci->conn.port);
@@ -1330,14 +1338,6 @@ int create_listen_port(const char *bindaddr, int port)
 				   &is_inet_socket);
 }
 
-#ifdef HAVE_ACCELIO
-int xio_create_listen_port(const char *bindaddr, int port, bool rdma)
-{
-	return xio_create_listen_ports(bindaddr, port, create_listen_port_fn,
-				       rdma);
-}
-#endif
-
 int init_unix_domain_socket(const char *dir)
 {
 	static bool is_inet_socket;
@@ -1388,7 +1388,24 @@ worker_fn int sheep_exec_req(const struct node_id *nid, struct sd_req *hdr,
 	struct sd_rsp *rsp = (struct sd_rsp *)hdr;
 	int ret;
 
-#ifndef HAVE_ACCELIO
+#ifdef HAVE_RDMA
+	if (nid->io_port && nid->io_transport_type == IO_TRANSPORT_TYPE_RDMA) {
+		ret = rdma_exec_req(nid, hdr, buf, sheep_need_retry,
+				    hdr->epoch, MAX_RETRY_COUNT);
+		if (ret) {
+			sd_debug("remote node might have gone away");
+			return SD_RES_NETWORK_ERROR;
+		}
+		ret = rsp->result;
+		if (ret != SD_RES_SUCCESS)
+			sd_warn("failed %s, remote address: %s, op name: %s",
+					sd_strerror(ret),
+					addr_to_str(nid->io_addr,
+						    nid->io_port),
+					op_name(get_sd_op(hdr->opcode)));
+		return ret;
+	}
+#endif
 
 	struct sockfd *sfd;
 
@@ -1412,22 +1429,6 @@ worker_fn int sheep_exec_req(const struct node_id *nid, struct sd_req *hdr,
 
 	sockfd_cache_put(nid, sfd);
 
-#else  /* HAVE_ACCELIO */
-
-	ret = xio_exec_req(nid, hdr, buf, sheep_need_retry, hdr->epoch,
-			   MAX_RETRY_COUNT);
-	if (ret) {
-		sd_debug("remote node might have gone away");
-		return SD_RES_NETWORK_ERROR;
-	}
-	ret = rsp->result;
-	if (ret != SD_RES_SUCCESS)
-		sd_warn("failed %s, remote address: %s, op name: %s",
-				sd_strerror(ret),
-				addr_to_str(nid->addr, nid->port),
-				op_name(get_sd_op(hdr->opcode)));
-
-#endif
 	return ret;
 }
 

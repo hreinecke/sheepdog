@@ -8,7 +8,6 @@
 %define enable_nfs        %{?_have_nfs}%{!?_have_nfs:0}
 %define enable_diskvnodes %{?_have_diskvnodes}%{!?_have_diskvnodes:0}
 %define enable_lttng_ust  %{?_have_lttng_ust}%{!?_have_lttng_ust:0}
-%define enable_accelio    %{?_have_accelio}%{!?_have_accelio:0}
 %define enable_trace      %{?_have_trace}%{!?_have_trace:0}
 
 # Main
@@ -51,10 +50,6 @@ BuildRequires: %{_includedir}/rpc/rpc.h
 %if 0%{?enable_lttng_ust}
 BuildRequires: lttng-ust-devel
 %endif
-%if 0%{?enable_accelio}
-BuildRequires: %{_includedir}/libxio.h
-%endif
-
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 %description
@@ -163,12 +158,6 @@ as sheepdog's high reliable storage.
 %define lttng_ust_configure_args $(echo "--disable-lttng-ust")
 %endif
 
-%if 0%{?enable_accelio}
-%define accelio_configure_args $(echo "--enable-accelio")
-%else
-%define accelio_configure_args $(echo "--disable-accelio")
-%endif
-
 %if 0%{?enable_trace}
 %define trace_configure_args $(echo "--enable-trace")
 %else
@@ -189,7 +178,6 @@ as sheepdog's high reliable storage.
   %{?nfs_configure_args} \
   %{?diskvnodes_configure_args} \
   %{?lttng_ust_configure_args} \
-  %{?accelio_configure_args} \
   %{?trace_configure_args}
 make %{?_smp_mflags}
 %{__mv} %{_builddir}/%{name}-%{version}/sheep/sheep \
@@ -210,7 +198,6 @@ make clean
   %{?nfs_configure_args} \
   %{?diskvnodes_configure_args} \
   %{?lttng_ust_configure_args} \
-  %{?accelio_configure_args} \
   %{?trace_configure_args}
 make %{?_smp_mflags}
 %{__mv} %{_builddir}/%{name}-%{version}/sheep/sheep \
@@ -229,7 +216,6 @@ make clean
   %{?nfs_configure_args} \
   %{?diskvnodes_configure_args} \
   %{?lttng_ust_configure_args} \
-  %{?accelio_configure_args} \
   %{?trace_configure_args}
 make %{?_smp_mflags}
 %{__mv} %{_builddir}/%{name}-%{version}/sheep/sheep \

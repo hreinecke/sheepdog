@@ -242,7 +242,7 @@ static int etcd_node_set_addr(struct etcd_node *node, const char *attr)
 			return 0;
 		strcpy(val, addr);
 		len = strlen(val);
-#ifdef HAVE_ACCELIO
+#ifdef HAVE_RDMA
 	} else if (!strcmp(attr, "io_transport_type")) {
 		if (node->node.nid.io_transport_type == IO_TRANSPORT_TYPE_RDMA)
 			strcpy(val, "rdma");
@@ -336,7 +336,7 @@ static inline int etcd_node_upload(void)
 	if (rc) goto err;
 	rc = etcd_node_set_addr(&this_node, "io_addr");
 	if (rc) goto err;
-#ifdef HAVE_ACCELIO
+#ifdef HAVE_RDMA
 	rc = etcd_node_set_addr(&this_node, "io_transport_type");
 	if (rc) goto err;
 #endif
@@ -393,7 +393,7 @@ static inline int etcd_kv_to_node(struct etcd_kv *kv,
 		str_to_io_node(kv->value, &node->node);
 		return 0;
 	}
-#ifdef HAVE_ACCELIO
+#ifdef HAVE_RDMA
 	if (!strcmp(attr, "io_transport_type")) {
 		if (!strcmp(kv->value, "rdma"))
 			node->node.nid.io_transport_type =

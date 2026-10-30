@@ -16,10 +16,6 @@
 #include "trace/trace.h"
 #include "option.h"
 
-#ifdef HAVE_ACCELIO
-#include "xio.h"
-#endif
-
 #ifdef HAVE_SYSTEMD
 #include <systemd/sd-daemon.h>
 #endif
@@ -462,21 +458,9 @@ static int ionic_port_parser(const char *s)
 	return 0;
 }
 
-#ifdef HAVE_ACCELIO
-static const char *io_transport;
-static int ionic_transport_parser(const char *s)
-{
-	io_transport = s;
-	return 0;
-}
-#endif
-
 static struct option_parser ionic_parsers[] = {
 	{ "host=", ionic_host_parser },
 	{ "port=", ionic_port_parser },
-#ifdef HAVE_ACCELIO
-	{ "transport=", ionic_transport_parser },
-#endif
 	{ NULL, NULL },
 };
 
@@ -791,8 +775,8 @@ static void show_features(int feat) /* feat: 0; show cdrv only */
 		fprintf(stdout, " lttng-ust");
 		have_feats = 1;
 #endif
-#ifdef HAVE_ACCELIO
-		fprintf(stdout, " accelio");
+#ifdef HAVE_RDMA
+		fprintf(stdout, " rdma");
 		have_feats = 1;
 #endif
 #ifdef HAVE_TRACE
@@ -1029,18 +1013,9 @@ int main(int argc, char **argv, char **envp)
 					exit(1);
 				}
 			sys->this_node.nid.io_port = io_port;
-#ifdef HAVE_ACCELIO
-			if (!strcmp(io_transport, "tcp"))
-				sys->this_node.nid.io_transport_type =
-					IO_TRANSPORT_TYPE_TCP;
-			else if (!strcmp(io_transport, "rdma"))
-				sys->this_node.nid.io_transport_type =
-					IO_TRANSPORT_TYPE_RDMA;
-			else {
-				sd_err("unknown transport type: %s",
-				       io_transport);
-				exit(1);
-			}
+#ifdef HAVE_RDMA
+			sys->this_node.nid.io_transport_type =
+				IO_TRANSPORT_TYPE_RDMA;
 #endif
 			break;
 		case 'j':
@@ -1230,11 +1205,6 @@ int main(int argc, char **argv, char **envp)
 		goto cleanup_dir;
 	}
 
-#ifdef HAVE_ACCELIO
-	sd_xio_init();
-	xio_init_main_ctx();
-#endif
-
 	ret = log_init(program_name, log_dst_type, log_level, log_path);
 	if (ret) {
 		free(argp);
@@ -1262,27 +1232,15 @@ int main(int argc, char **argv, char **envp)
 	if (ret)
 		goto cleanup_log;
 
-#ifndef HAVE_ACCELIO
-	if (io_addr && create_listen_port(io_addr, io_port))
-		goto cleanup_log;
-#else
 	if (io_addr) {
-		bool rdma;
-
-		if (!strcmp(io_transport, "rdma"))
-			rdma = true;
-		else {
-			sd_assert(!strcmp(io_transport, "tcp"));
-			rdma = false;
-		}
-
-		if (xio_create_listen_port(io_addr, io_port, rdma))
+#ifdef HAVE_RDMA
+		if (rdma_create_listen_port(io_addr, io_port))
 			goto cleanup_log;
-	} else {
-		sd_err("accelio is enabled but io address (-i) isn't passed, exiting");
-		goto cleanup_log;
-	}
+#else
+		if (create_listen_port(io_addr, io_port))
+			goto cleanup_log;
 #endif
+	}
 
 	ret = init_unix_domain_socket(dir);
 	if (ret)

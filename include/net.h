@@ -34,23 +34,7 @@ struct connection {
 	char ipstr[INET6_ADDRSTRLEN];
 
 	bool dead;
-
-#ifdef HAVE_ACCELIO
-	/* session: the session this connection belongs to */
-	struct xio_session *session;
-
-	struct xio_connection *conn;
-	struct list_node list;
-#endif
 };
-
-#ifdef HAVE_ACCELIO
-
-struct sd_xio_session {
-	int efd;
-};
-
-#endif
 
 int conn_tx_off(struct connection *conn);
 int conn_tx_on(struct connection *conn);

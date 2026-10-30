@@ -100,8 +100,8 @@ if BUILD_LTTNG_UST
 RPMBUILDOPTS += --define "_have_lttng_ust 1"
 endif
 
-if BUILD_ACCELIO
-RPMBUILDOPTS += --define "_have_accelio 1"
+if BUILD_RDMA
+RPMBUILDOPTS += --define "_have_rdma 1"
 endif
 
 if BUILD_TRACE

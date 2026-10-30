@@ -457,15 +457,22 @@ static struct sockfd *sockfd_cache_get_long(const struct node_id *nid)
 	struct sockfd_cache_entry *entry;
 	struct sockfd *sfd;
 	bool isIO = true;
-#ifndef HAVE_ACCELIO
 	bool use_io = nid->io_port ? true : false;
-	const uint8_t *addr = use_io ? nid->io_addr : nid->addr;
-	int fd, idx = -1, port = use_io ? nid->io_port : nid->port;
-#else
-	bool use_io = false;
-	const uint8_t *addr = nid->addr;
-	int fd, idx = -1, port = nid->port;
+	const uint8_t *addr;
+	int fd, idx = -1, port;
+
+#ifdef HAVE_RDMA
+	/*
+	 * A peer whose IO NIC speaks RDMA is handled entirely by
+	 * rdma_exec_req()/gateway_forward_request()'s RDMA branch; plain TCP
+	 * must never dial its io_addr/io_port (nothing TCP is listening
+	 * there -- it's bound as an rdma_cm listener).
+	 */
+	if (nid->io_transport_type == IO_TRANSPORT_TYPE_RDMA)
+		use_io = false;
 #endif
+	addr = use_io ? nid->io_addr : nid->addr;
+	port = use_io ? nid->io_port : nid->port;
 grab:
 	entry = sockfd_cache_grab(nid, &idx, &isIO);
 	if (!entry) {
