@@ -376,9 +376,9 @@ retry_aen:
 		ctrl_err(ep, "handle aen failed, error %d", ret);
 		return ret;
 	}
+#endif
 	if (aen_pending(ep->ctrl))
 		goto retry_aen;
-#endif
 	return 0;
 }
 
