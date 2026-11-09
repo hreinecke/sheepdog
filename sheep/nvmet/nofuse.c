@@ -147,13 +147,15 @@ static int lookup_nodes(struct nofuse_context *ctx)
 	req.data_length = size;
 
 	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
-	if (ret < 0)
+	if (ret < 0) {
+		sd_err("Failed to execute GET_NODE_LIST: %s", strerror(-ret));
 		goto out;
+	}
 
-	if (rsp->result != SD_RES_SUCCESS) {
+	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to get node list: %s",
-		       sd_strerror(rsp->result));
-		ret = -1;
+		       sd_strerror(ret));
+		ret = -ECOMM;
 		goto out;
 	}
 
@@ -180,6 +182,7 @@ static int lookup_nodes(struct nofuse_context *ctx)
 				sd_warn("Cannot add ANA group '%d'",
 					n->zone + 1);
 				free(n);
+				ret = 0;
 				continue;
 			}
 		}
@@ -203,7 +206,6 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 {
 	int ret;
 	struct sd_req req;
-	struct sd_rsp *rsp = (struct sd_rsp *)&req;
 	char *buf;
 
 	sd_debug("%sregister VDI %"PRIx32, unregister ? "un" : "",
@@ -223,24 +225,25 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 
 	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
 	if (ret < 0) {
-		sd_warn("Failed to exec %s, error %d",
+		sd_warn("Failed to exec %s: %s",
 			unregister ?
-			"SD_OP_UNREGISTER_VDI" : "SD_OP_REGISTER_VDI", -ret);
+			"SD_OP_UNREGISTER_VDI" : "SD_OP_REGISTER_VDI",
+			strerror(-ret));
 		free(buf);
 		return ret;
 	}
 
-	if (rsp->result != SD_RES_SUCCESS) {
+	if (ret != SD_RES_SUCCESS) {
 		sd_err("Failed to %sregister namespace '%06x': %s",
 		       unregister ? "un" : "",
-		       ns->nsid, sd_strerror(rsp->result));
-		ret = -1;
-		errno = EIO;
+		       ns->nsid, sd_strerror(ret));
+		ret = -ECOMM;
 	} else {
 		if (unregister)
 			ns->subsys->mnan--;
 		else
 			ns->subsys->mnan++;
+		ret = 0;
 	}
 	free(buf);
 	return ret;
@@ -263,12 +266,12 @@ int lookup_vdi_name(const char *vdiname, uint32_t acl, uint32_t *vid)
 
 	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
 	if (ret < 0)
-		return SD_RES_EIO;
+		return SD_RES_NETWORK_ERROR;
 
-	if (rsp->result == SD_RES_SUCCESS)
+	if (ret == SD_RES_SUCCESS)
 		*vid = rsp->vdi.vdi_id;
 
-	return rsp->result;
+	return ret;
 }
 
 static int register_namespace(struct nofuse_subsystem *subsys, uint32_t nsid,
@@ -567,12 +570,12 @@ retry:
 	req.data_length = buf_len;
 	ret = sheep_exec_req(&sys->this_node.nid, &req, buf);
 	if (ret < 0) {
-		sd_err("Failed to get VDI %"PRIx32" state: %m",
-		       vid);
+		sd_err("Failed to get VDI %"PRIx32" state: %s",
+		       vid, strerror(-ret));
 		free(buf);
 		return;
 	}
-	if (rsp->result != SD_RES_SUCCESS) {
+	if (ret != SD_RES_SUCCESS) {
 		free(buf);
 		if (rsp->result == SD_RES_BUFFER_SMALL) {
 			buf_len *= 2;
@@ -1121,29 +1124,35 @@ static int register_subsystems(unsigned int agid)
 	uint32_t vid;
 	struct sd_inode_header *inode = NULL;
 	struct sd_req req;
-	struct sd_rsp *rsp = (struct sd_rsp *)&req;
 	static DECLARE_BITMAP(vdi_inuse, SD_NR_VDIS);
 	static DECLARE_BITMAP(vdi_deleted, SD_NR_VDIS);
 
 	sd_init_req(&req, SD_OP_READ_VDIS);
 	req.data_length = sizeof(vdi_inuse);
 	ret = sheep_exec_req(&sys->this_node.nid, &req, vdi_inuse);
-	if (ret < 0)
-		goto out;
-	if (rsp->result != SD_RES_SUCCESS) {
-		sd_err("%s", sd_strerror(rsp->result));
-		goto out;
+	if (ret < 0) {
+		sd_err("failed execute READ_VDIS: %s", strerror(-ret));
+		return ret;
+	}
+
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("error executing READ_VDIS: %s",
+		       sd_strerror(ret));
+		return -ECOMM;
 	}
 
 	sd_init_req(&req, SD_OP_READ_DEL_VDIS);
 	req.data_length = sizeof(vdi_deleted);
 
 	ret = sheep_exec_req(&sys->this_node.nid, &req, vdi_deleted);
-	if (ret < 0)
-		goto out;
-	if (rsp->result != SD_RES_SUCCESS) {
-		sd_err("%s", sd_strerror(rsp->result));
-		goto out;
+	if (ret < 0) {
+		sd_err("failed to execute READ_DEL_VDIS: %s", strerror(-ret));
+		return ret;
+	}
+	if (ret != SD_RES_SUCCESS) {
+		sd_err("error executing READ_DEL_VDIS: %s",
+		       sd_strerror(ret));
+		return -ECOMM;
 	}
 
 	FOR_EACH_VDI(vid, vdi_inuse) {
@@ -1225,9 +1234,9 @@ static int register_subsystems(unsigned int agid)
 		register_ns_root(subsys, vdi_inuse, vdi_deleted);
 		inode = NULL;
 	}
-out:
+
 	free(inode);
-	return ret;
+	return 0;
 }
 
 static void nofuse_cleanup(void *arg)

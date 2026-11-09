@@ -289,6 +289,7 @@ static int get_vnodes(struct vnode_info *vinfo, int *nr_vnodes)
 
 	rb_for_each_entry(node, &vinfo->nroot, rb) {
 		struct sd_req hdr;
+
 		if (node_is_local(node))
 			continue;
 		if (node->nr_vnodes == 0)
@@ -298,6 +299,8 @@ static int get_vnodes(struct vnode_info *vinfo, int *nr_vnodes)
 		hdr.data_length = sizeof(*nr_vnodes);
 		hdr.epoch = sys_epoch();
 		ret = sheep_exec_req(&node->nid, &hdr, nr_vnodes);
+		if (ret < 0)
+			return SD_RES_NETWORK_ERROR;
 		if (ret != SD_RES_SUCCESS)
 			return ret;
 		node->nr_vnodes = *nr_vnodes;
@@ -1382,7 +1385,10 @@ static int local_repair_replica(struct request *req)
 	memcpy(nid.addr, req->rq.forw.addr, sizeof(nid.addr));
 	nid.port = req->rq.forw.port;
 	ret = sheep_exec_req(&nid, &hdr, buf);
-	if (ret == SD_RES_SUCCESS) {
+	if (ret < 0) {
+		sd_err("failed to execute READ_PEER: %s", strerror(-ret));
+		ret = SD_RES_NETWORK_ERROR;
+	} else if (ret == SD_RES_SUCCESS) {
 		sd_debug("read object %016"PRIx64" from %s successfully, "
 				"try saving to local", oid,
 				addr_to_str(nid.addr, nid.port));

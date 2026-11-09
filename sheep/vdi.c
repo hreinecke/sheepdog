@@ -1354,9 +1354,13 @@ validate:
 	hdr.inode_coherence.vid = vid;
 	hdr.inode_coherence.validate = 1;
 	ret = sheep_exec_req(&sys->this_node.nid, &hdr, NULL);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to validate VID: %"PRIx32" by %s",
-		       vid, node_to_str(&sys->this_node));
+	if (ret < 0)
+		sd_err("failed to execute INODE_COHERENCE: %s",
+		       strerror(-ret));
+	else if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to validate VID: %"PRIx32" by %s: %s",
+		       vid, node_to_str(&sys->this_node),
+		       sd_strerror(ret));
 	}
 
 	return;
@@ -1405,9 +1409,13 @@ invalidate:
 	hdr.inode_coherence.vid = vid;
 	hdr.inode_coherence.validate = 0;
 	ret = sheep_exec_req(&sys->this_node.nid, &hdr, NULL);
-	if (ret != SD_RES_SUCCESS) {
-		sd_err("failed to validate VID: %"PRIx32" by %s",
-		       vid, node_to_str(&sys->this_node));
+	if (ret < 0) {
+		sd_err("failed to execute INODE_COHERENCE: %s",
+		       strerror(-ret));
+	} else if (ret != SD_RES_SUCCESS) {
+		sd_err("failed to validate VID: %"PRIx32" by %s: %s",
+		       vid, node_to_str(&sys->this_node),
+		       sd_strerror(ret));
 	}
 
 	return;

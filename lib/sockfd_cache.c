@@ -617,6 +617,10 @@ struct sockfd *sockfd_cache_get(const struct node_id *nid)
 		return NULL;
 
 	sfd = xmalloc(sizeof(*sfd));
+	if (!sfd) {
+		close(fd);
+		return NULL;
+	}
 	sfd->idx = -1;
 	sfd->fd = fd;
 	sfd->isIO = false;

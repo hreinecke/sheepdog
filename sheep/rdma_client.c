@@ -400,6 +400,8 @@ static int rdma_wait_wc(struct rdma_conn *conn, struct ibv_cq *cq,
 static int rdma_post_request(struct rdma_conn *conn, struct sd_req *hdr,
 			     void *data)
 {
+	int ret;
+
 	if (hdr->data_length) {
 		int flags = IBV_ACCESS_LOCAL_WRITE |
 			((hdr->flags & SD_FLAG_CMD_WRITE) ?
@@ -409,7 +411,7 @@ static int rdma_post_request(struct rdma_conn *conn, struct sd_req *hdr,
 					  flags);
 		if (!conn->data_mr) {
 			sd_err("ibv_reg_mr failed: %m");
-			return -1;
+			return -EBADE;
 		}
 	}
 
@@ -420,13 +422,14 @@ static int rdma_post_request(struct rdma_conn *conn, struct sd_req *hdr,
 		conn->send_buf.rkey = conn->data_mr->rkey;
 	}
 
-	if (rdma_post_ctrl_send(conn)) {
-		sd_err("ibv_post_send failed: %m");
+	ret = rdma_post_ctrl_send(conn);
+	if (ret < 0) {
+		sd_err("ibv_post_send failed: %s", strerror(ret));
 		if (conn->data_mr) {
 			ibv_dereg_mr(conn->data_mr);
 			conn->data_mr = NULL;
 		}
-		return -1;
+		return ret;
 	}
 
 	return 0;
@@ -476,7 +479,7 @@ int rdma_exec_req(const struct node_id *nid, struct sd_req *hdr, void *data,
 
 	conn = rdma_conn_get(nid);
 	if (!conn)
-		return -1;
+		return -ESTALE;
 
 	if (rdma_post_request(conn, hdr, data)) {
 		rdma_conn_del(conn);

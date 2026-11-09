@@ -487,6 +487,10 @@ int epoch_log_read_remote(uint32_t epoch, struct sd_node *nodes, int len,
 		hdr.obj.tgt_epoch = epoch;
 		hdr.epoch = sys_epoch();
 		ret = sheep_exec_req(&node->nid, &hdr, buf);
+		if (ret < 0) {
+			free(buf);
+			return SD_RES_NETWORK_ERROR;
+		}
 		if (ret == SD_RES_BUFFER_SMALL) {
 			free(buf);
 			return ret;
@@ -611,6 +615,8 @@ retry:
 	hdr.data_length = rlen;
 	hdr.epoch = epoch;
 	ret = sheep_exec_req(&node->nid, &hdr, (char *)vs);
+	if (ret < 0)
+		return SD_RES_NETWORK_ERROR;
 	switch (ret) {
 	case SD_RES_SUCCESS:
 		break;
@@ -874,6 +880,7 @@ static int do_cinfo_collection_work(uint32_t epoch, uint32_t vid,
 				    struct sd_node *n, struct vdi_state *result)
 {
 	struct sd_req hdr;
+	int ret;
 
 	sd_init_req(&hdr, SD_OP_VDI_STATE_CHECKPOINT_CTL);
 	hdr.vdi_state_checkpoint.get = 1;
@@ -881,7 +888,10 @@ static int do_cinfo_collection_work(uint32_t epoch, uint32_t vid,
 	hdr.vdi_state_checkpoint.vid = vid;
 	hdr.data_length = sizeof(*result);
 
-	return sheep_exec_req(&n->nid, &hdr, (char *)result);
+	ret = sheep_exec_req(&n->nid, &hdr, (char *)result);
+	if (ret < 0)
+		ret = SD_RES_NETWORK_ERROR;
+	return ret;
 }
 
 /* how long to wait for the other nodes to prepare their checkpoints */
@@ -963,9 +973,13 @@ static main_fn void free_cinfo(struct cinfo_collection_work *w)
 		hdr.vdi_state_checkpoint.tgt_epoch = w->epoch;
 
 		ret = sheep_exec_req(&n->nid, &hdr, NULL);
-		if (ret != SD_RES_SUCCESS)
+		if (ret < 0) {
+			sd_err("error executing VDI_STATE_CHECKPOINT: %s",
+			       strerror(-ret));
+		} else if (ret != SD_RES_SUCCESS) {
 			sd_err("error at freeing a checkpoint of vdi state"
 			       " at epoch %d", w->epoch);
+		}
 	}
 
 	sd_info("freeing done");

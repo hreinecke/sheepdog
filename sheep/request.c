@@ -1382,6 +1382,15 @@ void local_request_init(void)
 	register_event(sys->local_req_efd, local_req_handler, NULL);
 }
 
+/**
+ * sheep_exec_req - execute a sheep request
+ * @nid: Node id
+ * @hdr: request header
+ * @buf: data buffer
+ *
+ * returns: 0 on success, a negative error number on failure to
+ * send request, or an SD_RES_XX status if the request itself failed.
+ */
 worker_fn int sheep_exec_req(const struct node_id *nid, struct sd_req *hdr,
 			     void *buf)
 {
@@ -1392,41 +1401,29 @@ worker_fn int sheep_exec_req(const struct node_id *nid, struct sd_req *hdr,
 	if (nid->io_port && nid->io_transport_type == IO_TRANSPORT_TYPE_RDMA) {
 		ret = rdma_exec_req(nid, hdr, buf, sheep_need_retry,
 				    hdr->epoch, MAX_RETRY_COUNT);
-		if (ret) {
+		if (ret < 0)
 			sd_debug("remote node might have gone away");
-			return SD_RES_NETWORK_ERROR;
-		}
-		ret = rsp->result;
-		if (ret != SD_RES_SUCCESS)
-			sd_warn("failed %s, remote address: %s, op name: %s",
-					sd_strerror(ret),
-					addr_to_str(nid->io_addr,
-						    nid->io_port),
-					op_name(get_sd_op(hdr->opcode)));
-		return ret;
+
+		return ret < 0 ? ret : rsp->result;
 	}
 #endif
 
 	struct sockfd *sfd;
 
 	sfd = sockfd_cache_get(nid);
-	if (!sfd)
-		return SD_RES_NETWORK_ERROR;
+	if (!sfd) {
+		sd_debug("sockfd cache lookup failed");
+		return -ESTALE;
+	}
 
 	ret = exec_req(sfd->fd, hdr, buf, sheep_need_retry, hdr->epoch,
 		       MAX_RETRY_COUNT);
 	if (ret < 0) {
 		sd_debug("remote node might have gone away");
 		sockfd_cache_del(nid, sfd);
-		return SD_RES_NETWORK_ERROR;
+		return -errno;
 	}
 	ret = rsp->result;
-	if (ret != SD_RES_SUCCESS)
-		sd_warn("failed %s, remote address: %s, op name: %s",
-				sd_strerror(ret),
-				addr_to_str(nid->addr, nid->port),
-				op_name(get_sd_op(hdr->opcode)));
-
 	sockfd_cache_put(nid, sfd);
 
 	return ret;

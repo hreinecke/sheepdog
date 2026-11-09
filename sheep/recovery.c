@@ -228,6 +228,7 @@ static int search_erasure_object(uint64_t oid, uint8_t idx,
 	unsigned rlen = get_store_objsize(oid);
 	struct sd_node *n;
 	uint32_t epoch = rw->epoch;
+	int ret;
 
 	rb_for_each_entry(n, nroot, rb) {
 		if (invalid_node(n, rw->cur_vinfo))
@@ -242,7 +243,10 @@ static int search_erasure_object(uint64_t oid, uint8_t idx,
 
 		sd_debug("%016"PRIx64" epoch %"PRIu32" tgt %"PRIu32" idx %d, %s",
 			 oid, epoch, tgt_epoch, idx, node_to_str(n));
-		if (sheep_exec_req(&n->nid, &hdr, buf) == SD_RES_SUCCESS)
+		ret = sheep_exec_req(&n->nid, &hdr, buf);
+		if (ret < 0)
+			continue;
+		if (ret == SD_RES_SUCCESS)
 			return SD_RES_SUCCESS;
 	}
 	return SD_RES_NO_OBJ;
@@ -284,6 +288,8 @@ again:
 	hdr.obj.ec_index = idx;
 
 	ret = sheep_exec_req(&node->nid, &hdr, buf);
+	if (ret < 0)
+		goto rollback;
 	switch (ret) {
 	case SD_RES_SUCCESS:
 		goto done;
@@ -338,6 +344,8 @@ static int recover_object_from(struct recovery_obj_work *row,
 		hdr.obj.oid = oid;
 		hdr.obj.tgt_epoch = tgt_epoch;
 		ret = sheep_exec_req(&node->nid, &hdr, NULL);
+		if (ret < 0)
+			return SD_RES_NETWORK_ERROR;
 		if (ret != SD_RES_SUCCESS)
 			return ret;
 
@@ -1236,7 +1244,8 @@ retry:
 	hdr.data_length = buf_size;
 	hdr.epoch = epoch;
 	ret = sheep_exec_req(&e->nid, &hdr, buf);
-
+	if (ret < 0)
+		ret = SD_RES_NETWORK_ERROR;
 	switch (ret) {
 	case SD_RES_SUCCESS:
 		break;
