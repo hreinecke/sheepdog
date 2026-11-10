@@ -28,13 +28,57 @@
  * array -- see is_inode_refresh_req() in sheep/gateway.c) before
  * retrying; that read both clears our invalidated state
  * (validate_myself()) and gives us the current data_vdi_id[] map.
- * See sheep/nvmet/uring.c's async equivalent of this dance.
+ *
+ * The refresh read is asynchronous (sd_read_object_async()):
+ * vdi_submit_write()/vdi_submit_read() kick it off in the background
+ * and immediately fail the *current* command with
+ * NVME_SC_CTRL_PATH_ERROR, rather than blocking ep->pthread on the
+ * cluster round-trip or retrying inline. NVMe-oF hosts retry a command
+ * that comes back with a path error on their own, so the retry simply
+ * arrives as a brand new command: by the time it does, the refresh
+ * has very likely already landed, and the command either succeeds
+ * outright or, if the refresh (or another one, under contention) is
+ * still in flight, fails the same way and gets retried again.
  */
-static int vdi_refresh_inode(struct nofuse_namespace *ns)
+
+/* Runs on the sheepdog main thread (put_request()). */
+static void vdi_refresh_done(struct request *req)
+{
+	struct nofuse_namespace *ns = req->local_done_arg;
+
+	sd_mutex_lock(&ns->inode_lock);
+	if (req->rp.result == SD_RES_SUCCESS)
+		memcpy(ns->inode, req->data, data_vid_offset(SD_INODE_DATA_INDEX));
+	else
+		sd_err("VDI %"PRIx32" inode refresh failed: %s",
+		       ns->nsid, sd_strerror(req->rp.result));
+	ns->refresh_pending = false;
+	sd_mutex_unlock(&ns->inode_lock);
+
+	free(req->data);
+}
+
+/*
+ * Kicks off the asynchronous refresh read described above, unless one
+ * is already in flight for this namespace -- concurrent commands
+ * racing the same invalidation all just fail with
+ * NVME_SC_CTRL_PATH_ERROR and let the host retry rather than queuing
+ * up redundant refreshes.
+ */
+static void vdi_refresh_inode_async(struct nofuse_namespace *ns)
 {
 	size_t refresh_len = data_vid_offset(SD_INODE_DATA_INDEX);
-	char *buf = xmalloc(refresh_len);
-	int ret;
+	char *buf;
+
+	sd_mutex_lock(&ns->inode_lock);
+	if (ns->refresh_pending) {
+		sd_mutex_unlock(&ns->inode_lock);
+		return;
+	}
+	ns->refresh_pending = true;
+	sd_mutex_unlock(&ns->inode_lock);
+
+	buf = xmalloc(refresh_len);
 
 	/*
 	 * No SD_FLAG_CMD_TGT: this read must go through even while we're
@@ -42,24 +86,9 @@ static int vdi_refresh_inode(struct nofuse_namespace *ns)
 	 * is_inode_refresh_req() doesn't require the flag to run
 	 * validate_myself() on success.
 	 */
-	ret = sd_read_object(vid_to_vdi_oid(ns->nsid), buf, refresh_len, 0);
-	if (ret == SD_RES_SUCCESS) {
-		sd_mutex_lock(&ns->inode_lock);
-		memcpy(ns->inode, buf, refresh_len);
-		sd_mutex_unlock(&ns->inode_lock);
-	}
-	free(buf);
-	return ret;
+	sd_read_object_async(vid_to_vdi_oid(ns->nsid), buf, refresh_len, 0,
+			     vdi_refresh_done, ns);
 }
-
-/*
- * How many times to chase a live SD_RES_INODE_INVALIDATED before giving
- * up: under concurrent multipath writes to the same VDI, every refresh
- * can race a fresh invalidation from another node, and each attempt costs
- * a full cluster coherence round-trip, so retrying forever can stall the
- * daemon under contention instead of making progress.
- */
-#define INODE_INVALIDATED_MAX_RETRY 5
 
 static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 {
@@ -72,67 +101,56 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 		uint64_t idx = pos / SD_DATA_OBJ_SIZE;
 		off_t off = pos % SD_DATA_OBJ_SIZE;
 		size_t len = min(data_len, SD_DATA_OBJ_SIZE - off);
-		uint64_t oid, old_oid;
+		uint64_t oid, old_oid = 0;
 		uint32_t inode_vid, data_vid;
 		bool create, is_writeable;
-		int retry;
 
-		for (retry = 0; ; retry++) {
-			old_oid = 0;
-			create = false;
-
-			sd_mutex_lock(&qe->ns->inode_lock);
-			inode_vid = qe->ns->inode->header.vdi_id;
-			data_vid = sd_inode_get_vid(qe->ns->inode, idx);
-			is_writeable = (inode_vid == data_vid);
-			sd_mutex_unlock(&qe->ns->inode_lock);
-			if (!data_vid)
-				create = true;
-			else if (!is_writeable) {
-				create = true;
-				old_oid = vid_to_data_oid(data_vid, idx);
-			}
-			oid = vid_to_data_oid(qe->ns->nsid, idx);
-			ret = sd_write_object_tgt(oid, old_oid, (char *)data,
-						  len, off, create);
-			if (ret != SD_RES_INODE_INVALIDATED)
-				break;
-			if (retry >= INODE_INVALIDATED_MAX_RETRY)
-				break;
+		sd_mutex_lock(&qe->ns->inode_lock);
+		inode_vid = qe->ns->inode->header.vdi_id;
+		data_vid = sd_inode_get_vid(qe->ns->inode, idx);
+		is_writeable = (inode_vid == data_vid);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		create = false;
+		if (!data_vid)
+			create = true;
+		else if (!is_writeable) {
+			create = true;
+			old_oid = vid_to_data_oid(data_vid, idx);
+		}
+		oid = vid_to_data_oid(qe->ns->nsid, idx);
+		ret = sd_write_object_tgt(oid, old_oid, (char *)data,
+					  len, off, create);
+		if (ret == SD_RES_INODE_INVALIDATED) {
 			ctrl_info(ep, "tag %d VDI %"PRIx32" idx %"PRIx64
-				  " inode invalidated",
+				  " inode invalidated, refreshing",
 				  qe->tag, qe->ns->nsid, idx);
-			ret = vdi_refresh_inode(qe->ns);
-			if (ret != SD_RES_SUCCESS)
-				break;
+			vdi_refresh_inode_async(qe->ns);
+			return NVME_SC_CTRL_PATH_ERROR;
 		}
 		if (ret != SD_RES_SUCCESS) {
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
 				 " off %lu size %lu write error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
-			return ret == SD_RES_INODE_INVALIDATED ?
-				NVME_SC_CMD_INTERRUPTED : NVME_SC_INTERNAL;
+			return NVME_SC_INTERNAL;
 		}
 		if (create) {
 			sd_mutex_lock(&qe->ns->inode_lock);
 			sd_inode_set_vid(qe->ns->inode, idx, inode_vid);
 			sd_mutex_unlock(&qe->ns->inode_lock);
-			for (retry = 0; ; retry++) {
-				ret = sd_inode_write_vid(qe->ns->inode, idx,
-							 qe->ns->nsid,
-							 qe->ns->nsid,
-							 SD_FLAG_CMD_TGT,
-							 false, false);
-				if (ret != SD_RES_INODE_INVALIDATED)
-					break;
-				if (retry >= INODE_INVALIDATED_MAX_RETRY)
-					break;
+			ret = sd_inode_write_vid(qe->ns->inode, idx,
+						 qe->ns->nsid,
+						 qe->ns->nsid,
+						 SD_FLAG_CMD_TGT,
+						 false, false);
+			if (ret == SD_RES_INODE_INVALIDATED) {
+				sd_mutex_lock(&qe->ns->inode_lock);
+				sd_inode_set_vid(qe->ns->inode, idx, 0);
+				sd_mutex_unlock(&qe->ns->inode_lock);
 				ctrl_info(ep, "tag %d VDI %"PRIx32
-					  " idx %"PRIx64" inode invalidated",
+					  " idx %"PRIx64" inode invalidated, refreshing",
 					  qe->tag, qe->ns->nsid, idx);
-				ret = vdi_refresh_inode(qe->ns);
-				if (ret != SD_RES_SUCCESS)
-					break;
+				vdi_refresh_inode_async(qe->ns);
+				return NVME_SC_CTRL_PATH_ERROR;
 			}
 			if (ret != SD_RES_SUCCESS) {
 				sd_mutex_lock(&qe->ns->inode_lock);
@@ -142,9 +160,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 					 " idx %"PRIx64" failed to update inode: %s",
 					 qe->tag, qe->ns->nsid, idx,
 					 sd_strerror(ret));
-				return ret == SD_RES_INODE_INVALIDATED ?
-					NVME_SC_CMD_INTERRUPTED :
-					NVME_SC_INTERNAL;
+				return NVME_SC_INTERNAL;
 			}
 		}
 
@@ -182,17 +198,11 @@ static int vdi_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 			 * equivalent fix for the full story (observed as
 			 * mkfs.xfs CRC errors with no I/O error anywhere).
 			 */
-			ret = vdi_refresh_inode(qe->ns);
-			if (ret != SD_RES_SUCCESS) {
-				ctrl_err(ep, "tag %d VDI %"PRIx32
-					 " idx %u inode refresh failed: %s",
-					 qe->tag, qe->ns->nsid, idx,
-					 sd_strerror(ret));
-				return NVME_SC_INTERNAL;
-			}
-			sd_mutex_lock(&qe->ns->inode_lock);
-			data_vid = sd_inode_get_vid(qe->ns->inode, idx);
-			sd_mutex_unlock(&qe->ns->inode_lock);
+			ctrl_info(ep, "tag %d VDI %"PRIx32
+				  " idx %u inode invalidated, refreshing",
+				  qe->tag, qe->ns->nsid, idx);
+			vdi_refresh_inode_async(qe->ns);
+			return NVME_SC_CTRL_PATH_ERROR;
 		}
 		if (data_vid) {
 			oid = vid_to_data_oid(data_vid, idx);

@@ -249,6 +249,14 @@ struct nofuse_namespace {
 	bool enabled;
 	struct sd_inode *inode;
 	struct sd_mutex inode_lock;
+	/*
+	 * Set while an asynchronous refresh of the inode above is in
+	 * flight (vdi.c's vdi_refresh_inode_async()), guarded by
+	 * inode_lock like the inode itself. Lets concurrent commands
+	 * hitting SD_RES_INODE_INVALIDATED on the same namespace share
+	 * a single refresh instead of each kicking off their own.
+	 */
+	bool refresh_pending;
 };
 
 struct nofuse_port {
