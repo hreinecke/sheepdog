@@ -425,8 +425,12 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 		desc->grpid = htole32(grpid);
 		desc->nnsids = htole32(nnsids);
 		desc->chgcnt = htole64(0);
+#ifdef HAVE_IO_URING
 		desc->state = ((uint32_t)grpid == portid) ?
 			NVME_ANA_OPTIMIZED : NVME_ANA_NONOPTIMIZED;
+#else
+		desc->state = NVME_ANA_OPTIMIZED;
+#endif
 		memset(desc->rsvd17, 0, sizeof(desc->rsvd17));
 		sd_debug("grpid %u %u nsids state %d",
 			 grpid, nnsids, desc->state);
