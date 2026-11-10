@@ -111,7 +111,7 @@ struct ep_qe {
 	 */
 	uint32_t inode_vid_buf;
 	refcnt_t async_pending;
-	int async_result;
+	uint32_t async_status;
 	/*
 	 * Distinguishes the initial kickoff call into ns_handle_qe() (res
 	 * == -EINPROGRESS, nothing submitted yet) from the later completion
@@ -422,6 +422,7 @@ int stop_port(struct nofuse_port *port);
 int add_ana_group(int portid, int ana_grpid, int ana_state);
 int del_ana_group(int portid, int ana_grpid);
 
+void refresh_inode_async(struct nofuse_namespace *ns);
 struct nofuse_namespace *lookup_namespace(struct nofuse_ctrl *ctrl,
 					  uint32_t nsid);
 int lookup_vdi_name(const char *vdiname, uint32_t acl, uint32_t *vid);

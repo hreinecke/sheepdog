@@ -249,6 +249,80 @@ static int register_vdi(struct nofuse_namespace *ns, bool unregister)
 	return ret;
 }
 
+/*
+ * A write to this VDI's inode or data objects can come back with
+ * SD_RES_INODE_INVALIDATED: another node sharing this VDI (nofuse
+ * exposes the same VDI through every sheep node for NVMe multipath)
+ * created a data object of its own and invalidated our cached inode
+ * via the cluster-wide coherence protocol (sheep/vdi.c,
+ * invalidate_other_nodes()/is_refresh_required()). The protocol
+ * requires re-reading the whole inode (a "refresh read": the VDI
+ * object, offset 0, length exactly covering the full data_vdi_id[]
+ * array -- see is_inode_refresh_req() in sheep/gateway.c) before
+ * retrying; that read both clears our invalidated state
+ * (validate_myself()) and gives us the current data_vdi_id[] map.
+ *
+ * The refresh read is asynchronous (sd_read_object_async()):
+ * vdi_submit_write()/vdi_submit_read() kick it off in the background
+ * and immediately fail the *current* command with
+ * NVME_SC_CTRL_PATH_ERROR, rather than blocking ep->pthread on the
+ * cluster round-trip or retrying inline. NVMe-oF hosts retry a command
+ * that comes back with a path error on their own, so the retry simply
+ * arrives as a brand new command: by the time it does, the refresh
+ * has very likely already landed, and the command either succeeds
+ * outright or, if the refresh (or another one, under contention) is
+ * still in flight, fails the same way and gets retried again.
+ */
+
+/* Runs on the sheepdog main thread (put_request()). */
+static void refresh_inode_done(struct request *req)
+{
+	struct nofuse_namespace *ns = req->local_done_arg;
+
+	sd_mutex_lock(&ns->inode_lock);
+	if (req->rp.result == SD_RES_SUCCESS)
+		memcpy(ns->inode, req->data, data_vid_offset(SD_INODE_DATA_INDEX));
+	else
+		sd_err("VDI %"PRIx32" inode refresh failed: %s",
+		       ns->nsid, sd_strerror(req->rp.result));
+	ns->refresh_pending = false;
+	sd_mutex_unlock(&ns->inode_lock);
+
+	free(req->data);
+}
+
+/*
+ * Kicks off the asynchronous refresh read described above, unless one
+ * is already in flight for this namespace -- concurrent commands
+ * racing the same invalidation all just fail with
+ * NVME_SC_CTRL_PATH_ERROR and let the host retry rather than queuing
+ * up redundant refreshes.
+ */
+void refresh_inode_async(struct nofuse_namespace *ns)
+{
+	size_t refresh_len = data_vid_offset(SD_INODE_DATA_INDEX);
+	char *buf;
+
+	sd_mutex_lock(&ns->inode_lock);
+	if (ns->refresh_pending) {
+		sd_mutex_unlock(&ns->inode_lock);
+		return;
+	}
+	ns->refresh_pending = true;
+	sd_mutex_unlock(&ns->inode_lock);
+
+	buf = xmalloc(refresh_len);
+
+	/*
+	 * No SD_FLAG_CMD_TGT: this read must go through even while we're
+	 * marked invalidated (that's the whole point), and
+	 * is_inode_refresh_req() doesn't require the flag to run
+	 * validate_myself() on success.
+	 */
+	sd_read_object_async(vid_to_vdi_oid(ns->nsid), buf, refresh_len, 0,
+			     refresh_inode_done, ns);
+}
+
 int lookup_vdi_name(const char *vdiname, uint32_t acl, uint32_t *vid)
 {
 	int ret;
@@ -425,12 +499,7 @@ int ana_log_entries(uint32_t subsys_id, unsigned int portid,
 		desc->grpid = htole32(grpid);
 		desc->nnsids = htole32(nnsids);
 		desc->chgcnt = htole64(0);
-#ifdef HAVE_IO_URING
-		desc->state = ((uint32_t)grpid == portid) ?
-			NVME_ANA_OPTIMIZED : NVME_ANA_NONOPTIMIZED;
-#else
 		desc->state = NVME_ANA_OPTIMIZED;
-#endif
 		memset(desc->rsvd17, 0, sizeof(desc->rsvd17));
 		sd_debug("grpid %u %u nsids state %d",
 			 grpid, nnsids, desc->state);
