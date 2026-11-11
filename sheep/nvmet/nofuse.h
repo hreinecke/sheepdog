@@ -350,12 +350,10 @@ struct nofuse_tls_psk {
 	       (i)->portid, ##x)
 
 static inline void set_response(struct nvme_completion *resp,
-				uint16_t ccid, uint16_t status, bool dnr)
+				uint16_t ccid, uint16_t status)
 {
-	if (!status)
-		dnr = false;
 	resp->command_id = ccid;
-	resp->status = ((dnr ? NVME_SC_DNR : 0) | status) << 1;
+	resp->status = status << 1;
 }
 
 static inline void kato_reset_counter(struct nofuse_ctrl *ctrl)

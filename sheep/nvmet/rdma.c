@@ -671,7 +671,7 @@ static int rdma_rma_write(struct nofuse_queue *ep, struct ep_qe *qe,
 	 * uring_handle_qe()), so send the completion capsule here too.
 	 */
 	memset(&qe->resp, 0, sizeof(qe->resp));
-	set_response(&qe->resp, qe->ccid, NVME_SC_SUCCESS, true);
+	set_response(&qe->resp, qe->ccid, NVME_SC_SUCCESS);
 	return rdma_send_msg(ep, qe, &qe->resp);
 }
 

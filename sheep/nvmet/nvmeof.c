@@ -1073,7 +1073,8 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		qe->data_key = 0;
 	} else {
 		ctrl_err(ep, "invalid SGL format %d", sgl_type >> 4);
-		return NVME_SC_SGL_INVALID_TYPE;
+		ret = NVME_SC_SGL_INVALID_TYPE | NVME_SC_DNR;
+		goto out_rsp;
 	}
 
 	/*
@@ -1086,7 +1087,8 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 	if (qe->data_len > ep->mdts) {
 		ctrl_err(ep, "data length %"PRIu64" exceeds mdts %d",
 			 qe->data_len, ep->mdts);
-		return NVME_SC_INVALID_FIELD;
+		ret = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
+		goto out_rsp;
 	}
 
 	kato_reset_counter(ep->ctrl);
@@ -1114,7 +1116,7 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 #endif
 		default:
 			ctrl_err(ep, "unknown fctype %d", cmd->fabrics.fctype);
-			ret = NVME_SC_INVALID_OPCODE;
+			ret = NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
 		}
 	} else if (ep->qid != 0) {
 		if (cmd->common.opcode == nvme_cmd_read) {
@@ -1132,7 +1134,7 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		} else {
 			ctrl_err(ep, "unknown nvme I/O opcode %d",
 				  cmd->common.opcode);
-			ret = NVME_SC_INVALID_OPCODE;
+			ret = NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
 		}
 	} else {
 		/* qid == 0: admin command. */
@@ -1151,11 +1153,11 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		} else if (cmd->common.opcode == nvme_admin_set_features) {
 			ret = handle_set_features(ep, qe, cmd);
 			if (ret)
-				ret = NVME_SC_INVALID_FIELD;
+				ret = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		} else if (cmd->common.opcode == nvme_admin_get_features) {
 			ret = handle_get_features(ep, qe, cmd);
 			if (ret)
-				ret = NVME_SC_INVALID_FIELD;
+				ret = NVME_SC_INVALID_FIELD | NVME_SC_DNR;
 		} else if (cmd->common.opcode == nvme_admin_async_event) {
 			ctrl_info(ep, "tag %#x ccid %#x nvme_async_event",
 				  qe->tag, qe->ccid);
@@ -1164,7 +1166,7 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		} else {
 			ctrl_err(ep, "unknown nvme admin opcode %d",
 				 cmd->common.opcode);
-			ret = NVME_SC_INVALID_OPCODE;
+			ret = NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
 		}
 	}
 
@@ -1173,7 +1175,8 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 			ctrl_err(ep, "handle_request error %d", ret);
 		return ret;
 	}
-	set_response(&qe->resp, qe->ccid, ret, true);
+ out_rsp:
+	set_response(&qe->resp, qe->ccid, ret);
 	return ep->ops->send_rsp(ep, qe, &qe->resp);
 }
 
@@ -1217,7 +1220,7 @@ int handle_aen(struct nofuse_queue *ep, struct ep_qe *qe)
 
 	ctrl_info(ep, "send aen level %u type %u", level, type);
 
-	set_response(&qe->resp, qe->ccid, NVME_SC_SUCCESS, false);
+	set_response(&qe->resp, qe->ccid, NVME_SC_SUCCESS);
 	result = level | type << 8 | log_page << 16;
 	qe->resp.result.u32 = htole32(result);
 

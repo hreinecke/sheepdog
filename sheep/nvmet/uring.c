@@ -481,7 +481,7 @@ static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 			ctrl_err(ep, "dsm: failed to write inode for "
 				 "discarding idx %"PRIu32"-%"PRIu32": %s",
 				 idx, idx_end, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
+			return NVME_SC_INTERNAL | NVME_SC_DNR;
 		}
 		for (; idx < idx_end; idx++) {
 			uint64_t oid = vid_to_data_oid(qe->ns->nsid, idx);
@@ -490,7 +490,7 @@ static int uring_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
 				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
 					 oid, sd_strerror(ret));
-				return NVME_SC_INTERNAL;
+				return NVME_SC_INTERNAL | NVME_SC_DNR;
 			}
 		}
 	}
@@ -526,10 +526,10 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 				if (qe->fctype == nvme_fabrics_type_auth_send)
 					ret = handle_auth_send_data(ep, qe);
 				else
-					ret = NVME_SC_INVALID_OPCODE;
+					ret = NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
 				break;
 			default:
-				ret = NVME_SC_INVALID_OPCODE;
+				ret = NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
 				break;
 			}
 			if (ret == -EINPROGRESS)
@@ -553,7 +553,7 @@ static int uring_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 		 */
 		qe->async_started = false;
 		if (qe->async_result != SD_RES_SUCCESS) {
-			status = NVME_SC_INTERNAL;
+			status = NVME_SC_INTERNAL | NVME_SC_DNR;
 			goto out_rsp;
 		}
 	}
@@ -573,7 +573,7 @@ out_write:
 
 out_rsp:
 	memset(&qe->resp, 0, sizeof(qe->resp));
-	set_response(&qe->resp, qe->ccid, status, true);
+	set_response(&qe->resp, qe->ccid, status);
 	ret = ep->ops->send_rsp(ep, qe, &qe->resp);
 	return ret;
 }

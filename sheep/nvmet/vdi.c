@@ -131,7 +131,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
 				 " off %lu size %lu write error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
+			return NVME_SC_INTERNAL | NVME_SC_DNR;
 		}
 		if (create) {
 			sd_mutex_lock(&qe->ns->inode_lock);
@@ -160,7 +160,7 @@ static int vdi_submit_write(struct nofuse_queue *ep, struct ep_qe *qe)
 					 " idx %"PRIx64" failed to update inode: %s",
 					 qe->tag, qe->ns->nsid, idx,
 					 sd_strerror(ret));
-				return NVME_SC_INTERNAL;
+				return NVME_SC_INTERNAL | NVME_SC_DNR;
 			}
 		}
 
@@ -215,7 +215,7 @@ static int vdi_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 			ctrl_err(ep, "tag %d VDI oid %"PRIx64
 				 " off %lu size %lu read error %s",
 				 qe->tag, oid, off, len, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
+			return NVME_SC_INTERNAL | NVME_SC_DNR;
 		}
 		data += len;
 		pos += len;
@@ -286,7 +286,7 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 			ctrl_err(ep, "dsm: failed to write inode for "
 				 "discarding idx %"PRIu32"-%"PRIu32": %s",
 				 idx, idx_end, sd_strerror(ret));
-			return NVME_SC_INTERNAL;
+			return NVME_SC_INTERNAL | NVME_SC_DNR;
 		}
 		for (; idx < idx_end; idx++) {
 			uint64_t oid = vid_to_data_oid(qe->ns->nsid, idx);
@@ -295,7 +295,7 @@ static int vdi_submit_dsm(struct nofuse_queue *ep, struct ep_qe *qe)
 			if (ret != SD_RES_SUCCESS && ret != SD_RES_NO_OBJ) {
 				ctrl_err(ep, "dsm: failed to remove object %016"PRIx64": %s",
 					 oid, sd_strerror(ret));
-				return NVME_SC_INTERNAL;
+				return NVME_SC_INTERNAL | NVME_SC_DNR;
 			}
 		}
 	}
@@ -322,7 +322,7 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 	    qe->opcode != nvme_cmd_dsm) {
                 ctrl_err(ep, "tag %#x unhandled opcode %d",
                          qe->tag, qe->opcode);
-                status = NVME_SC_INVALID_OPCODE;
+                status = NVME_SC_INVALID_OPCODE | NVME_SC_DNR;
                 goto out_rsp;
         }
 	if (res == -EINPROGRESS) {
@@ -352,7 +352,7 @@ static int vdi_handle_qe(struct nofuse_queue *ep, struct ep_qe *qe, int res)
 	}
 out_rsp:
         memset(&qe->resp, 0, sizeof(qe->resp));
-        set_response(&qe->resp, qe->ccid, status, true);
+        set_response(&qe->resp, qe->ccid, status);
         ret = ep->ops->send_rsp(ep, qe, &qe->resp);
         return ret;
 }
