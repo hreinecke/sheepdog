@@ -452,6 +452,13 @@ void *epoll_queue_thread(void *arg)
 		ctrl_err(ep, "epoll_ctl add fd error %d", -errno);
 		goto out_epoll_close;
 	}
+	ev.events = EPOLLIN;
+	ev.data.fd = ep->io_evtfd;
+	if (epoll_ctl(ep->io_pollfd, EPOLL_CTL_ADD,
+		      ep->io_evtfd, &ev) < 0) {
+		ctrl_err(ep, "epoll_ctl add io_evtfd error %d", -errno);
+		goto out_epoll_close;
+	}
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 	while (ep->state == CONNECTED) {
@@ -475,6 +482,14 @@ void *epoll_queue_thread(void *arg)
 				break;
 			}
 			ret = -EAGAIN;
+			continue;
+		}
+		if (ev.data.fd == ep->io_evtfd) {
+			eventfd_t val;
+
+			eventfd_read(ep->io_evtfd, &val);
+			if (ep->ctrl && aen_pending(ep->ctrl))
+				queue_submit_aen(ep);
 			continue;
 		}
 		ret = ep->ops->handle_msg(ep);
@@ -623,6 +638,8 @@ void *uring_queue_thread(void *arg)
 				list_del(&qe->io_node);
 				ret = handle_data(ep, qe, -EINPROGRESS);
 			}
+			if (ep->ctrl && aen_pending(ep->ctrl))
+				ret = queue_submit_aen(ep);
 		} else if (cqe_data) {
 			struct ep_qe *qe = cqe_data;
 			if (qe->opcode == nvme_admin_async_event) {
@@ -785,6 +802,13 @@ void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 		sd_debug("subsys %s ctrl %d type %s pending %#x masked %#x",
 			 ep->ctrl->subsys->nqn, ep->ctrl->cntlid,
 			 aen_type, ep->ctrl->aen_pending, ep->ctrl->aen_masked);
-		queue_submit_aen(ep);
+		/*
+		 * ep belongs to a different connection than the one
+		 * running this thread; its state (send_pdu, fd, ...)
+		 * may only be touched from ep->pthread. Wake that
+		 * thread via io_evtfd instead of submitting the AEN
+		 * here, so it delivers it itself.
+		 */
+		eventfd_write(ep->io_evtfd, 1);
 	}
 }
