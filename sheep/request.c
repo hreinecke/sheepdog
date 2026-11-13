@@ -1175,8 +1175,6 @@ static void client_handler(int fd, int events, void *data)
 {
 	struct client_info *ci = (struct client_info *)data;
 
-	sd_debug("%x, %d", events, ci->conn.dead);
-
 	if (events & (EPOLLERR | EPOLLHUP))
 		ci->conn.dead = true;
 	/*
