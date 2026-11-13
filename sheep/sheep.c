@@ -149,6 +149,7 @@ static struct sd_option sheep_options[] = {
 	 "specify the log level, the log directory and the log format"
 	 "(log level default: 6 [SDOG_INFO])", log_help},
 	{'n', "nosync", false, "drop O_SYNC for write of backend"},
+	{'o', "optimized", false, "all NVMe paths are optimized"},
 	{'p', "port", true, "specify the TCP port on which to listen "
 	 "(default: 7000)"},
 	{'P', "pidfile", true, "create a pid file"},
@@ -918,6 +919,9 @@ int main(int argc, char **argv, char **envp)
 				case 'f':
 					daemonize = true;
 					break;
+				case 'o':
+					sys->all_nodes_optimized = true;
+					break;
 				case 'u':
 					sys->upgrade = true;
 					break;
@@ -959,6 +963,9 @@ int main(int argc, char **argv, char **envp)
 			break;
 		case 'n':
 			sys->nosync = true;
+			break;
+		case 'o':
+			sys->all_nodes_optimized = true;
 			break;
 		case 'y':
 			if (str_to_addr(optarg, sys->this_node.nid.addr,

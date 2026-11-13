@@ -110,6 +110,107 @@ struct uring_refresh_ctx {
 static void uring_inode_write_done(struct request *req);
 static void uring_write_object_complete(struct request *req);
 
+/* Runs on the sheepdog main thread (put_request()). */
+static void uring_refresh_done(struct request *req)
+{
+	struct uring_refresh_ctx *ctx = req->local_done_arg;
+	struct ep_qe *qe = ctx->qe;
+
+	if (req->rp.result != SD_RES_SUCCESS) {
+		ctrl_err(qe->ep, "tag %d VDI %"PRIx32" inode refresh failed: %s",
+			 qe->tag, qe->ns->nsid, sd_strerror(req->rp.result));
+		qe->async_status = NVME_SC_INTERNAL | NVME_SC_DNR;
+		free(req->data);
+		free(ctx);
+		if (refcount_dec(&qe->async_pending) == 0)
+			uring_complete(qe->ep, qe);
+		return;
+	}
+
+	sd_mutex_lock(&qe->ns->inode_lock);
+	memcpy(qe->ns->inode, req->data, data_vid_offset(SD_INODE_DATA_INDEX));
+	sd_mutex_unlock(&qe->ns->inode_lock);
+	free(req->data);
+
+	if (ctx->is_read) {
+		uint32_t data_vid;
+
+		sd_mutex_lock(&qe->ns->inode_lock);
+		data_vid = sd_inode_get_vid(qe->ns->inode, ctx->idx);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (data_vid) {
+			uint64_t oid = vid_to_data_oid(data_vid, ctx->idx);
+
+			sd_read_object_async(oid, ctx->data, ctx->len,
+					     ctx->off, uring_io_done, qe);
+		} else {
+			memset(ctx->data, 0, ctx->len);
+			if (refcount_dec(&qe->async_pending) == 0)
+				uring_complete(qe->ep, qe);
+		}
+		free(ctx);
+		return;
+	}
+
+	if (ctx->is_inode_write) {
+		off_t inode_off = offsetof(struct sd_inode, data_vdi_id[ctx->idx]);
+
+		qe->inode_vid_buf = qe->ns->nsid;
+		sd_write_object_async(vid_to_vdi_oid(qe->ns->nsid), 0,
+				      (char *)&qe->inode_vid_buf,
+				      sizeof(qe->inode_vid_buf),
+				      inode_off, false, qe->fua,
+				      uring_inode_write_done, qe);
+	} else {
+		uint64_t oid, old_oid = 0;
+		uint32_t inode_vid, data_vid;
+		bool create = false, is_writeable;
+
+		sd_mutex_lock(&qe->ns->inode_lock);
+		inode_vid = qe->ns->inode->header.vdi_id;
+		data_vid = sd_inode_get_vid(qe->ns->inode, ctx->idx);
+		is_writeable = (inode_vid == data_vid);
+		sd_mutex_unlock(&qe->ns->inode_lock);
+		if (!data_vid)
+			create = true;
+		else if (!is_writeable) {
+			create = true;
+			old_oid = vid_to_data_oid(data_vid, ctx->idx);
+		}
+		oid = vid_to_data_oid(inode_vid, ctx->idx);
+		sd_write_object_async(oid, old_oid, ctx->data, ctx->len,
+				      ctx->off, create, qe->fua,
+				      uring_write_object_complete, qe);
+	}
+	free(ctx);
+}
+
+static void uring_refresh_and_retry(struct ep_qe *qe, uint64_t idx, off_t off,
+				    char *data, size_t len, bool is_inode_write,
+				    bool is_read)
+{
+	struct uring_refresh_ctx *ctx = xmalloc(sizeof(*ctx));
+	size_t refresh_len = data_vid_offset(SD_INODE_DATA_INDEX);
+	char *buf = xmalloc(refresh_len);
+
+	ctx->qe = qe;
+	ctx->idx = idx;
+	ctx->off = off;
+	ctx->data = data;
+	ctx->len = len;
+	ctx->is_inode_write = is_inode_write;
+	ctx->is_read = is_read;
+
+	/*
+	 * No SD_FLAG_CMD_TGT: this read must go through even while we're
+	 * marked invalidated (that's the whole point), and
+	 * is_inode_refresh_req() doesn't require the flag to run
+	 * validate_myself() on success.
+	 */
+	sd_read_object_async(vid_to_vdi_oid(qe->ns->nsid), buf, refresh_len, 0,
+			     uring_refresh_done, ctx);
+}
+
 /*
  * Runs on the sheepdog main thread (put_request()), once the async
  * inode-index write kicked off by uring_write_object_complete() below
@@ -126,9 +227,13 @@ static void uring_inode_write_done(struct request *req)
 		ctrl_info(qe->ep, "tag %d VDI %"PRIx32
 			  " idx %"PRIx64" inode invalidated",
 			  qe->tag, qe->ns->nsid, idx);
-		refresh_inode_async(qe->ns);
-		qe->async_status = NVME_SC_CTRL_PATH_ERROR;
-		goto out;
+		if (!sys->all_nodes_optimized) {
+			refresh_inode_async(qe->ns);
+			qe->async_status = NVME_SC_CTRL_PATH_ERROR;
+			goto out;
+		}
+		uring_refresh_and_retry(qe, idx, 0, NULL, 0, true, false);
+		return;
 	}
 	/*
 	 * Only the cache update for a *confirmed* inode-index write landing
@@ -181,9 +286,15 @@ static void uring_write_object_complete(struct request *req)
 		ctrl_info(qe->ep, "tag %d VDI %"PRIx32
 			  " idx %"PRIx64" inode invalidated",
 			  qe->tag, qe->ns->nsid, idx);
-		refresh_inode_async(qe->ns);
-		qe->async_status = NVME_SC_CTRL_PATH_ERROR;
-		goto out_done;
+		if (sys->all_nodes_optimized) {
+			refresh_inode_async(qe->ns);
+			qe->async_status = NVME_SC_CTRL_PATH_ERROR;
+			goto out_done;
+		}
+		uring_refresh_and_retry(qe, idx, req->rq.obj.offset,
+					req->data, req->data_length, false,
+					false);
+		return;
 	}
 	if (req->rp.result != SD_RES_SUCCESS) {
 		ctrl_err(qe->ep, "tag %d VDI %"PRIx32
@@ -305,8 +416,15 @@ static int uring_submit_read(struct nofuse_queue *ep, struct ep_qe *qe)
 			 * fast path, no round trip) since in that case our
 			 * cache genuinely has no reason to be wrong.
 			 */
-			refresh_inode_async(qe->ns);
-			ret = NVME_SC_CTRL_PATH_ERROR;
+			if (sys->all_nodes_optimized) {
+				refresh_inode_async(qe->ns);
+				ret = NVME_SC_CTRL_PATH_ERROR;
+			} else {
+				uring_refresh_and_retry(qe, idx, off,
+							(char *)data, len,
+							false, true);
+				ret = -EINPROGRESS;
+			}
 		} else {
 			memset(data, 0, len);
 		}

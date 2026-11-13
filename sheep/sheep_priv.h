@@ -206,6 +206,7 @@ struct system_info {
 
 	bool gateway_only;
 	bool nosync;
+	bool all_nodes_optimized;
 
 	struct recovery_throttling rthrottling;
 
