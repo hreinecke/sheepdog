@@ -110,6 +110,37 @@ bool store_id_match(enum store_id id)
 	return (sd_store->id == id);
 }
 
+static int store_sync_one(const char *path)
+{
+	int fd, ret = SD_RES_SUCCESS;
+
+	fd = open(path, O_RDONLY | O_DIRECTORY);
+	if (fd < 0) {
+		sd_err("failed to open %s for syncfs, %m", path);
+		return SD_RES_EIO;
+	}
+	if (syncfs(fd) < 0) {
+		sd_err("failed to syncfs %s, %m", path);
+		ret = SD_RES_EIO;
+	}
+	close(fd);
+	return ret;
+}
+
+/*
+ * Flushes every disk sheep stores objects on to stable media. Deliberately
+ * narrower than sync(2): this node's object store may share the host with
+ * other filesystems that have nothing to do with it -- most notably, in an
+ * NVMe-oF loopback setup, the very filesystem a client mounted on top of a
+ * VDI this node is exporting. A plain sync() would also wait on flushing
+ * that, creating a dependency from this node's own durability work back
+ * onto I/O this node itself needs to keep servicing to make progress.
+ */
+int store_sync(void)
+{
+	return for_each_obj_path(store_sync_one);
+}
+
 int update_epoch_log(uint32_t epoch, struct sd_node *nodes, size_t nr_nodes)
 {
 	struct json_object *obj;

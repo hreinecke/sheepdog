@@ -356,6 +356,7 @@ int for_each_object_in_stale(int (*func)(uint64_t oid, const char *path,
 					 struct vnode_info *, void *arg),
 			     void *arg);
 int for_each_obj_path(int (*func)(const char *path));
+int store_sync(void);
 size_t get_store_objsize(uint64_t oid);
 
 extern struct list_head store_drivers;
