@@ -421,6 +421,45 @@ static void pop_epoll_close(void *arg)
 	close(ep->io_pollfd);
 }
 
+void queue_defer_qe(struct nofuse_queue *ep, struct ep_qe *qe)
+{
+	pthread_mutex_lock(&ep->io_done_lock);
+	list_add_tail(&qe->io_node, &ep->io_done_list);
+	pthread_mutex_unlock(&ep->io_done_lock);
+
+	if (eventfd_write(ep->io_evtfd, 1) < 0)
+		ctrl_err(ep, "tag %#x eventfd_write error %d", qe->tag, errno);
+}
+
+/*
+ * Drains ep->io_done_list on ep's own queue_thread. Most entries are
+ * namespace I/O completions destined for handle_data()/ns_handle_qe();
+ * nvme_cmd_flush is the exception -- its work-queue-offloaded completion
+ * (see nvmeof.c's flush_work_done(), called back on the shared work-queue
+ * thread via queue_defer_qe() above) has no backend submission left to
+ * do, just the response to send, so it completes directly instead of
+ * going through a namespace backend that was never told about flush.
+ */
+static int queue_drain_io_done(struct nofuse_queue *ep)
+{
+	LIST_HEAD(done_list);
+	struct ep_qe *qe, *next;
+	int ret = 0;
+
+	pthread_mutex_lock(&ep->io_done_lock);
+	list_splice_init(&ep->io_done_list, &done_list);
+	pthread_mutex_unlock(&ep->io_done_lock);
+
+	list_for_each_entry_safe(qe, next, &done_list, io_node) {
+		list_del(&qe->io_node);
+		if (qe->opcode == nvme_cmd_flush)
+			ret = handle_flush_complete(ep, qe);
+		else
+			ret = handle_data(ep, qe, -EINPROGRESS);
+	}
+	return ret;
+}
+
 void *epoll_queue_thread(void *arg)
 {
 	struct nofuse_queue *ep = arg;
@@ -488,8 +527,13 @@ void *epoll_queue_thread(void *arg)
 			eventfd_t val;
 
 			eventfd_read(ep->io_evtfd, &val);
+			ret = queue_drain_io_done(ep);
 			if (ep->ctrl && aen_pending(ep->ctrl))
-				queue_submit_aen(ep);
+				ret = queue_submit_aen(ep);
+			if (ret < 0) {
+				ctrl_err(ep, "io_done error %d", ret);
+				break;
+			}
 			continue;
 		}
 		ret = ep->ops->handle_msg(ep);
@@ -614,22 +658,12 @@ void *uring_queue_thread(void *arg)
 			pollin_sqe = NULL;
 			ret = ep->ops->handle_msg(ep);
 		} else if (cqe_data == &ep->io_evtfd) {
-			LIST_HEAD(done_list);
-			struct ep_qe *qe, *next;
 			eventfd_t val;
 
 			io_evtfd_sqe = NULL;
 			eventfd_read(ep->io_evtfd, &val);
 
-			pthread_mutex_lock(&ep->io_done_lock);
-			list_splice_init(&ep->io_done_list, &done_list);
-			pthread_mutex_unlock(&ep->io_done_lock);
-
-			ret = 0;
-			list_for_each_entry_safe(qe, next, &done_list, io_node) {
-				list_del(&qe->io_node);
-				ret = handle_data(ep, qe, -EINPROGRESS);
-			}
+			ret = queue_drain_io_done(ep);
 			if (ep->ctrl && aen_pending(ep->ctrl))
 				ret = queue_submit_aen(ep);
 		} else if (cqe_data) {

@@ -224,6 +224,14 @@ struct system_info {
 	struct work_queue *block_wqueue;
 	struct work_queue *md_wqueue;
 	struct work_queue *areq_wqueue;
+	/*
+	 * Dedicated to nvmet FLUSH's store_sync() offload (sheep/nvmet/
+	 * nvmeof.c) -- deliberately not io_wqueue, which queue_local_request()
+	 * also uses for every local plain object read/write: under sustained
+	 * write load that queue stays saturated, so a flush queued behind it
+	 * could wait indefinitely instead of just for its own store_sync().
+	 */
+	struct work_queue *nvmet_flush_wqueue;
 #ifdef HAVE_HTTP
 	struct work_queue *http_wqueue;
 #endif

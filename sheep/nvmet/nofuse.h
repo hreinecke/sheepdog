@@ -394,11 +394,20 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		   struct nvme_command *cmd);
 int handle_data(struct nofuse_queue *ep, struct ep_qe *qe, int res);
 int handle_aen(struct nofuse_queue *ep, struct ep_qe *qe);
+int handle_flush_complete(struct nofuse_queue *ep, struct ep_qe *qe);
 int send_aen(struct nofuse_queue *ep, int type);
 int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn);
 struct nofuse_queue *create_queue(void *id, struct nofuse_port *port);
 void destroy_queue(struct nofuse_queue *ep);
+/*
+ * Hands qe to ep's own queue_thread (epoll_queue_thread()/
+ * uring_queue_thread() in queue.c) via ep->io_done_list/ep->io_evtfd,
+ * so ep/qe state is touched only from ep->pthread even when the caller
+ * (e.g. nvmeof.c's flush_work_done(), called back from the work-queue
+ * framework) is running on some other thread.
+ */
+void queue_defer_qe(struct nofuse_queue *ep, struct ep_qe *qe);
 
 void *epoll_queue_thread(void *arg);
 #ifdef HAVE_IO_URING

@@ -13,7 +13,7 @@
 #include <arpa/inet.h>
 
 #include "config.h"
-#include "sheep.h"
+#include "sheep_priv.h"
 #include "nofuse.h"
 #include "ops.h"
 #include "nvme.h"
@@ -1051,6 +1051,114 @@ static int handle_dsm(struct nofuse_queue *ep, struct ep_qe *qe,
 	return ret;
 }
 
+/*
+ * subsys->wce (-> id.vwc advertised in handle_identify_ctrl()) tells
+ * the host this controller has a volatile write cache -- true when
+ * sheep runs with nosync. That's actually two separate durability gaps
+ * flush has to close:
+ *
+ *  - locally, nosync means writes land in the page cache without an
+ *    fsync, so the data isn't on disk until something forces it out.
+ *  - cluster-wide, nosync also turns on gateway.c's write-cache
+ *    replication (use_write_cache(), same sys->nosync gate): a WRITE_OBJ
+ *    can already have returned success to this command's caller while
+ *    one or more replicas' acks are still in flight
+ *    (forward_write_async()). store_sync() only covers the first gap --
+ *    it says nothing about peer nodes that haven't acked yet.
+ *
+ * So flush first waits for every currently in-flight replica ack to
+ * drain (gateway_write_cache_flush()), then syncs this node's own object
+ * store disks (store_sync(), sheep/store/common.c -- deliberately not a
+ * bare sync(2): that would also wait on every other filesystem on the
+ * host, including, in an NVMe-oF loopback setup, the client filesystem
+ * mounted on top of a VDI this very node is exporting, which hung
+ * indefinitely in practice), before completing. Because that can block
+ * on network I/O and disk I/O, it doesn't complete synchronously like
+ * read/write/dsm's data path would suggest: flush_complete() runs later
+ * (inline if nothing was pending) and sends the response itself instead
+ * of going through handle_request()'s out_rsp path.
+ *
+ * flush_complete() itself can run on the shared io_uring event-loop
+ * thread (see async_write_ack_done()'s doc comment -- this is called the
+ * same way). store_sync() can still block for a long time under
+ * sustained write load; doing it there would stall completions for every
+ * other queue on the target, not just this one. So the actual
+ * store_sync() runs as work on sys->nvmet_flush_wqueue (a dedicated
+ * worker thread, deliberately not sys->io_wqueue -- see its doc comment
+ * in sheep_priv.h for why sharing that queue would starve flush under
+ * sustained write load instead of just waiting out its own store_sync()),
+ * and ->done() runs back on sheepdog's single shared main thread (see
+ * lib/work.c) -- neither of which is this qe's own ep->pthread. uring.c's doc comment
+ * documents the invariant that ep/qes_map state must only be touched
+ * from ep->pthread, so ->done() can't send the response itself; it hands
+ * qe back to ep->pthread via queue_defer_qe() (same mechanism uring.c
+ * uses for its own async completions), and handle_flush_complete() --
+ * called from queue.c's queue_drain_io_done() on ep->pthread -- actually
+ * sends it.
+ */
+struct flush_work {
+	struct work work;
+	struct ep_qe *qe;
+};
+
+static void flush_work_fn(struct work *work)
+{
+	store_sync();
+}
+
+static void flush_work_done(struct work *work)
+{
+	struct flush_work *fw = container_of(work, struct flush_work, work);
+	struct ep_qe *qe = fw->qe;
+
+	queue_defer_qe(qe->ep, qe);
+	free(fw);
+}
+
+static void flush_complete(void *data)
+{
+	struct flush_work *fw = xzalloc(sizeof(*fw));
+
+	fw->qe = data;
+	fw->work.fn = flush_work_fn;
+	fw->work.done = flush_work_done;
+	queue_work(sys->nvmet_flush_wqueue, &fw->work);
+}
+
+int handle_flush_complete(struct nofuse_queue *ep, struct ep_qe *qe)
+{
+	int ret;
+
+	set_response(&qe->resp, qe->ccid, NVME_SC_SUCCESS);
+	ret = ep->ops->send_rsp(ep, qe, &qe->resp);
+	if (ret < 0)
+		ctrl_err(ep, "flush: tag %#x send_rsp failed with error %d",
+			 qe->tag, ret);
+	return ret;
+}
+
+static int handle_flush(struct nofuse_queue *ep, struct ep_qe *qe,
+			struct nvme_command *cmd)
+{
+	uint32_t nsid = le32toh(cmd->common.nsid);
+
+	qe->ns = lookup_namespace(ep->ctrl, nsid);
+	if (!qe->ns) {
+		ctrl_err(ep, "flush: invalid namespace %d", nsid);
+		return NVME_SC_INVALID_NS;
+	}
+
+	ctrl_info(ep, "nsid %u tag %#x ccid %#x flush",
+		  nsid, qe->tag, qe->ccid);
+
+	/* queue_drain_io_done() (queue.c) dispatches on this. */
+	qe->opcode = nvme_cmd_flush;
+
+	gateway_write_cache_flush(flush_complete, qe);
+
+	return 0;
+}
+
 int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 		   struct nvme_command *cmd)
 {
@@ -1129,6 +1237,10 @@ int handle_request(struct nofuse_queue *ep, struct ep_qe *qe,
 				return 0;
 		} else if (cmd->common.opcode == nvme_cmd_dsm) {
 			ret = handle_dsm(ep, qe, cmd);
+			if (!ret)
+				return 0;
+		} else if (cmd->common.opcode == nvme_cmd_flush) {
+			ret = handle_flush(ep, qe, cmd);
 			if (!ret)
 				return 0;
 		} else {

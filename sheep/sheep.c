@@ -598,6 +598,7 @@ static int create_work_queues(void)
 	sys->deletion_wqueue = create_ordered_work_queue("deletion");
 	sys->block_wqueue = create_ordered_work_queue("block");
 	sys->md_wqueue = create_ordered_work_queue("md");
+	sys->nvmet_flush_wqueue = create_ordered_work_queue("nvmet_flush");
 	if (wq_async_threads) {
 		sd_info("# of threads in async_req workqueue: %d", wq_async_threads);
 		sys->areq_wqueue = create_fixed_work_queue("async_req", wq_async_threads);
@@ -607,7 +608,7 @@ static int create_work_queues(void)
 	if (!sys->gateway_wqueue || !sys->io_wqueue || !sys->recovery_wqueue ||
 	    !sys->deletion_wqueue || !sys->block_wqueue || !sys->md_wqueue ||
 	    !sys->areq_wqueue || !sys->peer_wqueue || !sys->reclaim_wqueue ||
-	    !sys->gateway_fwd_wqueue)
+	    !sys->gateway_fwd_wqueue || !sys->nvmet_flush_wqueue)
 			return -1;
 
 	util_wq = create_ordered_work_queue("util");
