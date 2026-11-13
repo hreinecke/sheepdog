@@ -900,8 +900,9 @@ int main(int argc, char **argv, char **envp)
 	}
 #endif
 	if ((opt = getenv("SHEEP_OPTIONS"))) {
+		char *sheep_opts = strdup(opt);
 		int o;
-		char *p = strtok((char *)opt, ",");
+		char *p = strtok((char *)sheep_opts, ",");
 		do {
 			for (o = 0; o < ARRAY_SIZE(sheep_options); o++) {
 				if (sheep_options[o].has_arg)
@@ -936,6 +937,7 @@ int main(int argc, char **argv, char **envp)
 				}
 			}
 		} while ((p = strtok(NULL, ",")));
+		free(sheep_opts);
 	}
 
 	long_options = build_long_options(sheep_options);
