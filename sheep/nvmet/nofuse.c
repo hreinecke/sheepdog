@@ -1565,7 +1565,9 @@ int nofuse_init(const char *transport, const char *tsas,
 		this_ctx = NULL;
 		return -1;
 	}
-
+	sd_info("start NVMe frontend (options%s%s)",
+		sys->nosync ? " nosync" : "",
+		sys->all_nodes_optimized ? " optimized" : "");
 	return 0;
 }
 

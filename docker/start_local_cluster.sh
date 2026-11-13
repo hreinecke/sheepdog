@@ -43,9 +43,15 @@ SHEEP_TRANSPORT="rdma"
 SHEEP_TCP_TRADDR="127.0.0.1"
 SHEEP_RDMA_TRADDR="192.168.122.200/24"
 SHEEP_RDMA_MODE="rxe"
+SHEEP_OPTIONS=optimized
 
 export SHEEP_LOGGING SHEEP_CLUSTER_DRIVER SHEEP_TRANSPORT
 
+if [ "$1" == "rdma" ] ; then
+    SHEEP_TRANSPORT=$1
+else
+    SHEEP_TRANSPORT=tcp
+fi
 if [ "$SHEEP_TRANSPORT" = "rdma" ] ; then
     SHEEP_TRADDR=$(set_rdma_addr eth0 ${SHEEP_RDMA_TRADDR})
     set_rdma_link eth0 ${SHEEP_RDMA_MODE}
