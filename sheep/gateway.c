@@ -522,6 +522,86 @@ struct async_write_ack {
 };
 
 /*
+ * Tracks forward_write_async() replica writes via two monotonic counters
+ * instead of a live "currently outstanding" count, so
+ * gateway_write_cache_flush() (used by nvmet's FLUSH handler) only ever
+ * waits for writes that were already in flight at the moment it was
+ * called. A plain "wait until nothing is outstanding" count would never
+ * be satisfied under sustained write traffic -- new writes keep
+ * incrementing it faster than individual acks drain it -- starving
+ * flush indefinitely (long enough to trip the host's NVMe command
+ * timeout) instead of just waiting out the batch that predates it.
+ */
+static struct sd_mutex async_write_cache_lock = SD_MUTEX_INITIALIZER;
+static uint64_t async_write_cache_started;
+static uint64_t async_write_cache_completed;
+static LIST_HEAD(async_write_cache_waiters);
+
+struct async_write_cache_waiter {
+	struct list_node list;
+	uint64_t target;
+	void (*cb)(void *data);
+	void *data;
+};
+
+void gateway_write_cache_flush(void (*cb)(void *data), void *data)
+{
+	struct async_write_cache_waiter *waiter;
+	uint64_t target;
+
+	sd_mutex_lock(&async_write_cache_lock);
+	target = async_write_cache_started;
+	if (async_write_cache_completed >= target) {
+		sd_mutex_unlock(&async_write_cache_lock);
+		cb(data);
+		return;
+	}
+
+	waiter = xzalloc(sizeof(*waiter));
+	waiter->target = target;
+	waiter->cb = cb;
+	waiter->data = data;
+	list_add_tail(&waiter->list, &async_write_cache_waiters);
+	sd_mutex_unlock(&async_write_cache_lock);
+}
+
+static void async_write_cache_get(void)
+{
+	sd_mutex_lock(&async_write_cache_lock);
+	async_write_cache_started++;
+	sd_mutex_unlock(&async_write_cache_lock);
+}
+
+/*
+ * Called exactly once per async_write_cache_get(), regardless of whether
+ * the replica write succeeded, failed, or got a malformed ack -- this
+ * tracks "ack drained", not "write succeeded". Wakes every waiter whose
+ * snapshot has now been fully drained, not just one.
+ */
+static void async_write_cache_put(void)
+{
+	LIST_HEAD(done);
+	struct async_write_cache_waiter *waiter, *n;
+	uint64_t completed;
+
+	sd_mutex_lock(&async_write_cache_lock);
+	completed = ++async_write_cache_completed;
+	list_for_each_entry_safe(waiter, n, &async_write_cache_waiters, list) {
+		if (completed < waiter->target)
+			continue;
+		list_del(&waiter->list);
+		list_add_tail(&waiter->list, &done);
+	}
+	sd_mutex_unlock(&async_write_cache_lock);
+
+	list_for_each_entry_safe(waiter, n, &done, list) {
+		list_del(&waiter->list);
+		waiter->cb(waiter->data);
+		free(waiter);
+	}
+}
+
+/*
  * Runs later, off gateway_forward_request()'s call stack -- on the thread
  * that's running the main event loop when the io_uring backend is in use,
  * or synchronously out of aio_read() itself on the calling (gway) thread
@@ -554,6 +634,7 @@ static void async_write_ack_done(int res, void *data)
 	}
 
 	free(ack);
+	async_write_cache_put();
 }
 
 /*
@@ -590,6 +671,12 @@ static int forward_write_async(const struct node_id *nid, struct sd_req *hdr,
 	ack->oid = hdr->obj.oid;
 	ack->nid = nid;
 	ack->sfd = sfd;
+	/*
+	 * Must happen before aio_read(): under the epoll backend it can
+	 * invoke async_write_ack_done() synchronously, before returning
+	 * here (see its doc comment above).
+	 */
+	async_write_cache_get();
 	aio_read(sfd->fd, &ack->rsp, sizeof(ack->rsp), async_write_ack_done, ack);
 
 	return SD_RES_SUCCESS;

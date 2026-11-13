@@ -638,6 +638,12 @@ int gateway_write_obj(struct request *req);
 int gateway_create_and_write_obj(struct request *req);
 int gateway_remove_obj(struct request *req);
 int gateway_decref_object(struct request *req);
+/*
+ * Calls back once every write-cache replica ack currently in flight (see
+ * use_write_cache() in gateway.c) has been drained -- immediately, inline,
+ * if none are outstanding right now.
+ */
+void gateway_write_cache_flush(void (*cb)(void *data), void *data);
 
 bool is_erasure_oid(uint64_t oid);
 uint8_t local_ec_index(struct vnode_info *vinfo, uint64_t oid);
