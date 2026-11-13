@@ -899,7 +899,7 @@ int main(int argc, char **argv, char **envp)
 		}
 	}
 #endif
-	if ((opt = getenv("SHEEP_OPTS"))) {
+	if ((opt = getenv("SHEEP_OPTIONS"))) {
 		int o;
 		char *p = strtok((char *)opt, ",");
 		do {
