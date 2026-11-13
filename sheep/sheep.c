@@ -904,11 +904,14 @@ int main(int argc, char **argv, char **envp)
 		int o;
 		char *p = strtok((char *)sheep_opts, ",");
 		do {
+			if (!p)
+				break;
 			for (o = 0; o < ARRAY_SIZE(sheep_options); o++) {
 				if (sheep_options[o].has_arg)
 					continue;
-				if (strncmp(p, sheep_options[o].name,
-					    strlen(sheep_options[o].name)))
+				if (!sheep_options[o].name)
+					break;
+				if (strcmp(p, sheep_options[o].name))
 					continue;
 				switch (sheep_options[o].ch) {
 				case 'n':
