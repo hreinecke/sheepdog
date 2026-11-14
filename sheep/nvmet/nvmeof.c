@@ -1101,11 +1101,6 @@ struct flush_work {
 	struct ep_qe *qe;
 };
 
-static void flush_work_fn(struct work *work)
-{
-	store_sync();
-}
-
 static void flush_work_done(struct work *work)
 {
 	struct flush_work *fw = container_of(work, struct flush_work, work);
@@ -1120,7 +1115,6 @@ static void flush_complete(void *data)
 	struct flush_work *fw = xzalloc(sizeof(*fw));
 
 	fw->qe = data;
-	fw->work.fn = flush_work_fn;
 	fw->work.done = flush_work_done;
 	queue_work(sys->nvmet_flush_wqueue, &fw->work);
 }
