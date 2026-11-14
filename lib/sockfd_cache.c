@@ -40,6 +40,8 @@
 #include "sockfd_cache_tp.h"
 #define MONITOR_INTERVAL 5
 
+#undef SOCKFD_DEBUG
+
 struct nid_test_work {
 	struct list_node w_list;
 	struct node_id nid;
@@ -261,7 +263,8 @@ void sockfd_cache_add_group(const struct rb_root *nroot)
 void sockfd_cache_add(const struct node_id *nid)
 {
 	struct sockfd_cache_entry *new;
-	int n, i;
+	__unused int n;
+	int i;
 
 	sd_write_lock(&sockfd_cache.lock);
 	new = xmalloc(sizeof(*new));
@@ -281,8 +284,9 @@ void sockfd_cache_add(const struct node_id *nid)
 	}
 	sd_rw_unlock(&sockfd_cache.lock);
 	n = uatomic_add_return(&sockfd_cache.count, 1);
+#ifdef SOCKFD_DEBUG
 	sd_debug("%s, count %d", addr_to_str(nid->addr, nid->port), n);
-
+#endif
 	tracepoint(sockfd_cache, new_sockfd_entry, new, fds_count);
 }
 
@@ -296,7 +300,9 @@ static void do_grow_fds(struct work *work)
 	struct sockfd_cache_entry *entry;
 	int old_fds_count, new_fds_count, new_size, i;
 
+#ifdef SOCKFD_DEBUG
 	sd_debug("%d", fds_count);
+#endif
 	sd_write_lock(&sockfd_cache.lock);
 	old_fds_count = fds_count;
 	new_fds_count = fds_count * 2;
@@ -321,7 +327,9 @@ static void do_grow_fds(struct work *work)
 
 static void grow_fds_done(struct work *work)
 {
+#ifdef SOCKFD_DEBUG
 	sd_debug("fd count has been grown into %d", fds_count);
+#endif
 	uatomic_set_false(&fds_in_grow);
 	free(work);
 }
@@ -457,22 +465,13 @@ static struct sockfd *sockfd_cache_get_long(const struct node_id *nid)
 	struct sockfd_cache_entry *entry;
 	struct sockfd *sfd;
 	bool isIO = true;
+	int fd, idx = -1;
+#ifdef SOCKFD_DEBUG
 	bool use_io = nid->io_port ? true : false;
 	const uint8_t *addr;
-	int fd, idx = -1, port;
-
-#ifdef HAVE_RDMA
-	/*
-	 * A peer whose IO NIC speaks RDMA is handled entirely by
-	 * rdma_exec_req()/gateway_forward_request()'s RDMA branch; plain TCP
-	 * must never dial its io_addr/io_port (nothing TCP is listening
-	 * there -- it's bound as an rdma_cm listener).
-	 */
-	if (nid->io_transport_type == IO_TRANSPORT_TYPE_RDMA)
-		use_io = false;
+	int port;
 #endif
-	addr = use_io ? nid->io_addr : nid->addr;
-	port = use_io ? nid->io_port : nid->port;
+
 grab:
 	entry = sockfd_cache_grab(nid, &idx, &isIO);
 	if (!entry) {
@@ -515,8 +514,21 @@ grab:
 	if (fd == -1)
 		return NULL;
 
+#ifdef SOCKFD_DEBUG
+#ifdef HAVE_RDMA
+	/*
+	 * A peer whose IO NIC speaks RDMA is handled entirely by
+	 * rdma_exec_req()/gateway_forward_request()'s RDMA branch; plain TCP
+	 * must never dial its io_addr/io_port (nothing TCP is listening
+	 * there -- it's bound as an rdma_cm listener).
+	 */
+	if (nid->io_transport_type == IO_TRANSPORT_TYPE_RDMA)
+		use_io = false;
+#endif
+	addr = use_io ? nid->io_addr : nid->addr;
+	port = use_io ? nid->io_port : nid->port;
 	sd_debug("%s, idx %d", addr_to_str(addr, port), idx);
-
+#endif
 	sfd = xmalloc(sizeof(*sfd));
 	sfd->fd = fd;
 	sfd->idx = idx;
@@ -529,13 +541,14 @@ grab:
 
 static void sockfd_cache_put_long(const struct node_id *nid, int idx, bool isIO)
 {
+	struct sockfd_cache_entry *entry;
+#ifdef SOCKFD_DEBUG
 	bool use_io = nid->io_port ? true : false;
 	const uint8_t *addr = use_io ? nid->io_addr : nid->addr;
 	int port = use_io ? nid->io_port : nid->port;
-	struct sockfd_cache_entry *entry;
 
 	sd_debug("%s idx %d", addr_to_str(addr, port), idx);
-
+#endif
 	sd_read_lock(&sockfd_cache.lock);
 	entry = sockfd_cache_search(nid);
 	if (!entry) {
@@ -552,13 +565,14 @@ static void sockfd_cache_put_long(const struct node_id *nid, int idx, bool isIO)
 
 static void sockfd_cache_close(const struct node_id *nid, int idx, bool isIO)
 {
+	struct sockfd_cache_entry *entry;
+#ifdef SOCKFD_DEBUG
 	bool use_io = nid->io_port ? true : false;
 	const uint8_t *addr = use_io ? nid->io_addr : nid->addr;
 	int port = use_io ? nid->io_port : nid->port;
-	struct sockfd_cache_entry *entry;
 
 	sd_debug("%s idx %d", addr_to_str(addr, port), idx);
-
+#endif
 	sd_write_lock(&sockfd_cache.lock);
 	entry = sockfd_cache_search(nid);
 	if (!entry) {
@@ -624,7 +638,9 @@ struct sockfd *sockfd_cache_get(const struct node_id *nid)
 	sfd->idx = -1;
 	sfd->fd = fd;
 	sfd->isIO = false;
+#ifdef SOCKFD_DEBUG
 	sd_debug("%d", fd);
+#endif
 	return sfd;
 }
 
@@ -639,7 +655,9 @@ void sockfd_cache_put(const struct node_id *nid, struct sockfd *sfd)
 {
 	if (sfd->idx == -1) {
 		assert(!sfd->isIO);
+#ifdef SOCKFD_DEBUG
 		sd_debug("%d", sfd->fd);
+#endif
 		close(sfd->fd);
 		free(sfd);
 
@@ -656,13 +674,15 @@ void sockfd_cache_put(const struct node_id *nid, struct sockfd *sfd)
 /* Delete all sockfd connected to the node, when node is crashed. */
 void sockfd_cache_del_node(const struct node_id *nid)
 {
-	int n;
+	__unused int n;
 
 	if (!sockfd_cache_destroy(nid))
 		return;
 
 	n = uatomic_sub_return(&sockfd_cache.count, 1);
+#ifdef SOCKFD_DEBUG
 	sd_debug("%s, count %d", addr_to_str(nid->addr, nid->port), n);
+#endif
 }
 
 /*
@@ -676,7 +696,9 @@ void sockfd_cache_del(const struct node_id *nid, struct sockfd *sfd)
 {
 	if (sfd->idx == -1) {
 		assert(!sfd->isIO);
+#ifdef SOCKFD_DEBUG
 		sd_debug("%d", sfd->fd);
+#endif
 		close(sfd->fd);
 		free(sfd);
 		return;
