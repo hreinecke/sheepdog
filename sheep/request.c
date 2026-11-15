@@ -366,6 +366,7 @@ void wakeup_all_requests(void)
 
 static void queue_peer_request(struct request *req)
 {
+	sd_debug("%s %016" PRIx64, op_name(req->op), req->rq.obj.oid);
 	req->local_oid = req->rq.obj.oid;
 	if (req->local_oid) {
 		if (check_request_epoch(req) < 0)
@@ -406,6 +407,7 @@ static void queue_gateway_request(struct request *req)
 {
 	struct sd_req *hdr = &req->rq;
 
+	sd_debug("%s %016" PRIx64, op_name(req->op), hdr->obj.oid);
 	if (is_access_local(req, hdr->obj.oid))
 		req->local_oid = hdr->obj.oid;
 
@@ -444,6 +446,7 @@ end_request:
 
 static void queue_local_request(struct request *req)
 {
+	sd_debug("%s", op_name(req->op));
 	req->work.fn = do_process_work;
 	req->work.done = local_op_done;
 	queue_work(sys->io_wqueue, &req->work);
@@ -551,8 +554,6 @@ void queue_request(struct request *req)
 		goto done;
 	}
 
-	sd_debug("%s, %d", op_name(req->op), sys_get_status());
-
 	switch (sys_get_status()) {
 	case SD_STATUS_KILLED:
 		rsp->result = SD_RES_KILLED;
@@ -594,6 +595,9 @@ void queue_request(struct request *req)
 
 	return;
 done:
+	sd_debug("%s, %d error %s", op_name(req->op),
+		 sys_get_status(), sd_strerror(rsp->result));
+
 	put_request(req);
 }
 
