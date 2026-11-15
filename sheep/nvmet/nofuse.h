@@ -49,7 +49,8 @@ extern struct list_head port_linked_list;
 #define NVME_NR_AEN_COMMANDS	4
 #define NVMF_AQ_DEPTH		32
 #define NVMF_SQ_DEPTH		128
-#define NVMF_NUM_QUEUES		8
+#define NVMF_NUM_QUEUES		255
+
 /*
  * Max per-command data transfer size. Backs ep->mdts (and the advertised
  * NVMe Identify Controller MDTS field), and sizes the RDMA per-qe data
@@ -297,8 +298,8 @@ struct nofuse_ctrl {
 	int cntlid;
 	int kato;
 	int kato_countdown;
-	int num_queues;
-	int max_queues;
+	uint16_t num_queues;
+	uint16_t max_queues;
 	uint32_t aen_enabled;
 	uint32_t aen_masked;
 	uint32_t aen_pending;
