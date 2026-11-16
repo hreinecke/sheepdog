@@ -31,7 +31,7 @@ struct work {
 
 struct work_queue {
 	int wq_state;
-	struct list_head pending_list;
+	unsigned int num_pending;
 };
 
 enum wq_thread_control {

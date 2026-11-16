@@ -50,6 +50,7 @@ static size_t max_dynamic_threads = 0;
 struct wq_info {
 	const char *name;
 
+	struct list_head pending_list;
 	struct list_head finished_list;
 	struct list_node list;
 
@@ -319,7 +320,8 @@ void queue_work(struct work_queue *q, struct work *work)
 	if (new_nr_threads > 0)
 		create_worker_threads(wi, new_nr_threads);
 
-	list_add_tail(&work->w_list, &wi->q.pending_list);
+	list_add_tail(&work->w_list, &wi->pending_list);
+	uatomic_inc(&q->num_pending);
 	sd_mutex_unlock(&wi->pending_lock);
 
 	sd_cond_signal(&wi->pending_cond);
@@ -422,15 +424,16 @@ static void *worker_routine(void *arg)
 			break;
 		}
 retest:
-		if (list_empty(&wi->q.pending_list)) {
+		if (list_empty(&wi->pending_list)) {
 			sd_cond_wait(&wi->pending_cond, &wi->pending_lock);
 			goto retest;
 		}
 
-		work = list_first_entry(&wi->q.pending_list,
+		work = list_first_entry(&wi->pending_list,
 				       struct work, w_list);
 
 		list_del(&work->w_list);
+		uatomic_dec(&wi->q.num_pending);
 		sd_mutex_unlock(&wi->pending_lock);
 
 		tracepoint(work, do_work, wi, work);
@@ -484,8 +487,9 @@ struct work_queue *create_work_queue(const char *name,
 	wi->name = name;
 	wi->tc = tc;
 
-	INIT_LIST_HEAD(&wi->q.pending_list);
+	INIT_LIST_HEAD(&wi->pending_list);
 	INIT_LIST_HEAD(&wi->finished_list);
+	wi->q.num_pending = 0;
 
 	sd_cond_init(&wi->pending_cond);
 
