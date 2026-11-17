@@ -615,8 +615,10 @@ static void async_write_ack_done(int res, void *data)
 	struct async_write_ack *ack = data;
 
 	if (res < 0) {
-		sd_err("%016"PRIx64": failed to read async replica ack, %s",
-		       ack->oid, strerror(-res));
+		sd_err("%016"PRIx64": failed to read async replica ack, %s "
+		       "(fd %d idx %d isIO %d)",
+		       ack->oid, strerror(-res), ack->sfd->fd, ack->sfd->idx,
+		       ack->sfd->isIO);
 		sockfd_cache_del(ack->nid, ack->sfd);
 	} else if (ack->rsp.result != SD_RES_SUCCESS) {
 		sd_err("%016"PRIx64": async replica write failed, %s",

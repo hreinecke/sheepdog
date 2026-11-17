@@ -202,6 +202,23 @@ static uint64_t get_msec_time(void)
 	return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
+/*
+ * The thread ceiling a WQ_DYNAMIC queue would grow to under load, with no
+ * queue of its own to measure -- for callers that want a WQ_FIXED queue
+ * sized the same as the WQ_DYNAMIC default, instead of a hand-picked count.
+ */
+size_t work_queue_dynamic_max(void)
+{
+	size_t nr;
+
+	if (max_dynamic_threads > 0)
+		return max_dynamic_threads;
+
+	/* max(#nodes,#cores,16)*2 threads */
+	nr = max(nr_nodes, nr_cores);
+	return max(nr, (size_t)16) * 2;
+}
+
 static inline uint64_t wq_get_roof(struct wq_info *wi)
 {
 	uint64_t nr = 1;

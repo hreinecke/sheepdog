@@ -81,6 +81,7 @@ void finish_work_done(struct work *work);
 bool work_queue_empty(struct work_queue *q);
 int wq_trace_init(void);
 void set_max_dynamic_threads(size_t nr_max);
+size_t work_queue_dynamic_max(void);
 
 #ifdef HAVE_TRACE
 void suspend_worker_threads(void);

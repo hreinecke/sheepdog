@@ -547,11 +547,26 @@ static int create_work_queues(void)
 	} else {
 		sys->net_wqueue = create_work_queue("net", WQ_DYNAMIC);
 	}
+	/*
+	 * Always fixed, never WQ_DYNAMIC: gateway work can leave an
+	 * io_uring aio_read() pending past the end of its work item (the
+	 * write-cache path's async replica-ack read, see
+	 * forward_write_async() in gateway.c) -- a WQ_DYNAMIC worker
+	 * exiting to shrink the pool while that read is still outstanding
+	 * makes the kernel cancel it (io_uring tears down a pending poll
+	 * for an exiting task), surfacing as spurious
+	 * "failed to read async replica ack, Operation canceled" errors
+	 * and needlessly discarded pooled connections. Sized the same as
+	 * WQ_DYNAMIC's own growth ceiling when not explicitly configured,
+	 * so this isn't a resource-usage regression for deployments that
+	 * don't hit that ceiling.
+	 */
 	if (wq_gway_threads) {
 		sd_info("# of threads in gway workqueue: %d", wq_gway_threads);
 		sys->gateway_wqueue = create_fixed_work_queue("gway", wq_gway_threads);
 	} else {
-		sys->gateway_wqueue = create_work_queue("gway", WQ_DYNAMIC);
+		sys->gateway_wqueue = create_fixed_work_queue("gway",
+						work_queue_dynamic_max());
 	}
 	if (wq_io_threads) {
 		sd_info("# of threads in io workqueue: %d", wq_io_threads);
@@ -571,11 +586,15 @@ static int create_work_queues(void)
 	} else {
 		sys->reclaim_wqueue = create_work_queue("reclaim", WQ_DYNAMIC);
 	}
+	/* Same reasoning as gateway_wqueue above -- gway_fwd work can also
+	 * leave an async replica-ack read outstanding past its own return.
+	 */
 	if (wq_gway_fwd_threads) {
 		sd_info("# of threads in gway_fwd workqueue: %d", wq_gway_fwd_threads);
 		sys->gateway_fwd_wqueue = create_fixed_work_queue("gway_fwd", wq_gway_fwd_threads);
 	} else {
-		sys->gateway_fwd_wqueue = create_work_queue("gway_fwd", WQ_DYNAMIC);
+		sys->gateway_fwd_wqueue = create_fixed_work_queue("gway_fwd",
+						work_queue_dynamic_max());
 	}
 	if (wq_remove_threads) {
 		sd_info("# of threads in remove workqueue: %d", wq_remove_threads);
