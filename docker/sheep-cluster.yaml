@@ -24,7 +24,7 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE0_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP0_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -54,7 +54,7 @@ services:
       - "127.0.0.1:8001:8001"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE1_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP1_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -84,7 +84,7 @@ services:
       - "127.0.0.1:8002:8002"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE2_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP2_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -114,7 +114,7 @@ services:
       - "127.0.0.1:8003:8003"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE3_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP3_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -144,7 +144,7 @@ services:
       - "127.0.0.1:8004:8004"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE4_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP4_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -174,7 +174,7 @@ services:
       - "127.0.0.1:8005:8005"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE5_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP5_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -204,7 +204,7 @@ services:
       - "127.0.0.1:8006:8006"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE6_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP6_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -234,7 +234,7 @@ services:
       - "127.0.0.1:8007:8007"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE7_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP7_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -264,7 +264,7 @@ services:
       - "127.0.0.1:8008:8008"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE8_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP8_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -294,7 +294,7 @@ services:
       - "127.0.0.1:8009:8009"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE9_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP9_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -324,7 +324,7 @@ services:
       - "127.0.0.1:8010:8010"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE10_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP10_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -354,7 +354,7 @@ services:
       - "127.0.0.1:8011:8011"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE11_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP11_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -384,7 +384,7 @@ services:
       - "127.0.0.1:8012:8012"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE12_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP12_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -414,7 +414,7 @@ services:
       - "127.0.0.1:8013:8013"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE13_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP13_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -444,7 +444,7 @@ services:
       - "127.0.0.1:8014:8014"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE14_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP14_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -474,7 +474,7 @@ services:
       - "127.0.0.1:8015:8015"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE15_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP15_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -504,7 +504,7 @@ services:
       - "127.0.0.1:8016:8016"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE16_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP16_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -534,7 +534,7 @@ services:
       - "127.0.0.1:8017:8017"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE17_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP17_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -564,7 +564,7 @@ services:
       - "127.0.0.1:8018:8018"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE18_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP18_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -594,7 +594,7 @@ services:
       - "127.0.0.1:8019:8019"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE19_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP19_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -624,7 +624,7 @@ services:
       - "127.0.0.1:8020:8020"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE20_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP20_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -654,7 +654,7 @@ services:
       - "127.0.0.1:8021:8021"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE21_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP21_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -684,7 +684,7 @@ services:
       - "127.0.0.1:8022:8022"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE22_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP22_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}
@@ -714,7 +714,7 @@ services:
       - "127.0.0.1:8023:8023"
     environment:
       - SHEEP_CLUSTER_DRIVER=etcd:${NODE23_IP}
-      - SHEEP_LOGGING=level=debug,dst=stdout
+      - SHEEP_LOGGING=${SHEEP_LOGGING}
       - SHEEP_BASE_DIR=${SHEEP_BASE_DIR}
       - SHEEP_ADDR=${SHEEP23_IP}
       - SHEEP_VNODES=${SHEEP_VNODES}

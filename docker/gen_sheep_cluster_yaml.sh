@@ -44,7 +44,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "      - \"127.0.0.1:${disc_port}:${disc_port}\""
     echo "    environment:"
     echo "      - SHEEP_CLUSTER_DRIVER=etcd:\${NODE${node}_IP}"
-    echo "      - SHEEP_LOGGING=level=debug,dst=stdout"
+    echo "      - SHEEP_LOGGING=\${SHEEP_LOGGING}"
     echo "      - SHEEP_BASE_DIR=\${SHEEP_BASE_DIR}"
     echo "      - SHEEP_ADDR=\${SHEEP${node}_IP}"
     echo "      - SHEEP_VNODES=\${SHEEP_VNODES}"
