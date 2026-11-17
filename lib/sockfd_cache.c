@@ -64,11 +64,21 @@ static struct sockfd_cache sockfd_cache = {
  * assumption, '8' would be efficient for servers that only host 2~4
  * Guests.
  *
+ * gateway.c's write-cache path (sys->nosync) no longer bounds how many
+ * writes to the same peer can be outstanding at once the way the old
+ * fully-synchronous forwarding did, so a deep NVMe/guest queue can tear
+ * through 8 long FDs almost immediately; every request past that pays a
+ * full ad hoc connect()/close() instead of reusing a pooled connection.
+ * 32 gives that burst more headroom before falling back, while still
+ * being cheap to keep idle per peer; the watermark growth below (sped up
+ * by do_grow_fds() eagerly connecting new slots) covers sustained demand
+ * beyond that.
+ *
  * This fd count will be dynamically grown when the idx reaches watermark which
  * is calculated by FDS_WATERMARK
  */
 #define FDS_WATERMARK(x) ((x) * 3 / 4)
-#define DEFAULT_FDS_COUNT	8
+#define DEFAULT_FDS_COUNT	32
 
 /* How many FDs we cache for one node */
 static int fds_count = DEFAULT_FDS_COUNT;
@@ -295,10 +305,13 @@ static int fds_high_watermark = FDS_WATERMARK(DEFAULT_FDS_COUNT);
 
 static struct work_queue *grow_wq;
 
+static void prepare_conns(struct sockfd_cache_entry *entry, bool first_only);
+
 static void do_grow_fds(struct work *work)
 {
 	struct sockfd_cache_entry *entry;
-	int old_fds_count, new_fds_count, new_size, i;
+	struct node_id *nids;
+	int old_fds_count, new_fds_count, new_size, i, nr;
 
 #ifdef SOCKFD_DEBUG
 	sd_debug("%d", fds_count);
@@ -318,11 +331,39 @@ static void do_grow_fds(struct work *work)
 		}
 	}
 
-	fds_count *= 2;
+	fds_count = new_fds_count;
 	fds_high_watermark = FDS_WATERMARK(fds_count);
+
+	/*
+	 * Connect the newly added slots right away instead of leaving them
+	 * at fd == -1 until the next monitor_sd_node_connectivity() tick
+	 * (up to MONITOR_INTERVAL seconds away): growth only fires when a
+	 * burst has already exhausted the old slot count, which is exactly
+	 * when every request in the meantime would otherwise keep paying
+	 * for a short-lived ad hoc connection instead of reusing a pooled
+	 * one. Snapshot node ids first: like monitor_sd_node_connectivity(),
+	 * prepare_conns() drops the cache lock while it connects, so the
+	 * tree can't be walked across the call.
+	 */
+	nr = 0;
+	rb_for_each_entry(entry, &sockfd_cache.root, rb)
+		nr++;
+	nids = xcalloc(nr ?: 1, sizeof(*nids));
+	nr = 0;
+	rb_for_each_entry(entry, &sockfd_cache.root, rb)
+		nids[nr++] = entry->nid;
 	sd_rw_unlock(&sockfd_cache.lock);
 
 	tracepoint(sockfd_cache, grow_fd_count, new_fds_count);
+
+	for (i = 0; i < nr; i++) {
+		sd_write_lock(&sockfd_cache.lock);
+		entry = sockfd_cache_search(&nids[i]);
+		if (entry)
+			prepare_conns(entry, false);
+		sd_rw_unlock(&sockfd_cache.lock);
+	}
+	free(nids);
 }
 
 static void grow_fds_done(struct work *work)
