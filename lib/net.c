@@ -189,8 +189,38 @@ int connect_to(const char *name, int port)
 			ret = connect(fd, res->ai_addr, res->ai_addrlen);
 			if (!ret)
 				break;
+			if (errno == EINTR) {
+				/*
+				 * Linux's connect(2) documents the socket's
+				 * state as unspecified after EINTR -- portable
+				 * code must open a new socket rather than
+				 * retry connect() on this one.
+				 */
+				close(fd);
+				fd = socket(res->ai_family, res->ai_socktype,
+					   res->ai_protocol);
+				if (fd < 0)
+					break;
+				ret = setsockopt(fd, SOL_SOCKET, SO_LINGER,
+						 &linger_opt,
+						 sizeof(linger_opt));
+				if (!ret)
+					ret = set_snd_timeout(fd);
+				if (!ret)
+					ret = set_rcv_timeout(fd);
+				if (ret) {
+					sd_err("failed to reconfigure socket "
+					       "after EINTR: %m");
+					close(fd);
+					fd = -1;
+					break;
+				}
+				continue;
+			}
 			sd_debug("retry connect to %s:%d: %m", name, port);
 		}
+		if (fd < 0)
+			continue;
 		if (ret) {
 			sd_err("failed to connect to %s:%d: %m", name, port);
 			close(fd);
