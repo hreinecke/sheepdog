@@ -61,6 +61,13 @@ extern struct list_head port_linked_list;
  */
 #define NVMF_MDTS_SIZE		0x10000
 
+/*
+ * Logical block size advertised to hosts for every namespace. 4K matches
+ * the granularity sheepdog's own store and io_uring backend operate at,
+ * so reads/writes/discards never need sub-block read-modify-write.
+ */
+#define NVME_BLOCK_SIZE		4096
+
 #define MAX_NQN_SIZE		256
 #define MAX_ALIAS_SIZE		64
 

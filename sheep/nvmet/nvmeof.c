@@ -405,11 +405,14 @@ static int handle_identify_ctrl_nvm(struct nofuse_queue *ep,
 	 * no smaller restriction.
 	 *
 	 * DMRSL is in logical blocks; one sheepdog object's worth of
-	 * sectors is as large a single range ever needs to be, since
+	 * blocks is as large a single range ever needs to be, since
 	 * uring_submit_dsm() only ever discards whole objects anyway.
+	 * This is a per-controller (not per-namespace) response, so it
+	 * assumes every namespace shares the same NVME_BLOCK_SIZE, which
+	 * register_namespace() guarantees.
 	 */
 	id.dmrl = 255;
-	id.dmrsl = htole32(SD_DATA_OBJ_SIZE / SECTOR_SIZE);
+	id.dmrsl = htole32(SD_DATA_OBJ_SIZE / NVME_BLOCK_SIZE);
 	/*
 	 * WZSL bounds Write Zeroes, which we don't implement at all (ONCS
 	 * doesn't advertise it, so a compliant host won't read this

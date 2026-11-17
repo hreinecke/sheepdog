@@ -368,7 +368,7 @@ static int register_namespace(struct nofuse_subsystem *subsys, uint32_t nsid,
 	ns->subsys_id = subsys->id;
 	ns->nsid = nsid;
 	ns->size = inode->header.vdi_size;
-	ns->blksize = SECTOR_SIZE;
+	ns->blksize = NVME_BLOCK_SIZE;
 	ns->readonly = false;
 	ns->enabled = true;
 	ns->ana_grpid = vnode->node->zone + 1;
