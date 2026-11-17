@@ -730,8 +730,10 @@ struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 	int ret;
 
 	ep = malloc(sizeof(struct nofuse_queue));
-	if (!ep)
+	if (!ep) {
+		port->ops->destroy_connection(port, id);
 		return NULL;
+	}
 
 	memset(ep, 0, sizeof(struct nofuse_queue));
 	ep->qnum = uatomic_add_return(&num_queues, 1);
@@ -748,9 +750,18 @@ struct nofuse_queue *create_queue(void *id, struct nofuse_port *port)
 	ep->io_evtfd = eventfd(0, EFD_NONBLOCK);
 	if (ep->io_evtfd < 0) {
 		sd_err("ep %d: failed to create io eventfd", ep->qnum);
+		port->ops->destroy_connection(port, id);
 		goto out;
 	}
 
+	/*
+	 * From here on, id's ownership passes into ops->create_queue()
+	 * (tcp_create_queue() consumes and frees it unconditionally, as its
+	 * very first action, before it can fail itself) -- regardless of
+	 * whether start_queue() as a whole goes on to succeed or fail. A
+	 * destroy_connection(port, id) call on the failure path below would
+	 * be a double free of the same pointer, not a cleanup of it.
+	 */
 	ret = start_queue(ep, id, NVMF_SQ_DEPTH);
 	if (ret) {
 		sd_err("ep %d: failed to start queue", ep->qnum);

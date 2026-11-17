@@ -269,7 +269,13 @@ static void *run_port(void *arg)
 		}
 		ep = create_queue(id, port);
 		if (!ep) {
-			port->ops->destroy_connection(port, id);
+			/*
+			 * create_queue() itself already disposed of id on
+			 * every failure path it can take, including handing
+			 * ownership into ops->create_queue() once it gets
+			 * that far -- destroy_connection() here would double
+			 * free whatever id pointed at.
+			 */
 			continue;
 		}
 
