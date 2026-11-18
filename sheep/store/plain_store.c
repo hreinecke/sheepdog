@@ -599,8 +599,32 @@ static int default_read_from_path(struct store_cache_entry *entry,
 		ret = get_store_path(entry->oid, iocb->ec_index, &path);
 		if (ret < 0)
 			return SD_RES_NO_OBJ;
-		if (!md_exist(entry->oid, iocb->ec_index, path))
-			return SD_RES_NO_OBJ;
+		if (!md_exist(entry->oid, iocb->ec_index, path)) {
+			/*
+			 * Tell a disk that vanished out from under us (its
+			 * containing directory is gone, e.g. an unmounted or
+			 * failed MD disk) from an object that was simply
+			 * never written here -- same distinction
+			 * err_to_sderr()'s ENOENT case makes. The former is
+			 * a real disk failure: route it through
+			 * md_handle_eio() so the disk gets removed from the
+			 * MD array and recovery kicks in, instead of
+			 * silently and permanently reporting "no object"
+			 * for every future read of anything that lived on
+			 * that disk.
+			 */
+			char p[PATH_MAX], *dir;
+			struct stat st;
+
+			pstrcpy(p, sizeof(p), path);
+			dir = dirname(p);
+			if (stat(dir, &st) < 0 && errno == ENOENT)
+				ret = md_handle_eio(dir);
+			else
+				ret = SD_RES_NO_OBJ;
+			free(path);
+			return ret;
+		}
 
 		entry->path = path;
 	}
