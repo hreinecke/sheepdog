@@ -545,7 +545,7 @@ _start_sheep()
     if [[ "$MD" ]]; then
 	if [[ "$MD" -gt 1 ]]; then
 	    MD_STORE=
-	    for m in $(seq 0 $MD); do
+	    for m in $(seq 0 $((MD - 1))); do
 		MD_STORE="${MD_STORE},$STORE/${node}/d${m}"
 	    done
 	else
@@ -725,6 +725,7 @@ _cleanup_devices()
     done
 
     for d in `find /dev/ -maxdepth 1 -name "loop*"`; do
+	[ "$d" == "/dev/loop-control" ] && continue
         sudo losetup -d $d &> /dev/null
     done
 }
