@@ -466,6 +466,26 @@ error:
 	put_request(req);
 }
 
+/*
+ * Concurrent recovery workers, each recovering a different object, can
+ * all land here for the same missing historical epoch at once -- both
+ * get_vnode_info_epoch() and rollback_vnode_info() (via get_nodes_epoch())
+ * call this function directly from per-object recovery work. Without
+ * serializing them, the update_epoch_log() call below races on the same
+ * "<epoch>.json.tmp" path (it passes force_create=true to
+ * atomic_create_and_write(), so one caller's unlink-and-recreate can steal
+ * the temp file out from under another's in-flight write), which shows up
+ * as a stray "failed to rename ... No such file or directory" error.
+ * Harmless to the in-memory result (each caller still has its own
+ * correctly fetched 'nodes' array), but it wastes the remote fetch and
+ * leaves the on-disk cache file missing, forcing every future caller to
+ * refetch it remotely again. Serializing the whole fetch-and-persist
+ * sequence lets later callers find the first one's freshly cached copy
+ * locally (via epoch_log_read(), before ever reaching here) instead of
+ * racing to write it themselves.
+ */
+static struct sd_mutex epoch_log_remote_lock = SD_MUTEX_INITIALIZER;
+
 int epoch_log_read_remote(uint32_t epoch, struct sd_node *nodes, int len,
 					  int *nr_nodes, time_t *timestamp,
 					  struct vnode_info *vinfo)
@@ -474,6 +494,7 @@ int epoch_log_read_remote(uint32_t epoch, struct sd_node *nodes, int len,
 	const struct sd_node *node;
 	int ret;
 
+	sd_mutex_lock(&epoch_log_remote_lock);
 	rb_for_each_entry(node, &vinfo->nroot, rb) {
 		struct sd_req hdr;
 		struct sd_rsp *rsp = (struct sd_rsp *)&hdr;
@@ -489,10 +510,12 @@ int epoch_log_read_remote(uint32_t epoch, struct sd_node *nodes, int len,
 		ret = sheep_exec_req(&node->nid, &hdr, buf);
 		if (ret < 0) {
 			free(buf);
+			sd_mutex_unlock(&epoch_log_remote_lock);
 			return SD_RES_NETWORK_ERROR;
 		}
 		if (ret == SD_RES_BUFFER_SMALL) {
 			free(buf);
+			sd_mutex_unlock(&epoch_log_remote_lock);
 			return ret;
 		}
 		if (ret != SD_RES_SUCCESS)
@@ -507,10 +530,12 @@ int epoch_log_read_remote(uint32_t epoch, struct sd_node *nodes, int len,
 		*nr_nodes = nodes_len / sizeof(struct sd_node);
 		/* epoch file is missing in local node, try to create one */
 		update_epoch_log(epoch, nodes, *nr_nodes);
+		sd_mutex_unlock(&epoch_log_remote_lock);
 		return SD_RES_SUCCESS;
 	}
 
 	free(buf);
+	sd_mutex_unlock(&epoch_log_remote_lock);
 	return SD_RES_NO_TAG;
 }
 
