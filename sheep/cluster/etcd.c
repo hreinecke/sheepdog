@@ -2559,6 +2559,7 @@ static void *etcd_event_watcher(void *arg)
 	if (!conn) {
 		pthread_exit(NULL);
 	}
+	etcd_conn_set_read_timeout(conn, ETCD_WATCH_READ_TIMEOUT);
 	pthread_cleanup_push(delete_conn, conn);
 
 	memset(&ev, 0, sizeof(ev));
@@ -2571,8 +2572,24 @@ static void *etcd_event_watcher(void *arg)
 				    &ev, pthread_self());
 		if (ret) {
 			if (ret == -EIO || ret == -ETIME) {
-				ev.ev_revision = 0;
-				sd_debug("watch error, reset watch revision");
+				/*
+				 * Reconnect and resume from ev_revision
+				 * (left as-is, tracking the last event we
+				 * actually saw) rather than resetting it to
+				 * 0: a reset makes the new watch start from
+				 * "now", silently skipping any membership
+				 * event (BLOCK/UNBLOCK/JOIN) that landed in
+				 * etcd during the gap, which desyncs this
+				 * node's view of the join/recovery protocol
+				 * forever since those messages are not
+				 * independently re-queryable. etcd keeps
+				 * enough history for this to just work
+				 * unless the gap was compacted away, in
+				 * which case the server fails the request
+				 * and we fall through to the handler below.
+				 */
+				sd_debug("watch error, reconnecting from revision %"
+					PRId64, ev.ev_revision);
 			} else
 				break;
 		}

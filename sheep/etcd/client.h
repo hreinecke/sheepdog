@@ -16,6 +16,15 @@
 /* seconds to wait for the TCP connection to the etcd server */
 #define ETCD_CONNECT_TIMEOUT 5
 
+/*
+ * seconds a watch connection may sit without a single byte of data
+ * before it is considered stuck and torn down for a reconnect.  Only
+ * the dedicated watch connection opts into this (see
+ * etcd_conn_set_read_timeout()) -- other, short-lived requests keep
+ * no read timeout at all.
+ */
+#define ETCD_WATCH_READ_TIMEOUT 30
+
 typedef void (*etcd_parse_cb)(struct json_object *obj, void *arg);
 
 struct etcd_parse_data {
@@ -83,6 +92,7 @@ struct etcd_conn_ctx *etcd_conn_create(struct etcd_ctx *ctx);
 int etcd_conn_init(struct etcd_conn_ctx *conn);
 void etcd_conn_exit(struct etcd_conn_ctx *conn);
 void etcd_conn_delete(struct etcd_conn_ctx *ctx);
+void etcd_conn_set_read_timeout(struct etcd_conn_ctx *conn, int timeout);
 void etcd_kv_free(struct etcd_kv *kvs, int num_kvs);
 void etcd_ev_free(struct etcd_kv_event *ev);
 

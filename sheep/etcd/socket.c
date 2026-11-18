@@ -251,12 +251,33 @@ int etcd_conn_init(struct etcd_conn_ctx *conn)
 	 * Without a connect timeout we are at the mercy of the TCP SYN
 	 * backoff, which blackholes a request for more than a minute if
 	 * the peer drops the first SYNs.  Bound it; the callers either
-	 * retry or report the error.  Do _not_ set a read timeout, the
-	 * watch requests are long-running by design.
+	 * retry or report the error.  Do _not_ set a read timeout here,
+	 * most requests are one-shot and a short-lived peer hiccup should
+	 * not fail them outright.  The long-running watch connection opts
+	 * into its own, longer read timeout via
+	 * etcd_conn_set_read_timeout() instead.
 	 */
 	ne_set_connect_timeout(ne_sess, ETCD_CONNECT_TIMEOUT);
 	conn->priv = ne_sess;
 	return 0;
+}
+
+/*
+ * Bound how long a single blocking read on this connection may take.
+ * A watch connection is deliberately left open for as long as the
+ * cluster stays quiet, but if the underlying TCP connection wedges
+ * (e.g. a network blip while several nodes restart at once) neon's
+ * read ends up blocked indefinitely with nothing to notice the stall.
+ * Reusing the existing short-read-timeout recovery path (see
+ * etcd_event_watcher()) turns that into a bounded, self-healing
+ * reconnect instead of relying on an arbitrarily long OS-level
+ * timeout to eventually notice.
+ */
+void etcd_conn_set_read_timeout(struct etcd_conn_ctx *conn, int timeout)
+{
+	ne_session *ne_sess = conn->priv;
+
+	ne_set_read_timeout(ne_sess, timeout);
 }
 
 void etcd_conn_exit(struct etcd_conn_ctx *conn)
