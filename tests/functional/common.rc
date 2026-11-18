@@ -543,12 +543,11 @@ _start_sheep()
 	expect_fail=true
     fi
     if [[ "$MD" ]]; then
-	if [[ "$MD" -eq 4 ]]; then
-	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2,$STORE/${node}/d3"
-	elif [[ "$MD" -eq 3 ]]; then
-	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1,$STORE/${node}/d2"
-	elif [[ "$MD" -eq 2 ]]; then
-	    MD_STORE=",$STORE/${node}/d0,$STORE/${node}/d1"
+	if [[ "$MD" -gt 1 ]]; then
+	    MD_STORE=
+	    for m in $(seq 0 $MD); do
+		MD_STORE="${MD_STORE},$STORE/${node}/d${m}"
+	    done
 	else
 	    MD_STORE=",$STORE/${node}"
 	fi
@@ -712,24 +711,21 @@ _make_device()
         _die "failed to create $STORE/$idx.img"
     fi
 
-    mkops="-t ext4 -q -F -O ^has_journal"
-    mntops="-o user_xattr"
-
-    mkfs $mkops $STORE/$idx.img > $seq.full 2>&1
+    $(sudo mkfs -t xfs $STORE/$idx.img) >> $seq.full 2>&1
     mkdir $STORE/$idx
-    mount -o loop $mntops $args $STORE/$idx.img $STORE/$idx
+    sudo mount -o loop $args $STORE/$idx.img $STORE/$idx
 }
 
 _cleanup_devices()
 {
     local d
     for d in `mount | grep $WD | sort -r | uniq | awk '{print $3}'`; do
-        umount -l $d
+        sudo umount -l $d
         rm -f $d.img
     done
 
     for d in `find /dev/ -maxdepth 1 -name "loop*"`; do
-        losetup -d $d &> /dev/null
+        sudo losetup -d $d &> /dev/null
     done
 }
 
