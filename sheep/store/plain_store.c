@@ -16,6 +16,15 @@
 
 struct store_cache_entry {
 	uint64_t oid;
+	/*
+	 * For an erasure-coded object, a single node can be asked to serve
+	 * (or hold) a *different* fragment index of the same oid at
+	 * different times -- most visibly when search_erasure_object()'s
+	 * broad "ask every node" fallback queries the same peer for two
+	 * different indices of one oid in quick succession. oid alone does
+	 * not name a unique file in that case; (oid, ec_index) does.
+	 */
+	uint8_t ec_index;
 	struct rb_node node;
 	size_t size;
 	void *map;
@@ -54,7 +63,11 @@ static struct sd_mutex store_cache_lock = SD_MUTEX_INITIALIZER;
 static int store_cache_cmp(const struct store_cache_entry *a,
 			   const struct store_cache_entry *b)
 {
-	return intcmp(a->oid, b->oid);
+	int cmp = intcmp(a->oid, b->oid);
+
+	if (cmp)
+		return cmp;
+	return intcmp(a->ec_index, b->ec_index);
 }
 
 static void store_cache_cleanup(struct store_cache_entry *entry)
@@ -87,9 +100,11 @@ static void store_cache_put(struct store_cache_entry *entry)
 	}
 }
 
-static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
+static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid,
+							   uint8_t ec_index)
 {
-	struct store_cache_entry *entry, key = { .oid = oid };
+	struct store_cache_entry *entry,
+		key = { .oid = oid, .ec_index = ec_index };
 
 	sd_mutex_lock(&store_cache_lock);
 	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
@@ -101,7 +116,8 @@ static struct store_cache_entry *store_cache_lookup_by_oid(uint64_t oid)
 	return entry;
 }
 
-static struct store_cache_entry *store_cache_lookup(uint64_t oid)
+static struct store_cache_entry *store_cache_lookup(uint64_t oid,
+						    uint8_t ec_index)
 {
 	struct store_cache_entry *entry, *new = xzalloc(sizeof(*new));
 
@@ -109,6 +125,7 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
 		return NULL;
 	sd_mutex_lock(&store_cache_lock);
 	new->oid = oid;
+	new->ec_index = ec_index;
 	new->fd = -1;
 	new->size = get_store_objsize(oid);
 	new->map = MAP_FAILED;
@@ -144,7 +161,8 @@ static struct store_cache_entry *store_cache_lookup(uint64_t oid)
  */
 static void store_cache_remove(struct store_cache_entry *entry)
 {
-	struct store_cache_entry *found, key = { .oid = entry->oid };
+	struct store_cache_entry *found,
+		key = { .oid = entry->oid, .ec_index = entry->ec_index };
 
 	sd_mutex_lock(&store_cache_lock);
 	found = rb_search(&store_cache_root, &key, node, store_cache_cmp);
@@ -174,9 +192,11 @@ static void store_cache_remove(struct store_cache_entry *entry)
  * right away, which is safe: cleanup/free is deferred if some other
  * thread still holds a concurrent reference via store_cache_lookup().
  */
-static struct store_cache_entry *store_cache_remove_by_oid(uint64_t oid)
+static struct store_cache_entry *store_cache_remove_by_oid(uint64_t oid,
+							   uint8_t ec_index)
 {
-	struct store_cache_entry *entry, key = { .oid = oid };
+	struct store_cache_entry *entry,
+		key = { .oid = oid, .ec_index = ec_index };
 
 	sd_mutex_lock(&store_cache_lock);
 	entry = rb_search(&store_cache_root, &key, node, store_cache_cmp);
@@ -278,7 +298,7 @@ bool default_exist(uint64_t oid, uint8_t ec_index)
 	char *path;
 	int ret;
 
-	entry = store_cache_lookup_by_oid(oid);
+	entry = store_cache_lookup_by_oid(oid, ec_index);
 	if (entry) {
 		bool exists;
 
@@ -442,7 +462,7 @@ int default_write(uint64_t oid, const struct siocb *iocb)
 		return SD_RES_OLD_NODE_VER;
 	}
 
-	entry = store_cache_lookup(oid);
+	entry = store_cache_lookup(oid, iocb->ec_index);
 	if (!entry)
 		return SD_RES_NO_MEM;
 
@@ -666,7 +686,8 @@ static int default_read_from_path(struct store_cache_entry *entry,
 
 int default_read(uint64_t oid, const struct siocb *iocb)
 {
-	struct store_cache_entry *entry = store_cache_lookup(oid);
+	struct store_cache_entry *entry = store_cache_lookup(oid,
+							     iocb->ec_index);
 	int ret;
 
 	if (!entry)
@@ -740,7 +761,8 @@ int default_read(uint64_t oid, const struct siocb *iocb)
  */
 int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 {
-	struct store_cache_entry *entry = store_cache_lookup(oid);
+	struct store_cache_entry *entry = store_cache_lookup(oid,
+							     iocb->ec_index);
 	char *path, *tmp_path = NULL, *dir;
 	int flags, ret, fd = -1;
 	uint32_t len = iocb->length;
@@ -907,7 +929,8 @@ out_unlock:
 
 int default_link(uint64_t oid, uint32_t tgt_epoch)
 {
-	struct store_cache_entry *entry = store_cache_lookup(oid);
+	/* default_link() is only ever used for non-erasure objects. */
+	struct store_cache_entry *entry = store_cache_lookup(oid, 0);
 	char *path, *stale_path;
 	int ret;
 
@@ -1032,7 +1055,7 @@ static int move_object_to_stale_dir(uint64_t oid, const char *wd,
 	 * under-replicated. Drop the cache entry so exist() falls back
 	 * to checking the live path on disk.
 	 */
-	entry = store_cache_remove_by_oid(oid);
+	entry = store_cache_remove_by_oid(oid, ec_index);
 	if (entry)
 		store_cache_put(entry);
 
@@ -1067,7 +1090,8 @@ int default_format(void)
 
 int default_remove_object(uint64_t oid, uint8_t ec_index)
 {
-	struct store_cache_entry *entry = store_cache_remove_by_oid(oid);
+	struct store_cache_entry *entry = store_cache_remove_by_oid(oid,
+								   ec_index);
 	char *path = NULL;
 	int ret;
 
@@ -1214,7 +1238,8 @@ int default_get_hash(uint64_t oid, uint32_t epoch, uint8_t *sha1)
 		return ret;
 	}
 
-	entry = store_cache_lookup(oid);
+	/* default_get_hash() is only ever used for non-erasure objects. */
+	entry = store_cache_lookup(oid, 0);
 	if (!entry)
 		return SD_RES_NO_MEM;
 
