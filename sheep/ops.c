@@ -669,6 +669,8 @@ static int cluster_force_recover_work(struct request *req)
 	if (ret < 0) {
 		sd_warn("request buffer too small, %d bytes missing", -ret);
 		ret = SD_RES_BUFFER_SMALL;
+	} else {
+		ret = SD_RES_SUCCESS;
 	}
 
 	put_vnode_info(old_vnode_info);

@@ -301,7 +301,7 @@ static inline int nodes_to_buffer(struct rb_root *nroot,
 
 	rb_for_each_entry(n, nroot, rb) {
 		if (len + sizeof(*n) > buffer_len)
-			return len + sizeof(*n) - buffer_len;
+			return buffer_len - (len + sizeof(*n));
 		memcpy(buf++, n, sizeof(*n));
 		len += sizeof(*n);
 	}
