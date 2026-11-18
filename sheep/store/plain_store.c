@@ -776,7 +776,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	fd = open(tmp_path, flags, sd_def_fmode);
 	if (fd < 0) {
 		sd_err("failed to open %s: %m", tmp_path);
-		ret = err_to_sderr(path, oid, errno);
+		ret = err_to_sderr(entry->path, oid, errno);
 		goto out_free;
 	}
 
@@ -792,7 +792,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 			ret = prealloc(fd, obj_size);
 		if (ret < 0) {
 			close(fd);
-			ret = err_to_sderr(path, oid, errno);
+			ret = err_to_sderr(entry->path, oid, errno);
 			if (unlink(tmp_path) != 0)
 				sd_err("failed to unlink %s: %m", tmp_path);
 			goto out_failed;
@@ -803,7 +803,7 @@ int default_create_and_write(uint64_t oid, const struct siocb *iocb)
 	if (ret != len) {
 		close(fd);
 		sd_err("failed to write object. %m");
-		ret = err_to_sderr(path, oid, errno);
+		ret = err_to_sderr(entry->path, oid, errno);
 		if (unlink(tmp_path) != 0)
 			sd_err("failed to unlink %s: %m", tmp_path);
 		goto out_failed;
