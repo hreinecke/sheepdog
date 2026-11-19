@@ -4,12 +4,10 @@
 
 . ./common
 
-_need_to_be_root
-
 _make_device 0 $((1024 ** 3))
 _make_device 1 $((1024 ** 3))
-_make_device 2 $((30 * 1024 ** 2))
-_make_device 3 $((30 * 1024 ** 2))
+_make_device 2 $((320 * 1024 ** 2))
+_make_device 3 $((320 * 1024 ** 2))
 
 # create log files of sheep 2 and 3 on other places
 touch $STORE/0/sheep2.log $STORE/0/sheep3.log
@@ -43,7 +41,7 @@ $DOG vdi create test2 100M -p 7000
 $DOG vdi create test3 100M -p 7002
 
 for i in `seq 0 3`; do
-    $DOG node list -p 700$i
+    _node_list -p 700$i
 done
 _node_info
 ls $STORE/*/{obj,d[0-9]*}/* 2> /dev/null | \
