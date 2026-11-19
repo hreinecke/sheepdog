@@ -3,8 +3,6 @@
 # Test stale objects purging with different disk size.
 . ./common
 
-_need_to_be_root
-
 _make_device 0 $((1024 ** 3))
 _make_device 1 $((2 * 1024 ** 3))
 _make_device 2 $((3 * 1024 ** 3))
@@ -31,4 +29,5 @@ _wait_for_sheep_recovery 0
 $DOG cluster info | _filter_cluster_info
 
 #test no object in .stale
-ls $STORE/*/*/.stale | grep ^- | wc -l
+_list_stale_obj |
+    _filter_store | _filter_md_store | wc -l
