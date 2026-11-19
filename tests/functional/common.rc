@@ -510,6 +510,13 @@ _start_sheep()
     local cnt
     local expect_fail=false
 
+    if [[ "$DRIVER" == etcd* ]]; then
+	etcd_client=$(docker container ls --filter Name=sheepdog-etcd-etcd${node} --format json | jq .ID)
+	if [ -z "$etcd_client" ]; then
+	    _die "etcd${node} is not running"
+	fi
+    fi
+
     for cnt in `seq 1 10`; do  # wait at most 10 seconds
 	local SHEEPS=$(_check_sheep $node)
         if [ $SHEEPS == 0 ]; then
