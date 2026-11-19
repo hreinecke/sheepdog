@@ -754,9 +754,21 @@ _make_device()
         _die "failed to create $STORE/$idx.img"
     fi
 
-    $(sudo mkfs -t xfs $STORE/$idx.img) >> $seq.full 2>&1
+    sudo mkfs -t xfs $STORE/$idx.img >> $seq.full 2>&1
+    if [ $? != 0 ]; then
+        _die "failed to format $STORE/$idx.img"
+    fi
+
     mkdir $STORE/$idx
     sudo mount -o loop $args $STORE/$idx.img $STORE/$idx
+    if [ $? != 0 ]; then
+        _die "failed to mount $STORE/$idx.img on $STORE/$idx"
+    fi
+
+    # mkfs/mount ran as root, so the loop filesystem's root directory is
+    # root-owned; the sheep daemon runs as the invoking user and needs to
+    # write into it.
+    sudo chown $(id -u):$(id -g) $STORE/$idx
 }
 
 _cleanup_devices()
