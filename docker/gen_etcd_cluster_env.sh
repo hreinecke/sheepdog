@@ -25,8 +25,12 @@ echo "SHEEP_VNODES="
 echo "VALGRIND="
 echo "SHEEP_ZONE="
 echo "SHEEP_JOURNAL="
+echo "SHEEP_OPTIONS=optimized"
 echo "SHEEP_STORE=/var/lib/sheep"
-echo "SHEEP_BASE_DIR=/var/lib/sheep"
+echo "SHEEP_BASE_DIR=\${SHEEP_STORE}"
+echo "STORE=\${SHEEP_STORE}"
+echo "SHEEP_LOGGING=level=notice,dst=stdout"
+echo "SHEEP_TRANSPORT=tcp"
 
 for i in $(seq ${NUM_NODES}); do
     node=$(( $i - 1 ))

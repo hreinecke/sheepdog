@@ -38,7 +38,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "        ipv4_address: \${SHEEP${node}_IP}"
     echo "      sheep-br:"
     echo "    volumes:"
-    echo "      - sheep${node}-data:\${SHEEP_STORE}"
+    echo "      - \${STORE}/${node}:\${SHEEP_STORE}"
     echo "    ports:"
     echo "      - \"127.0.0.1:${port}:7000\""
     echo "      - \"127.0.0.1:${disc_port}:${disc_port}\""
@@ -57,14 +57,6 @@ for i in $(seq ${NUM_NODES}); do
     echo "      - VALGRIND=\${VALGRIND}"
     echo "    command: \${VALGRIND} /usr/sbin/sheep -f"
 done
-
-echo
-echo "volumes:"
-for i in $(seq ${NUM_NODES}); do
-    node=$(( $i - 1 ))
-    echo "  sheep${node}-data:"
-done
-
 cat <<EOF
 
 networks:

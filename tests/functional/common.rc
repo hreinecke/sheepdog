@@ -66,7 +66,7 @@ _safe_remove_objs()
 
 	echo "mv ${base_dir}/${disk} ${base_dir}/${disk}.tmp && rm -rf ${base_dir}/${disk}.tmp" | \
 	    docker run -i --rm \
-		   --volume sheepdog-etcd_sheep${node}-data:${SHEEP_STORE} \
+		   --volume ${STORE}/${node}:${SHEEP_STORE} \
 		   busybox
     else
 	_safe_remove ${STORE}/${node}/${disk}
@@ -92,7 +92,7 @@ _remove_store()
 	# the last sheep is gone.
 	echo "find ${base_dir} -mindepth 1 -maxdepth 1 -exec rm -rf {} +" | \
 	    docker run -i --rm \
-		   --volume sheepdog-etcd_sheep${node}-data:${SHEEP_STORE} \
+		   --volume ${STORE}/${node}:${SHEEP_STORE} \
 		   busybox
     else
 	rm -rf ${STORE}/${node}
@@ -115,7 +115,7 @@ _delete_obj()
 
 	echo "rm ${base_dir}/obj/${oid}" | \
 	    docker run -i --rm \
-		   --volume sheepdog-etcd_sheep${node}-data:${SHEEP_STORE} \
+		   --volume ${STORE}/${node}:${SHEEP_STORE} \
 		   busybox
     else
 	rm $STORE/${node}/obj/${oid}
@@ -291,12 +291,29 @@ _cleanup()
 
     _cleanup_devices
 
-    for i in $STORE/?; do
-        rm -rf $i
-    done
-    for i in $STORE/??; do
-        rm -rf $i
-    done
+    if [[ "$DRIVER" == etcd* ]]; then
+	# These directories are bind-mounted straight out of the
+	# (root-owned) sheep containers, so a plain rm can't remove them
+	# from the host; do it from a throwaway container instead, which
+	# needs no more privilege than the containers tests already use
+	# (unlike sudo, which not every environment has configured, and
+	# which every driver would then depend on just for cleanup).
+	# Only bind-mount ${STORE} if it already exists: if it doesn't,
+	# there's nothing to clean up, and bind-mounting a missing path
+	# would make the docker daemon auto-create it owned by root,
+	# breaking every later plain (non-docker) write under $STORE.
+	if [[ -d ${STORE} ]]; then
+	    echo 'rm -rf /store/[0-9] /store/[0-9][0-9]' | \
+		docker run -i --rm --volume ${STORE}:/store busybox 2> /dev/null
+	fi
+    else
+	for i in $STORE/?; do
+	    rm -rf $i
+	done
+	for i in $STORE/??; do
+	    rm -rf $i
+	done
+    fi
 
     if [[ "$DRIVER" == zoo* ]];then
         ../../tools/zk_control remove "/sheepdog/member"
@@ -531,9 +548,21 @@ _start_sheep()
     fi
 
     if [[ "$DRIVER" == etcd* ]]; then
+	# Create the bind-mount source ourselves, before docker compose
+	# gets a chance to: an as-yet-missing bind-mount source gets
+	# auto-created by the docker daemon (root), leaving a
+	# root-owned directory neither this script nor later commands
+	# in this test can write into or remove without privilege.
+	mkdir -p ${STORE}/${node}
 	sheep_env=${STORE}/${sheep}.env
 	cat ${DOCKER_ENV} > ${sheep_env}
-	echo "SHEEP_STORE=${STORE}" >> ${sheep_env}
+	# ${STORE} is the bind-mount source for sheep-cluster.yaml's
+	# volume line (external path, host-visible, for easy test
+	# validation). SHEEP_STORE/SHEEP_BASE_DIR stay at their template
+	# values -- the internal mount point, i.e. what the sheep daemon
+	# itself actually uses -- unchanged below.
+	echo "STORE=${STORE}" >> ${sheep_env}
+	eval $(grep '^SHEEP_STORE=' ${DOCKER_ENV})
     fi
     if [[ "$2" == '-z' ]]; then
 	zone=$3
@@ -551,17 +580,25 @@ _start_sheep()
     if [[ "$MD" ]]; then
 	if [[ "$MD" -gt 1 ]]; then
 	    MD_STORE=
+	    MD_STORE_INTERNAL=
 	    for m in $(seq 0 $((MD - 1))); do
 		MD_STORE="${MD_STORE},$STORE/${node}/d${m}"
+		MD_STORE_INTERNAL="${MD_STORE_INTERNAL},${SHEEP_STORE}/d${m}"
 	    done
 	else
 	    MD_STORE=",$STORE/${node}"
+	    MD_STORE_INTERNAL=",${SHEEP_STORE}"
 	fi
     fi
 
     if [[ "$MD_STORE" ]]; then
 	if [[ "$DRIVER" == etcd* ]]; then
-	    echo "SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}" >> ${sheep_env}
+	    # Container-internal: the whole ${SHEEP_STORE} tree is the
+	    # bind-mounted ${STORE}/${node} directory (see _start_sheep's
+	    # env-file setup above), so SHEEP_STORE/d0, SHEEP_STORE/d1,
+	    # etc. land on the host at ${STORE}/${node}/d0, .../d1, ...
+	    # exactly matching $MD_STORE below.
+	    echo "SHEEP_BASE_DIR=${SHEEP_STORE}${MD_STORE_INTERNAL}" >> ${sheep_env}
 	else
 	    SHEEP_BASE_DIR=${STORE}/${node}${MD_STORE}
 	fi
@@ -577,7 +614,7 @@ _start_sheep()
     if ! $expect_fail && [ $? != 0 ]; then
         _die "cannot start sheep $1"
     fi
-    unset MD_STORE
+    unset MD_STORE MD_STORE_INTERNAL
     STORE=${store}
 }
 
@@ -751,34 +788,15 @@ _list_obj_on_node()
 
 _list_all_obj() {
     if [[ "$DRIVER" == etcd* ]]; then
-	echo "find /var/lib/sheepdog/ -print" | \
-	    docker run -i --rm \
-		   --volume sheepdog-etcd_sheep0-data:/var/lib/sheepdog/0 \
-		   --volume sheepdog-etcd_sheep1-data:/var/lib/sheepdog/1 \
-		   --volume sheepdog-etcd_sheep2-data:/var/lib/sheepdog/2 \
-		   --volume sheepdog-etcd_sheep3-data:/var/lib/sheepdog/3 \
-		   --volume sheepdog-etcd_sheep4-data:/var/lib/sheepdog/4 \
-		   --volume sheepdog-etcd_sheep5-data:/var/lib/sheepdog/5 \
-		   --volume sheepdog-etcd_sheep6-data:/var/lib/sheepdog/6 \
-		   --volume sheepdog-etcd_sheep7-data:/var/lib/sheepdog/7 \
-		   --volume sheepdog-etcd_sheep8-data:/var/lib/sheepdog/8 \
-		   --volume sheepdog-etcd_sheep9-data:/var/lib/sheepdog/9 \
-		   --volume sheepdog-etcd_sheep10-data:/var/lib/sheepdog/10 \
-		   --volume sheepdog-etcd_sheep11-data:/var/lib/sheepdog/11 \
-		   --volume sheepdog-etcd_sheep12-data:/var/lib/sheepdog/12 \
-		   --volume sheepdog-etcd_sheep13-data:/var/lib/sheepdog/13 \
-		   --volume sheepdog-etcd_sheep14-data:/var/lib/sheepdog/14 \
-		   --volume sheepdog-etcd_sheep15-data:/var/lib/sheepdog/15 \
-		   --volume sheepdog-etcd_sheep16-data:/var/lib/sheepdog/16 \
-		   --volume sheepdog-etcd_sheep17-data:/var/lib/sheepdog/17 \
-		   --volume sheepdog-etcd_sheep18-data:/var/lib/sheepdog/18 \
-		   --volume sheepdog-etcd_sheep19-data:/var/lib/sheepdog/19 \
-		   --volume sheepdog-etcd_sheep20-data:/var/lib/sheepdog/20 \
-		   --volume sheepdog-etcd_sheep21-data:/var/lib/sheepdog/21 \
-		   --volume sheepdog-etcd_sheep22-data:/var/lib/sheepdog/22 \
-		   --volume sheepdog-etcd_sheep23-data:/var/lib/sheepdog/23 \
-		   --volume sheepdog-etcd_sheep24-data:/var/lib/sheepdog/24 \
-		   busybox 2> /dev/null
+	# Each sheepN's store is bind-mounted at ${STORE}/N on the host
+	# (see _start_sheep), but the daemon runs as root inside the
+	# container, so the bind-mounted files are root-owned here too.
+	# Read them back from a throwaway container instead of requiring
+	# host-side sudo just for this. busybox's sh has no brace
+	# expansion, so the {obj,d[0-9]*} local driver uses below is
+	# spelled out as two find targets instead.
+	echo 'find /store/*/obj /store/*/d[0-9]* -print' | \
+	    docker run -i --rm --volume ${STORE}:/store busybox 2> /dev/null
     else
 	find $STORE/*/{obj,d[0-9]*} -print 2> /dev/null
     fi

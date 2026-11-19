@@ -18,7 +18,7 @@ services:
         ipv4_address: ${SHEEP0_IP}
       sheep-br:
     volumes:
-      - sheep0-data:${SHEEP_STORE}
+      - ${STORE}/0:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7000:7000"
       - "127.0.0.1:8000:8000"
@@ -48,7 +48,7 @@ services:
         ipv4_address: ${SHEEP1_IP}
       sheep-br:
     volumes:
-      - sheep1-data:${SHEEP_STORE}
+      - ${STORE}/1:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7001:7000"
       - "127.0.0.1:8001:8001"
@@ -78,7 +78,7 @@ services:
         ipv4_address: ${SHEEP2_IP}
       sheep-br:
     volumes:
-      - sheep2-data:${SHEEP_STORE}
+      - ${STORE}/2:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7002:7000"
       - "127.0.0.1:8002:8002"
@@ -108,7 +108,7 @@ services:
         ipv4_address: ${SHEEP3_IP}
       sheep-br:
     volumes:
-      - sheep3-data:${SHEEP_STORE}
+      - ${STORE}/3:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7003:7000"
       - "127.0.0.1:8003:8003"
@@ -138,7 +138,7 @@ services:
         ipv4_address: ${SHEEP4_IP}
       sheep-br:
     volumes:
-      - sheep4-data:${SHEEP_STORE}
+      - ${STORE}/4:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7004:7000"
       - "127.0.0.1:8004:8004"
@@ -168,7 +168,7 @@ services:
         ipv4_address: ${SHEEP5_IP}
       sheep-br:
     volumes:
-      - sheep5-data:${SHEEP_STORE}
+      - ${STORE}/5:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7005:7000"
       - "127.0.0.1:8005:8005"
@@ -198,7 +198,7 @@ services:
         ipv4_address: ${SHEEP6_IP}
       sheep-br:
     volumes:
-      - sheep6-data:${SHEEP_STORE}
+      - ${STORE}/6:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7006:7000"
       - "127.0.0.1:8006:8006"
@@ -228,7 +228,7 @@ services:
         ipv4_address: ${SHEEP7_IP}
       sheep-br:
     volumes:
-      - sheep7-data:${SHEEP_STORE}
+      - ${STORE}/7:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7007:7000"
       - "127.0.0.1:8007:8007"
@@ -258,7 +258,7 @@ services:
         ipv4_address: ${SHEEP8_IP}
       sheep-br:
     volumes:
-      - sheep8-data:${SHEEP_STORE}
+      - ${STORE}/8:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7008:7000"
       - "127.0.0.1:8008:8008"
@@ -288,7 +288,7 @@ services:
         ipv4_address: ${SHEEP9_IP}
       sheep-br:
     volumes:
-      - sheep9-data:${SHEEP_STORE}
+      - ${STORE}/9:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7009:7000"
       - "127.0.0.1:8009:8009"
@@ -318,7 +318,7 @@ services:
         ipv4_address: ${SHEEP10_IP}
       sheep-br:
     volumes:
-      - sheep10-data:${SHEEP_STORE}
+      - ${STORE}/10:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7010:7000"
       - "127.0.0.1:8010:8010"
@@ -348,7 +348,7 @@ services:
         ipv4_address: ${SHEEP11_IP}
       sheep-br:
     volumes:
-      - sheep11-data:${SHEEP_STORE}
+      - ${STORE}/11:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7011:7000"
       - "127.0.0.1:8011:8011"
@@ -378,7 +378,7 @@ services:
         ipv4_address: ${SHEEP12_IP}
       sheep-br:
     volumes:
-      - sheep12-data:${SHEEP_STORE}
+      - ${STORE}/12:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7012:7000"
       - "127.0.0.1:8012:8012"
@@ -408,7 +408,7 @@ services:
         ipv4_address: ${SHEEP13_IP}
       sheep-br:
     volumes:
-      - sheep13-data:${SHEEP_STORE}
+      - ${STORE}/13:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7013:7000"
       - "127.0.0.1:8013:8013"
@@ -438,7 +438,7 @@ services:
         ipv4_address: ${SHEEP14_IP}
       sheep-br:
     volumes:
-      - sheep14-data:${SHEEP_STORE}
+      - ${STORE}/14:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7014:7000"
       - "127.0.0.1:8014:8014"
@@ -468,7 +468,7 @@ services:
         ipv4_address: ${SHEEP15_IP}
       sheep-br:
     volumes:
-      - sheep15-data:${SHEEP_STORE}
+      - ${STORE}/15:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7015:7000"
       - "127.0.0.1:8015:8015"
@@ -498,7 +498,7 @@ services:
         ipv4_address: ${SHEEP16_IP}
       sheep-br:
     volumes:
-      - sheep16-data:${SHEEP_STORE}
+      - ${STORE}/16:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7016:7000"
       - "127.0.0.1:8016:8016"
@@ -528,7 +528,7 @@ services:
         ipv4_address: ${SHEEP17_IP}
       sheep-br:
     volumes:
-      - sheep17-data:${SHEEP_STORE}
+      - ${STORE}/17:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7017:7000"
       - "127.0.0.1:8017:8017"
@@ -558,7 +558,7 @@ services:
         ipv4_address: ${SHEEP18_IP}
       sheep-br:
     volumes:
-      - sheep18-data:${SHEEP_STORE}
+      - ${STORE}/18:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7018:7000"
       - "127.0.0.1:8018:8018"
@@ -588,7 +588,7 @@ services:
         ipv4_address: ${SHEEP19_IP}
       sheep-br:
     volumes:
-      - sheep19-data:${SHEEP_STORE}
+      - ${STORE}/19:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7019:7000"
       - "127.0.0.1:8019:8019"
@@ -618,7 +618,7 @@ services:
         ipv4_address: ${SHEEP20_IP}
       sheep-br:
     volumes:
-      - sheep20-data:${SHEEP_STORE}
+      - ${STORE}/20:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7020:7000"
       - "127.0.0.1:8020:8020"
@@ -648,7 +648,7 @@ services:
         ipv4_address: ${SHEEP21_IP}
       sheep-br:
     volumes:
-      - sheep21-data:${SHEEP_STORE}
+      - ${STORE}/21:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7021:7000"
       - "127.0.0.1:8021:8021"
@@ -678,7 +678,7 @@ services:
         ipv4_address: ${SHEEP22_IP}
       sheep-br:
     volumes:
-      - sheep22-data:${SHEEP_STORE}
+      - ${STORE}/22:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7022:7000"
       - "127.0.0.1:8022:8022"
@@ -708,7 +708,7 @@ services:
         ipv4_address: ${SHEEP23_IP}
       sheep-br:
     volumes:
-      - sheep23-data:${SHEEP_STORE}
+      - ${STORE}/23:${SHEEP_STORE}
     ports:
       - "127.0.0.1:7023:7000"
       - "127.0.0.1:8023:8023"
@@ -726,32 +726,6 @@ services:
       - SHEEP_TRSVCID=8023
       - VALGRIND=${VALGRIND}
     command: ${VALGRIND} /usr/sbin/sheep -f
-
-volumes:
-  sheep0-data:
-  sheep1-data:
-  sheep2-data:
-  sheep3-data:
-  sheep4-data:
-  sheep5-data:
-  sheep6-data:
-  sheep7-data:
-  sheep8-data:
-  sheep9-data:
-  sheep10-data:
-  sheep11-data:
-  sheep12-data:
-  sheep13-data:
-  sheep14-data:
-  sheep15-data:
-  sheep16-data:
-  sheep17-data:
-  sheep18-data:
-  sheep19-data:
-  sheep20-data:
-  sheep21-data:
-  sheep22-data:
-  sheep23-data:
 
 networks:
   etcd-br:
