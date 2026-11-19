@@ -904,18 +904,20 @@ int main(int argc, char **argv, char **envp)
 	}
 #ifdef HAVE_NVMET
 	transport = getenv("SHEEP_TRANSPORT");
-	if (!transport)
-		transport = "tcp";
-	tsas = getenv("SHEEP_TSAS");
-	if ((traddr = getenv("SHEEP_TRADDR"))) {
-		if (!inetaddr_is_valid(traddr))
-			traddr = NULL;
-	}
-	if ((opt = getenv("SHEEP_TRSVCID")) && strlen(opt)) {
-		trsvcid = str_to_u16(opt);
-		if (errno != 0) {
-			sd_err("Invalid value for trsvcid '%s'", opt);
-			exit(1);
+	if (transport) {
+		tsas = getenv("SHEEP_TSAS");
+		if ((traddr = getenv("SHEEP_TRADDR"))) {
+			if (!inetaddr_is_valid(traddr)) {
+				sd_err("Invalid value SHEEP_TRADDR='%s'", opt);
+				exit(1);
+			}
+		}
+		if ((opt = getenv("SHEEP_TRSVCID")) && strlen(opt)) {
+			trsvcid = str_to_u16(opt);
+			if (errno != 0) {
+				sd_err("Invalid value SHEEP_TRSVCID='%s'", opt);
+				exit(1);
+			}
 		}
 	}
 #endif
@@ -1354,7 +1356,11 @@ int main(int argc, char **argv, char **envp)
 	#endif
 
 	#ifdef HAVE_NVMET
-	if (traddr) {
+	if (transport) {
+		if (!traddr)
+			traddr = "127.0.0.1";
+		if (!trsvcid)
+			trsvcid = 4420;
 		ret = nofuse_init(transport, tsas, traddr, trsvcid);
 		if (ret)
 			goto cleanup_journal;

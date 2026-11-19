@@ -51,7 +51,7 @@ for i in $(seq ${NUM_NODES}); do
     echo "      - SHEEP_ZONE=\${SHEEP_ZONE:-${node}}"
     echo "      - SHEEP_JOURNAL=\${SHEEP_JOURNAL}"
     echo "      - SHEEP_OPTIONS=\${SHEEP_OPTIONS}"
-    echo "      - SHEEP_TRANSPORT=tcp"
+    echo "      - SHEEP_TRANSPORT=\${SHEEP_TRANSPORT}"
     echo "      - SHEEP_TRADDR=127.0.0.1"
     echo "      - SHEEP_TRSVCID=${disc_port}"
     echo "      - VALGRIND=\${VALGRIND}"
