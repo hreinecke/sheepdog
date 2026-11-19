@@ -417,6 +417,20 @@ static int __default_write(struct store_cache_entry *entry,
 	sys->cache_stat.nr_open++;
 
 do_mmap:
+	/*
+	 * Sparse objects (VDI inodes, ledger objects) are created via
+	 * xftruncate(), which only sets the logical size without reserving
+	 * real disk blocks. Writing into the mmap below without first
+	 * guaranteeing blocks for this exact range risks SIGBUS -- not a
+	 * catchable I/O error, and fatal to the whole daemon -- the moment
+	 * the filesystem actually runs out of space. Reserve the range
+	 * synchronously first, so running out of space fails this request
+	 * cleanly instead.
+	 */
+	if (is_sparse_object(entry->oid) &&
+	    xfallocate(entry->fd, 0, offset, len) < 0)
+		return err_to_sderr(entry->path, entry->oid, errno);
+
 	if (entry->map == MAP_FAILED) {
 		entry->map = mmap(NULL, entry->size, PROT_READ | PROT_WRITE,
 				  MAP_SHARED, entry->fd, 0);
