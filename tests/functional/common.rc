@@ -526,8 +526,7 @@ _start_sheep()
     if [[ "$DRIVER" == etcd* ]]; then
 	sheep_env=${STORE}/${sheep}.env
 	cat ${DOCKER_ENV} > ${sheep_env}
-	eval $(grep SHEEP_STORE ${DOCKER_ENV})
-	STORE=${SHEEP_STORE}
+	echo "SHEEP_STORE=${STORE}" >> ${sheep_env}
     fi
     if [[ "$2" == '-z' ]]; then
 	zone=$3
