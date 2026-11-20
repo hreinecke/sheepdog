@@ -2441,11 +2441,12 @@ static void vdi_repair_main(struct work *work)
 						  work);
 	struct vdi_check_info *info = vcw->info;
 
-	if (vcw->object_found)
-		fprintf(stdout, "fixed replica %016"PRIx64"\n", info->oid);
-	else
-		fprintf(stdout, "fixed missing %016"PRIx64"\n", info->oid);
-
+	if (verbose) {
+		if (vcw->object_found)
+			sd_info("fixed replica %016"PRIx64"\n", info->oid);
+		else
+			sd_info("fixed missing %016"PRIx64"\n", info->oid);
+	}
 	info->refcnt--;
 	if (info->refcnt == 0)
 		free_vdi_check_info(info);
@@ -2588,8 +2589,9 @@ static void check_erasure_object(struct vdi_check_info *info)
 					 object_size);
 			write_object_to(info->vcw[m].vnode, oid, obj,
 					len, true, info->vcw[m].ec_index);
-			fprintf(stdout, "fixed missing %016"PRIx64", "
-				"copy index %d\n", info->oid, m);
+			if (verbose)
+				sd_info("fixed missing %016"PRIx64", "
+					"copy index %d\n", info->oid, m);
 		}
 	}
 out:
