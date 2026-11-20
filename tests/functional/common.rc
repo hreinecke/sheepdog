@@ -50,6 +50,25 @@ _safe_remove()
     rm -rf ${dir}.tmp
 }
 
+# dog node md plug/unplug sends its path argument over the wire; the
+# sheep daemon mkdir()s it directly in its own filesystem. Under the
+# etcd driver that's the container's filesystem (SHEEP_STORE, e.g.
+# /var/lib/sheep), not the host-side bind-mount source ($STORE) --
+# only the local driver's daemon runs on the host where $STORE itself
+# is meaningful.
+_md_disk()
+{
+    local node=$1
+    local disk=$2
+
+    if [[ "$DRIVER" == etcd* ]]; then
+	eval $(grep '^SHEEP_STORE=' ${DOCKER_ENV})
+	echo "${SHEEP_STORE}/${disk}"
+    else
+	echo "${STORE}/${node}/${disk}"
+    fi
+}
+
 _safe_remove_objs()
 {
     local node=$1
