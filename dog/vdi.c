@@ -57,6 +57,7 @@ static struct sd_option vdi_options[] = {
 	{'m', "max-reclaim", true, "specify the maximum number of reclaimed objects "
 	 "(if this option is specified, an inode object won't be reclaimed)"},
 	{'A', "acl", true, "specify the ACL for accessing the VDI"},
+	{'u', "uuid", true, "specify the UUID for the VDI"},
 	{ 0, NULL, false, NULL },
 };
 
@@ -84,6 +85,7 @@ static struct vdi_cmd_data {
 	int reclamation_interval;
 	int nr_max_reclaim;
 	char acl_name[SD_MAX_VDI_LEN];
+	uuid_t uuid;
 } vdi_cmd_data = { ~0, };
 
 /*
@@ -878,6 +880,23 @@ static int vdi_create(int argc, char **argv)
 	}
 	object_size = (UINT32_C(1) << inode->header.block_size_shift);
 	max_idx = DIV_ROUND_UP(size, object_size);
+
+	if (!uuid_is_null(vdi_cmd_data.uuid)) {
+		memcpy(inode->header.uuid, vdi_cmd_data.uuid,
+		       sizeof(vdi_cmd_data.uuid));
+		ret = dog_write_object(vid_to_vdi_oid(vid), 0,
+				       &inode->header,
+				       sizeof(vdi_cmd_data.uuid),
+				       offsetof(struct sd_inode_header,
+						uuid),
+				       SD_FLAG_CMD_DIRECT,
+				       inode->header.nr_copies,
+				       inode->header.copy_policy, false);
+		if (ret != SD_RES_SUCCESS) {
+			ret = EXIT_FAILURE;
+			goto out;
+		}
+	}
 
 	for (idx = 0; idx < max_idx; idx++) {
 		vdi_show_progress(idx * object_size, inode->header.vdi_size);
@@ -3955,7 +3974,7 @@ static struct subcommand vdi_cmd[] = {
 	{"check", "<vdiname>", "seaphTA", "check and repair image's consistency",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_check, vdi_options},
-	{"create", "<vdiname> <size>", "PycajphrvzTA", "create an image",
+	{"create", "<vdiname> <size>", "PycajphrvzTAu", "create an image",
 	 NULL, CMD_NEED_NODELIST|CMD_NEED_ROOT|CMD_NEED_ARG,
 	 vdi_create, vdi_options},
 	{"snapshot", "<vdiname>", "sajphrvTRA", "create a snapshot",
@@ -4165,6 +4184,12 @@ static int vdi_parser(int ch, const char *opt)
 		break;
 	case 'A':
 		pstrcpy(vdi_cmd_data.acl_name, SD_MAX_VDI_LEN, opt);
+		break;
+	case 'u':
+		if (uuid_parse(opt, vdi_cmd_data.uuid)) {
+			sd_err("failed to parse uuid '%s'", opt);
+			exit(EXIT_FAILURE);
+		}
 		break;
 	}
 
