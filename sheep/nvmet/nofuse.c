@@ -98,6 +98,40 @@ static int subsys_nqn_cmp(const struct nofuse_subsystem *a,
 	return strcmp(a->nqn, b->nqn);
 }
 
+int subsys_alloc_cntlid(struct nofuse_subsystem *subsys, uint16_t *cntlid)
+{
+	unsigned int c;
+	int ret = 0;
+
+	if (*cntlid == 0xFFFF) {
+		sd_mutex_lock(&subsys->cntlid_map_mutex);
+		c = find_next_zero_bit(subsys->cntlid_map,
+				       subsys->cntlid_max,
+				       subsys->cntlid_min);
+		if (c <= subsys->cntlid_max) {
+			atomic_set_bit(c, subsys->cntlid_map);
+			*cntlid = c;
+		} else
+			ret = -EBUSY;
+		sd_mutex_unlock(&subsys->cntlid_map_mutex);
+	} else if (!test_bit(*cntlid, subsys->cntlid_map))
+		ret = -EINVAL;
+
+	return ret;
+}
+
+void subsys_dealloc_cntlid(struct nofuse_subsystem *subsys,
+			   uint16_t cntlid)
+{
+	/*
+	 * Locking is only required to guard against concurrent
+	 * calls to subsys_alloc_cntlid() above.
+	 */
+	sd_mutex_lock(&subsys->cntlid_map_mutex);
+	atomic_clear_bit(cntlid, subsys->cntlid_map);
+	sd_mutex_unlock(&subsys->cntlid_map_mutex);
+}
+
 struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn)
 {
 	struct nofuse_subsystem key;
@@ -1084,7 +1118,9 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	subsys->type = NVME_NQN_NVM;
 	subsys->recycle_vid = sys->cinfo.flags & SD_CLUSTER_FLAG_RECYCLE_VID;
 	subsys->wce = sys->nosync;
+	subsys->qid_max = NVMF_NUM_QUEUES;
 	sd_init_mutex(&subsys->inode_lock);
+	sd_init_mutex(&subsys->cntlid_map_mutex);
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {
 		sd_debug("update subsystem '%s' (%06x)", new->nqn, new->id);

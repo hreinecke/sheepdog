@@ -884,54 +884,6 @@ rollback:
 	return ret;
 }
 
-int configdb_add_ctrl(const char *subsysnqn, int cntlid)
-{
-	int ret;
-	char *sql;
-
-	ret = asprintf(&sql,
-		       "INSERT INTO controllers ( cntlid, subsys_id ) "
-		       "SELECT '%d', s.oid FROM subsystems AS s "
-		       "WHERE s.nqn = '%s';", cntlid, subsysnqn);
-	if (ret < 0)
-		return ret;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	return ret;
-}
-
-int configdb_get_cntlid(const char *subsysnqn, uint16_t *cntlid)
-{
-	char *sql;
-	int ret;
-
-	ret = asprintf(&sql,
-		       "SELECT cntlid_next FROM subsystems WHERE nqn = '%s';",
-		       subsysnqn);
-	if (ret < 0)
-		return ret;
-	ret = sql_exec_int(sql, "cntlid_next", (int *)cntlid);
-	free(sql);
-
-	return ret;
-}
-
-int configdb_del_ctrl(uint32_t subsys_id, int cntlid)
-{
-	int ret;
-	char *sql;
-
-	ret = asprintf(&sql,
-		       "DELETE FROM controllers "
-		       "WHERE subsys_id = '%u' AND cntlid = '%d';",
-		       subsys_id, cntlid);
-	if (ret < 0)
-		return ret;
-	ret = sql_exec_simple(sql);
-	free(sql);
-	return ret;
-}
-
 int configdb_add_port(unsigned int portid, const char *transport,
 		      const char *traddr, const char *adrfam,
 		      unsigned int trsvcid)

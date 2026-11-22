@@ -30,7 +30,7 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 	struct nofuse_ctrl *ctrl = NULL;
 	struct sd_inode *host_inode = NULL;
 	struct nofuse_subsystem *subsys = NULL;
-	char nqn[MAX_NQN_SIZE + 1], value[16];
+	char nqn[MAX_NQN_SIZE + 1];
 	bool is_discovery = false;
 	int ret = 0;
 
@@ -88,6 +88,12 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 			goto out_unlock;
 		}
 	}
+	subsys = lookup_subsystem_by_nqn(nqn);
+	if (!subsys) {
+		sd_err("subsystem '%s' not found", nqn);
+		ret = -EBUSY;
+		goto out_unlock;
+	}
 	sd_debug("Allocating new controller '%s' for '%s'",
 		hostnqn, nqn);
 	ctrl = malloc(sizeof(*ctrl));
@@ -97,41 +103,14 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		goto out_unlock;
 	}
 	memset(ctrl, 0, sizeof(*ctrl));
-	ret = configdb_get_cntlid(nqn, &cntlid);
+	ret = subsys_alloc_cntlid(subsys, &cntlid);
 	if (ret < 0) {
 		sd_err("error fetching cntlid");
 		free(ctrl);
 		goto out_unlock;
 	}
-	ret = configdb_add_ctrl(nqn, cntlid);
-	if (ret < 0) {
-		sd_err("error registering cntlid %d", cntlid);
-		free(ctrl);
-		goto out_unlock;
-	}
-	ret = configdb_get_subsys_attr(nqn, "qid_max", value);
-	if (ret < 0) {
-		sd_err("error fetching qid_max");
-		ctrl->max_queues = NVMF_NUM_QUEUES;
-	} else {
-		unsigned long tmp;
-		char *eptr = NULL;
-
-		tmp = strtoul(value, &eptr, 10);
-		if (tmp == ULONG_MAX || value == eptr) {
-			sd_err("invalid max_qid value '%s'", value);
-			ctrl->max_queues = NVMF_NUM_QUEUES;
-		} else {
-			ctrl->max_queues = tmp;
-		}
-	}
+	ctrl->max_queues = subsys->qid_max;
 	sd_debug("using %d queues", ctrl->max_queues);
-	subsys = lookup_subsystem_by_nqn(nqn);
-	if (!subsys) {
-		sd_err("subsystem '%s' not found", nqn);
-		ret = -EBUSY;
-		goto out_unlock;
-	}
 	ctrl->subsys = subsys;
 	strcpy(ctrl->hostnqn, hostnqn);
 	ctrl->host_inode = host_inode;
@@ -219,7 +198,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 	}
 	pthread_mutex_unlock(&ctrl->ctrl_mutex);
 	if (!qnum) {
-		unsigned int subsys_id = ctrl->subsys->id;
+		struct nofuse_subsystem *subsys = ctrl->subsys;
 		unsigned int cntlid = ctrl->cntlid;
 
 		pthread_mutex_lock(&ctrl_list_mutex);
@@ -228,7 +207,7 @@ static void disconnect_queue(struct nofuse_queue *ep)
 		list_del(&ctrl->node);
 		free(ctrl);
 		pthread_mutex_unlock(&ctrl_list_mutex);
-		configdb_del_ctrl(subsys_id, cntlid);
+		subsys_dealloc_cntlid(subsys, cntlid);
 	}
 }
 

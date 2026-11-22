@@ -239,6 +239,11 @@ struct nofuse_subsystem {
 	enum nvme_subsys_type type;
 	unsigned int mnan;
 	unsigned int nn;
+	unsigned int qid_max;
+	DECLARE_BITMAP(cntlid_map, 0xffff);
+	struct sd_mutex cntlid_map_mutex;
+	unsigned int cntlid_min;
+	unsigned int cntlid_max;
 	bool recycle_vid;
 	bool wce;
 };
@@ -454,6 +459,11 @@ int disable_namespace(const char *subsysnqn, uint32_t nsid);
 
 struct nofuse_subsystem *lookup_subsystem_by_id(uint32_t subsys_id);
 struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn);
+
+int subsys_alloc_cntlid(struct nofuse_subsystem *subsys,
+			uint16_t *cntlid);
+void subsys_dealloc_cntlid(struct nofuse_subsystem *subsys,
+			   uint16_t cntlid);
 
 int check_allowed_hosts(const char *hostnqn, const char *subsysnqn,
 			struct sd_inode **host_inode);

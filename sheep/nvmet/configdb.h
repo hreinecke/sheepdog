@@ -51,10 +51,6 @@ int configdb_add_host_subsys(const char *hostnqn, const char *subsysnqn);
 int configdb_count_host_subsys(const char *subsysnqn, int *num_hosts);
 int configdb_del_host_subsys(const char *hostnqn, const char *subsysnqn);
 
-int configdb_add_ctrl(const char *subsysnqn, int cntlid);
-int configdb_get_cntlid(const char *subsysnqn, uint16_t *cntlid);
-int configdb_del_ctrl(uint32_t subsys_id, int cntlid);
-
 int configdb_add_port(unsigned int port, const char *transport,
 		      const char *traddr, const char *adrfam,
 		      unsigned int trsvcid);
