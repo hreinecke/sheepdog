@@ -426,6 +426,8 @@ void *epoll_queue_thread(void *arg);
 #ifdef HAVE_IO_URING
 void *uring_queue_thread(void *arg);
 #endif
+void terminate_stale_ctrls(struct nofuse_subsystem *subsys,
+			   uint16_t cntlid_min, uint16_t cntlid_max);
 
 int default_subsys_type(const char *nqn);
 

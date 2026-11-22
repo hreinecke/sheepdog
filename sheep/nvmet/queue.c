@@ -774,6 +774,48 @@ void destroy_queue(struct nofuse_queue *ep)
 	}
 }
 
+static void disconnect_ctrl(struct nofuse_ctrl *ctrl)
+{
+	int p;
+
+	for (p = NVMF_NUM_QUEUES; p > 1; p--) {
+		if (!ctrl->ep[p - 1])
+			continue;
+		destroy_queue(ctrl->ep[p - 1]);
+	}
+}
+
+void terminate_stale_ctrls(struct nofuse_subsystem *subsys,
+			   uint16_t cntlid_min, uint16_t cntlid_max)
+{
+	struct nofuse_ctrl *ctrl;
+
+	if (cntlid_min > cntlid_max)
+		return;
+	if (cntlid_min > subsys->cntlid_min) {
+		pthread_mutex_lock(&ctrl_list_mutex);
+		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
+			if (subsys != ctrl->subsys)
+				continue;
+			if (ctrl->cntlid < cntlid_min)
+				disconnect_ctrl(ctrl);
+		}
+		pthread_mutex_unlock(&ctrl_list_mutex);
+		subsys->cntlid_min = cntlid_min;
+	}
+	if (cntlid_max < subsys->cntlid_max) {
+		pthread_mutex_lock(&ctrl_list_mutex);
+		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
+			if (subsys != ctrl->subsys)
+				continue;
+			if (ctrl->cntlid > cntlid_max)
+				disconnect_ctrl(ctrl);
+		}
+		pthread_mutex_unlock(&ctrl_list_mutex);
+		subsys->cntlid_max = cntlid_max;
+	}
+}
+
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 {
 	const char *aen_type = NULL;

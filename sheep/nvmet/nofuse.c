@@ -930,11 +930,10 @@ static void process_acl_event(struct nofuse_event *ev)
 		       " with nvmet", ev->vid);
 }
 
-static int change_subsys_cntlid(struct nofuse_subsystem *subsys,
+static void change_subsys_cntlid(struct nofuse_subsystem *subsys,
 				unsigned int nr_zones)
 {
-	int ret, cntlid_range, cntlid_min, cntlid_max;
-	char value[32];
+	int cntlid_range, cntlid_min, cntlid_max;
 
 	cntlid_range = 65520 / nr_zones;
 	cntlid_min = (sys->this_node.zone * cntlid_range) + 1;
@@ -943,19 +942,9 @@ static int change_subsys_cntlid(struct nofuse_subsystem *subsys,
 		cntlid_max = 65519;
 	sd_debug("restricting cntlid for subsystem '%s' (%d zones) to %u-%u",
 		 subsys->nqn, nr_zones, cntlid_min, cntlid_max);
-	sprintf(value, "%u", cntlid_min);
-	ret = configdb_set_subsys_attr(subsys->id,
-				       "cntlid_min", value);
-	if (ret < 0) {
-		sd_warn("Failed to set 'cntlid_min'");
-		return ret;
-	}
-	sprintf(value, "%u", cntlid_max);
-	ret = configdb_set_subsys_attr(subsys->id,
-				       "cntlid_max", value);
-	if (ret < 0)
-		sd_warn("Failed to set 'cntlid_max'");
-	return ret;
+	if (cntlid_min < subsys->cntlid_min)
+		/* need to disconnect the now-stale controllers */
+		terminate_stale_ctrls(subsys, cntlid_min, cntlid_max);
 }
 
 static void process_node_event(struct nofuse_event *ev)
@@ -977,9 +966,8 @@ static void process_node_event(struct nofuse_event *ev)
 	sd_mutex_unlock(&this_ctx->root_lock);
 
 	rb_for_each_entry(subsys, &this_ctx->subsys_root, rb) {
-		if (this_ctx->nr_zones > 0) {
+		if (this_ctx->nr_zones > 0)
 			change_subsys_cntlid(subsys, this_ctx->nr_zones);
-		}
 	}
 }
 
@@ -1140,11 +1128,8 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	sd_mutex_lock(&this_ctx->root_lock);
 	this_ctx->nr_zones = get_zones_nr_from(&this_ctx->nroot);
 	sd_mutex_unlock(&this_ctx->root_lock);
-	if (this_ctx->nr_zones > 0) {
-		ret = change_subsys_cntlid(subsys, this_ctx->nr_zones);
-		if (ret < 0)
-			return ret;
-	}
+	if (this_ctx->nr_zones > 0)
+		change_subsys_cntlid(subsys, this_ctx->nr_zones);
 
 	/*
 	 * Without this, the subsystem is never joined to the local
