@@ -19,10 +19,7 @@
 #include "ops.h"
 #include "configdb.h"
 
-LIST_HEAD(ctrl_linked_list);
 unsigned long num_queues;
-
-pthread_mutex_t ctrl_list_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 		  const char *hostnqn, const char *subsysnqn)
@@ -42,11 +39,16 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 	} else
 		strcpy(nqn, subsysnqn);
 
-	pthread_mutex_lock(&ctrl_list_mutex);
+	subsys = lookup_subsystem_by_nqn(nqn);
+	if (!subsys) {
+		sd_err("subsystem '%s' not found", nqn);
+		return -EBUSY;
+	}
+	sd_mutex_lock(&subsys->cntlid_mutex);
 	if (ep->qid > 0) {
 		struct nofuse_ctrl *c;
 
-		list_for_each_entry(c, &ctrl_linked_list, node) {
+		list_for_each_entry(c, &subsys->ctrl_list, node) {
 			if (strcmp(hostnqn, c->hostnqn) ||
 			    strcmp(nqn, c->subsys->nqn) ||
 			    c->cntlid != cntlid)
@@ -88,12 +90,6 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 			goto out_unlock;
 		}
 	}
-	subsys = lookup_subsystem_by_nqn(nqn);
-	if (!subsys) {
-		sd_err("subsystem '%s' not found", nqn);
-		ret = -EBUSY;
-		goto out_unlock;
-	}
 	sd_debug("Allocating new controller '%s' for '%s'",
 		hostnqn, nqn);
 	ctrl = malloc(sizeof(*ctrl));
@@ -134,9 +130,9 @@ int connect_queue(struct nofuse_queue *ep, uint16_t cntlid,
 	ctrl->kato_countdown = RETRY_COUNT;
 	pthread_mutex_init(&ctrl->ctrl_mutex, NULL);
 	INIT_LIST_NODE(&ctrl->node);
-	list_add(&ctrl->node, &ctrl_linked_list);
+	list_add(&ctrl->node, &subsys->ctrl_list);
 out_unlock:
-	pthread_mutex_unlock(&ctrl_list_mutex);
+	sd_mutex_unlock(&subsys->cntlid_mutex);
 	return ret;
 }
 
@@ -201,13 +197,13 @@ static void disconnect_queue(struct nofuse_queue *ep)
 		struct nofuse_subsystem *subsys = ctrl->subsys;
 		unsigned int cntlid = ctrl->cntlid;
 
-		pthread_mutex_lock(&ctrl_list_mutex);
+		sd_mutex_lock(&subsys->cntlid_mutex);
 		sd_debug("ctrl %u qid %d: deleting controller",
 			 cntlid, ep->qid);
 		list_del(&ctrl->node);
 		free(ctrl);
-		pthread_mutex_unlock(&ctrl_list_mutex);
 		subsys_dealloc_cntlid(subsys, cntlid);
+		sd_mutex_unlock(&subsys->cntlid_mutex);
 	}
 }
 
@@ -372,17 +368,18 @@ static void pop_free(void *arg)
 {
 	struct nofuse_queue *ep = arg;
 	struct nofuse_port *port = ep->port;
+	struct nofuse_ctrl *ctrl = ep->ctrl;
 
 	if (!port) {
 		sd_err("no port set");
 		return;
 	}
 
-	pthread_mutex_lock(&ctrl_list_mutex);
-	if (ep->ctrl) {
-		sd_err("ctrl %u still active", ep->ctrl->cntlid);
+	if (ctrl) {
+		pthread_mutex_lock(&ctrl->ctrl_mutex);
+		sd_err("ctrl %u still active", ctrl->cntlid);
+		pthread_mutex_unlock(&ctrl->ctrl_mutex);
 	}
-	pthread_mutex_unlock(&ctrl_list_mutex);
 	sd_debug("qid %d free queue", ep->qid);
 	pthread_mutex_lock(&port->ep_mutex);
 	list_del(&ep->node);
@@ -792,46 +789,48 @@ void terminate_stale_ctrls(struct nofuse_subsystem *subsys,
 
 	if (cntlid_min > cntlid_max)
 		return;
+	sd_mutex_lock(&subsys->cntlid_mutex);
 	if (cntlid_min > subsys->cntlid_min) {
-		pthread_mutex_lock(&ctrl_list_mutex);
-		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
+		list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 			if (subsys != ctrl->subsys)
 				continue;
 			if (ctrl->cntlid < cntlid_min)
 				disconnect_ctrl(ctrl);
 		}
-		pthread_mutex_unlock(&ctrl_list_mutex);
 		subsys->cntlid_min = cntlid_min;
 	}
 	if (cntlid_max < subsys->cntlid_max) {
-		pthread_mutex_lock(&ctrl_list_mutex);
-		list_for_each_entry(ctrl, &ctrl_linked_list, node) {
+		list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
 			if (subsys != ctrl->subsys)
 				continue;
 			if (ctrl->cntlid > cntlid_max)
 				disconnect_ctrl(ctrl);
 		}
-		pthread_mutex_unlock(&ctrl_list_mutex);
 		subsys->cntlid_max = cntlid_max;
 	}
+	sd_mutex_unlock(&subsys->cntlid_mutex);
 }
 
 void raise_aen(const char *subsysnqn, uint16_t cntlid, int level)
 {
+	struct nofuse_subsystem *subsys =
+		lookup_subsystem_by_nqn(subsysnqn);
 	const char *aen_type = NULL;
 	struct nofuse_ctrl *ctrl;
 	struct nofuse_queue *ep = NULL;
 
-	pthread_mutex_lock(&ctrl_list_mutex);
-	list_for_each_entry(ctrl, &ctrl_linked_list, node) {
-		if (!subsysnqn || strcmp(subsysnqn, ctrl->subsys->nqn))
+	if (!subsys)
+		return;
+	sd_mutex_lock(&subsys->cntlid_mutex);
+	list_for_each_entry(ctrl, &subsys->ctrl_list, node) {
+		if (!subsysnqn || strcmp(subsysnqn, subsys->nqn))
 			continue;
 		if (ctrl->cntlid != cntlid)
 			continue;
 		ep = ctrl->ep[0];
 		break;
 	}
-	pthread_mutex_unlock(&ctrl_list_mutex);
+	sd_mutex_unlock(&subsys->cntlid_mutex);
 	if (!ep)
 		return;
 	switch (level) {

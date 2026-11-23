@@ -104,7 +104,6 @@ int subsys_alloc_cntlid(struct nofuse_subsystem *subsys, uint16_t *cntlid)
 	int ret = 0;
 
 	if (*cntlid == 0xFFFF) {
-		sd_mutex_lock(&subsys->cntlid_map_mutex);
 		c = find_next_zero_bit(subsys->cntlid_map,
 				       subsys->cntlid_max,
 				       subsys->cntlid_min);
@@ -113,7 +112,6 @@ int subsys_alloc_cntlid(struct nofuse_subsystem *subsys, uint16_t *cntlid)
 			*cntlid = c;
 		} else
 			ret = -EBUSY;
-		sd_mutex_unlock(&subsys->cntlid_map_mutex);
 	} else if (!test_bit(*cntlid, subsys->cntlid_map))
 		ret = -EINVAL;
 
@@ -123,13 +121,7 @@ int subsys_alloc_cntlid(struct nofuse_subsystem *subsys, uint16_t *cntlid)
 void subsys_dealloc_cntlid(struct nofuse_subsystem *subsys,
 			   uint16_t cntlid)
 {
-	/*
-	 * Locking is only required to guard against concurrent
-	 * calls to subsys_alloc_cntlid() above.
-	 */
-	sd_mutex_lock(&subsys->cntlid_map_mutex);
 	atomic_clear_bit(cntlid, subsys->cntlid_map);
-	sd_mutex_unlock(&subsys->cntlid_map_mutex);
 }
 
 struct nofuse_subsystem *lookup_subsystem_by_nqn(const char *nqn)
@@ -1108,7 +1100,8 @@ int nvmet_register_subsystem(uint32_t subsys_id, const char *subsysnqn)
 	subsys->wce = sys->nosync;
 	subsys->qid_max = NVMF_NUM_QUEUES;
 	sd_init_mutex(&subsys->inode_lock);
-	sd_init_mutex(&subsys->cntlid_map_mutex);
+	sd_init_mutex(&subsys->cntlid_mutex);
+	INIT_LIST_HEAD(&subsys->ctrl_list);
 	new = rb_insert(&this_ctx->subsys_root, subsys, rb, subsys_cmp);
 	if (new) {
 		sd_debug("update subsystem '%s' (%06x)", new->nqn, new->id);

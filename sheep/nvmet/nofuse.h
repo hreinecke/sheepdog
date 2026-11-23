@@ -241,7 +241,8 @@ struct nofuse_subsystem {
 	unsigned int nn;
 	unsigned int qid_max;
 	DECLARE_BITMAP(cntlid_map, 0xffff);
-	struct sd_mutex cntlid_map_mutex;
+	struct sd_mutex cntlid_mutex;
+	struct list_head ctrl_list;
 	unsigned int cntlid_min;
 	unsigned int cntlid_max;
 	bool recycle_vid;
